@@ -4,13 +4,16 @@ USE twf_cattle_crm;
 -- Drop tables if they exist to start fresh
 -- Disable foreign key checks to allow dropping tables with dependencies
 SET FOREIGN_KEY_CHECKS = 0;
+
+-- Drop child tables first to avoid constraint issues even with checks disabled
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS cancelled_orders;
 DROP TABLE IF EXISTS booking_expenses;
-DROP TABLE IF EXISTS payments;
-DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS leads;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS roles;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 CREATE TABLE roles (
@@ -139,3 +142,40 @@ VALUES ('Super Admin', TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE);
 INSERT INTO users (username, password, email, role_id)
 VALUES ('admin', '$2b$10$qTtom2qSm.WolhN7UjKtbuNJc6dw0QRfYgupreCMwGG8jy443czGW', 'admin@twf.com', 1);
 
+-- Sample Leads
+INSERT INTO leads (lead_id, customer_id, contact, order_type, booking_name, shareholder_name, address, area, day, booking_date, total_amount, order_source, description)
+VALUES 
+('#L-0001-2026', 'C-101', '0300-1234567', 'Qurbani Hissa', 'Cow A', 'John Doe', '123 Street, Karachi', 'Gulshan', 'Monday', '2026-06-15', 25000.00, 'Facebook', 'Interested in 2 shares'),
+('#L-0002-2026', 'C-102', '0321-7654321', 'Full Cow', 'Cow B', 'Jane Smith', '456 Road, Lahore', 'DHA', 'Wednesday', '2026-06-16', 180000.00, 'WhatsApp', 'Wants a heavy weight animal'),
+('#L-0003-2026', 'C-105', '0333-9998887', 'Qurbani Hissa', 'Cow F', 'Michael Brown', '789 Blvd, Islamabad', 'E-11', 'Thursday', '2026-06-17', 28000.00, 'Instagram', 'Inquiry for Day 2'),
+('#L-0004-2026', 'C-106', '0344-5556667', 'Full Cow', 'Cow G', 'Sarah Wilson', '101 Lane, Karachi', 'Clifton', 'Friday', '2026-06-18', 195000.00, 'Website', 'Premium quality requested');
+
+-- Sample Orders
+INSERT INTO orders (order_id, customer_id, contact, order_type, booking_name, shareholder_name, cow_number, hissa_number, address, area, day, booking_date, total_amount, received_amount, pending_amount, order_source, payment_id)
+VALUES 
+('#O-0001-2026', 'C-103', '0333-1112223', 'Qurbani Hissa', 'Cow C', 'Ali Khan', 'Cow-50', 'Hissa-3', '789 Flat, Karachi', 'Nazimabad', 'Day 1', '2026-06-10', 30000.00, 10000.00, 20000.00, 'Referral', '#P-0001-2026'),
+('#O-0002-2026', 'C-104', '0345-4445556', 'Full Cow', 'Cow D', 'Ahmed Raza', 'Cow-12', 'Full', '321 Villa, Islamabad', 'F-7', 'Day 2', '2026-06-11', 200000.00, 200000.00, 0.00, 'Website', '#P-0002-2026'),
+('#O-0003-2026', 'C-107', '0300-4443332', 'Qurbani Hissa', 'Cow H', 'Fatima Zahra', 'Cow-65', 'Hissa-1', '55 Sector, Karachi', 'North Nazimabad', 'Day 1', '2026-06-10', 32000.00, 32000.00, 0.00, 'Facebook', '#P-0003-2026'),
+('#O-0004-2026', 'C-108', '0321-1231234', 'Qurbani Hissa', 'Cow I', 'Usman Sheikh', 'Cow-65', 'Hissa-2', '12 Garden, Lahore', 'Model Town', 'Day 1', '2026-06-10', 32000.00, 15000.00, 17000.00, 'WhatsApp', '#P-0004-2026');
+
+-- Sample Payments
+INSERT INTO payments (payment_id, bank, cash, total_received, date, order_id)
+VALUES 
+('#P-0001-2026', 10000.00, 0.00, 10000.00, '2026-02-05', '#O-0001-2026'),
+('#P-0002-2026', 150000.00, 50000.00, 200000.00, '2026-02-05', '#O-0002-2026'),
+('#P-0003-2026', 32000.00, 0.00, 32000.00, '2026-02-06', '#O-0003-2026'),
+('#P-0004-2026', 0.00, 15000.00, 15000.00, '2026-02-06', '#O-0004-2026');
+
+-- Sample Expenses
+INSERT INTO booking_expenses (expense_id, bank, cash, total, description, done_by)
+VALUES 
+('#E-0001-2026', 0.00, 500.00, 500.00, 'Fuel for field visit', 1),
+('#E-0002-2026', 2000.00, 0.00, 2000.00, 'Marketing flyers printing', 1),
+('#E-0003-2026', 0.00, 1200.00, 1200.00, 'Refreshments for customers', 1),
+('#E-0004-2026', 5000.00, 0.00, 5000.00, 'Social media ad campaign', 1);
+
+-- Sample Cancelled Orders
+INSERT INTO cancelled_orders (id, customer_id, contact, order_type, booking_name, shareholder_name, total_amount, description)
+VALUES 
+('#C-0001-2026', 'C-105', '0312-9998887', 'Qurbani Hissa', 'Cow E', 'Zubair Ali', 28000.00, 'Customer changed mind due to travel'),
+('#C-0002-2026', 'C-109', '0333-4445551', 'Full Cow', 'Cow J', 'Kamran Akmal', 175000.00, 'Budget issues');
