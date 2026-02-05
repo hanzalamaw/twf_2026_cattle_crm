@@ -82,6 +82,8 @@
 
 | Feature | Description |
 | :--- | :--- |
+| **Frontend** | React 19 + Vite (Modern, Fast, SPA) |
+| **Backend** | Node.js + Express (Scalable API) |
 | **Real-time Sync** | Instant data propagation across all seven sub-systems. |
 | **Mobile First** | Optimized for field use by riders and procurement officers. |
 | **Security** | End-to-end encryption for sensitive financial data. |
@@ -91,10 +93,44 @@
 
 ## 🚀 Getting Started
 
-1. **System Requirements:** PHP 8.1+, MySQL 8.0+, Node.js 18+.
-2. **Installation:** Run `composer install` and `npm install`.
-3. **Environment:** Configure your `.env` with database and mail credentials.
-4. **Launch:** Start the server and access the Super Admin dashboard to begin setup.
+### 1. Prerequisites
+- **Node.js**: 18.0.0 or higher
+- **Package Manager**: npm (comes with Node.js)
+
+### 2. Installation
+Clone the repository and install dependencies for both client and server:
+
+```bash
+# Install root dependencies (if any)
+npm install
+
+# Install Client dependencies
+cd client
+npm install
+
+# Install Server dependencies
+cd ../server
+npm install
+```
+
+### 3. Environment Setup
+Create a `.env` file in the `server` directory (and `client` if needed) based on the provided examples.
+
+### 4. Running the Application
+
+#### Start the Backend (Server)
+```bash
+cd server
+npm run dev
+```
+The server will start on `http://localhost:5000`.
+
+#### Start the Frontend (Client)
+```bash
+cd client
+npm run dev
+```
+The application will be available at `http://localhost:5173`.
 
 ---
 <p align="center">
