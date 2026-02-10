@@ -1,74 +1,110 @@
 import { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import loginImage from '../assets/loginPageImage.png';
 
-const Login = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+const Register = () => {
+  const [formData, setFormData] = useState({
+    username: '',
+    email: '',
+    password: '',
+    confirmPassword: ''
+  });
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState({ username: '', password: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { login } = useAuth();
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
 
   const validateField = (name, value) => {
-    if (!value.trim()) {
-      setFieldErrors(prev => ({ ...prev, [name]: 'Please fill out this field.' }));
-      return false;
+    const errors = { ...fieldErrors };
+    
+    if (name === 'username') {
+      if (!value.trim()) {
+        errors.username = 'Please fill out this field.';
+      } else if (value.length < 3) {
+        errors.username = 'Username must be at least 3 characters.';
+      } else {
+        errors.username = '';
+      }
     }
-    if (name === 'username' && value.length < 3) {
-      setFieldErrors(prev => ({ ...prev, [name]: 'Username must be at least 3 characters.' }));
-      return false;
+    
+    if (name === 'email') {
+      if (!value.trim()) {
+        errors.email = 'Please fill out this field.';
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+        errors.email = 'Please enter a valid email address.';
+      } else {
+        errors.email = '';
+      }
     }
-    setFieldErrors(prev => ({ ...prev, [name]: '' }));
-    return true;
+    
+    if (name === 'password') {
+      if (!value.trim()) {
+        errors.password = 'Please fill out this field.';
+      } else if (value.length < 6) {
+        errors.password = 'Password must be at least 6 characters.';
+      } else {
+        errors.password = '';
+      }
+    }
+    
+    if (name === 'confirmPassword') {
+      if (!value.trim()) {
+        errors.confirmPassword = 'Please fill out this field.';
+      } else if (value !== formData.password) {
+        errors.confirmPassword = 'Passwords do not match.';
+      } else {
+        errors.confirmPassword = '';
+      }
+    }
+    
+    setFieldErrors(errors);
+    return !errors[name];
   };
 
-  const handleForgotPassword = (e) => {
-    e.preventDefault();
-    navigate('/forgot-password');
-  };
-
-  const handleRegister = (e) => {
-    e.preventDefault();
-    navigate('/register');
-  };
-
-  const handleSocialLogin = (provider) => {
-    // Redirect directly to OAuth endpoint
-    window.location.href = `http://localhost:5000/api/auth/${provider.toLowerCase()}`;
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+    if (fieldErrors[name]) {
+      validateField(name, value);
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     
-    // Validate fields
-    const isUsernameValid = validateField('username', username);
-    const isPasswordValid = validateField('password', password);
+    // Validate all fields
+    const isUsernameValid = validateField('username', formData.username);
+    const isEmailValid = validateField('email', formData.email);
+    const isPasswordValid = validateField('password', formData.password);
+    const isConfirmPasswordValid = validateField('confirmPassword', formData.confirmPassword);
     
-    if (!isUsernameValid || !isPasswordValid) {
+    if (!isUsernameValid || !isEmailValid || !isPasswordValid || !isConfirmPasswordValid) {
       return;
     }
     
     setIsSubmitting(true);
     
     try {
-      const response = await fetch('http://localhost:5000/api/login', {
+      const response = await fetch('http://localhost:5000/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({
+          username: formData.username,
+          email: formData.email,
+          password: formData.password
+        }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        login(data.user, data.token);
-        navigate('/');
+        alert('Registration successful! Please login.');
+        navigate('/login');
       } else {
-        setError(data.message || 'Invalid credentials');
+        setError(data.message || 'Registration failed');
       }
     } catch (err) {
       setError('Could not connect to server');
@@ -94,16 +130,12 @@ const Login = () => {
       left: 0,
       overflow: 'auto'
     }}>
-
-      {/* Wrapper for stacked cards */}
       <div style={{
         position: 'relative',
         width: '100%',
         maxWidth: '900px',
         minHeight: '520px'
       }}>
-
-        {/* Back Card 2 (furthest back) - Peachy, tilted and drifting */}
         <div style={{
           position: 'absolute',
           inset: 0,
@@ -114,7 +146,6 @@ const Login = () => {
           zIndex: 0
         }}></div>
 
-        {/* Back Card 1 (middle) - Lighter peach, tilted opposite and drifting */}
         <div style={{
           position: 'absolute',
           inset: 0,
@@ -125,7 +156,6 @@ const Login = () => {
           zIndex: 1
         }}></div>
 
-        {/* Main White Card (front) */}
         <div style={{ 
           background: '#FFFFFF', 
           borderRadius: '20px', 
@@ -141,8 +171,6 @@ const Login = () => {
           zIndex: 2,
           boxShadow: '0 5px 25px rgba(0,0,0,0.04)'
         }}>
-          
-          {/* Inner Login Card */}
           <div style={{ 
             background: '#FFFFFF', 
             borderRadius: '16px',
@@ -157,7 +185,7 @@ const Login = () => {
           }}>
             <div style={{ marginBottom: '20px' }}>
               <p style={{ color: '#FF5722', fontSize: '12px', fontWeight: '500', margin: '0 0 4px 0' }}>Your logo</p>
-              <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#333', margin: 0 }}>Login</h1>
+              <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#333', margin: 0 }}>Register</h1>
             </div>
 
             {error && (
@@ -179,12 +207,10 @@ const Login = () => {
                 <label style={{ display: 'block', fontSize: '11px', color: '#888', marginBottom: '5px' }}>Username</label>
                 <input
                   type="text"
-                  placeholder="Enter your username"
-                  value={username}
-                  onChange={(e) => {
-                    setUsername(e.target.value);
-                    if (fieldErrors.username) validateField('username', e.target.value);
-                  }}
+                  name="username"
+                  placeholder="Enter username"
+                  value={formData.username}
+                  onChange={handleChange}
                   onBlur={(e) => validateField('username', e.target.value)}
                   style={{ 
                     width: '100%', 
@@ -243,16 +269,80 @@ const Login = () => {
                 )}
               </div>
 
-              <div style={{ marginBottom: '6px', position: 'relative' }}>
+              <div style={{ marginBottom: '14px', position: 'relative' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: '#888', marginBottom: '5px' }}>Email</label>
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="username@gmail.com"
+                  value={formData.email}
+                  onChange={handleChange}
+                  onBlur={(e) => validateField('email', e.target.value)}
+                  style={{ 
+                    width: '100%', 
+                    padding: '9px 12px', 
+                    borderRadius: '8px',
+                    border: fieldErrors.email ? '1px solid #FF5722' : '1px solid #F0F0F0',
+                    fontSize: '12px',
+                    outline: 'none',
+                    background: '#FAFAFA',
+                    boxSizing: 'border-box',
+                    transition: 'border-color 0.2s'
+                  }}
+                />
+                {fieldErrors.email && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    marginTop: '8px',
+                    background: '#FFFFFF',
+                    borderRadius: '8px',
+                    padding: '12px 16px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    zIndex: 1000,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    minWidth: '200px',
+                    animation: 'fadeIn 0.2s ease-in'
+                  }}>
+                    <div style={{
+                      width: '24px',
+                      height: '24px',
+                      background: '#FF5722',
+                      borderRadius: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      <span style={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 'bold' }}>!</span>
+                    </div>
+                    <span style={{ color: '#333', fontSize: '12px' }}>{fieldErrors.email}</span>
+                    <div style={{
+                      position: 'absolute',
+                      top: '-6px',
+                      left: '20px',
+                      width: 0,
+                      height: 0,
+                      borderLeft: '6px solid transparent',
+                      borderRight: '6px solid transparent',
+                      borderBottom: '6px solid #FFFFFF'
+                    }}></div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginBottom: '14px', position: 'relative' }}>
                 <label style={{ display: 'block', fontSize: '11px', color: '#888', marginBottom: '5px' }}>Password</label>
                 <input
                   type={showPassword ? "text" : "password"}
+                  name="password"
                   placeholder="Password"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (fieldErrors.password) validateField('password', e.target.value);
-                  }}
+                  value={formData.password}
+                  onChange={handleChange}
                   onBlur={(e) => validateField('password', e.target.value)}
                   style={{ 
                     width: '100%', 
@@ -266,6 +356,29 @@ const Login = () => {
                     transition: 'border-color 0.2s'
                   }}
                 />
+                <button 
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '30px',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#CCC',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0
+                  }}
+                >
+                  {showPassword ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  )}
+                </button>
                 {fieldErrors.password && (
                   <div style={{
                     position: 'absolute',
@@ -309,9 +422,32 @@ const Login = () => {
                     }}></div>
                   </div>
                 )}
+              </div>
+
+              <div style={{ marginBottom: '16px', position: 'relative' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: '#888', marginBottom: '5px' }}>Confirm Password</label>
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  name="confirmPassword"
+                  placeholder="Confirm Password"
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
+                  onBlur={(e) => validateField('confirmPassword', e.target.value)}
+                  style={{ 
+                    width: '100%', 
+                    padding: '9px 12px', 
+                    borderRadius: '8px',
+                    border: fieldErrors.confirmPassword ? '1px solid #FF5722' : '1px solid #F0F0F0',
+                    fontSize: '12px',
+                    outline: 'none',
+                    background: '#FAFAFA',
+                    boxSizing: 'border-box',
+                    transition: 'border-color 0.2s'
+                  }}
+                />
                 <button 
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   style={{
                     position: 'absolute',
                     right: '10px',
@@ -326,31 +462,55 @@ const Login = () => {
                     padding: 0
                   }}
                 >
-                  {showPassword ? (
+                  {showConfirmPassword ? (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
                   ) : (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                   )}
                 </button>
-              </div>
-
-              <div style={{ textAlign: 'right', marginBottom: '16px' }}>
-                <button
-                  type="button"
-                  onClick={handleForgotPassword}
-                  style={{ 
-                    background: 'none',
-                    border: 'none',
-                    color: '#FF5722', 
-                    fontSize: '11px', 
-                    textDecoration: 'none', 
-                    fontWeight: '500', 
-                    cursor: 'pointer',
-                    padding: 0
-                  }}
-                >
-                  Forgot Password?
-                </button>
+                {fieldErrors.confirmPassword && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    marginTop: '8px',
+                    background: '#FFFFFF',
+                    borderRadius: '8px',
+                    padding: '12px 16px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    zIndex: 1000,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    minWidth: '200px',
+                    animation: 'fadeIn 0.2s ease-in'
+                  }}>
+                    <div style={{
+                      width: '24px',
+                      height: '24px',
+                      background: '#FF5722',
+                      borderRadius: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      <span style={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 'bold' }}>!</span>
+                    </div>
+                    <span style={{ color: '#333', fontSize: '12px' }}>{fieldErrors.confirmPassword}</span>
+                    <div style={{
+                      position: 'absolute',
+                      top: '-6px',
+                      left: '20px',
+                      width: 0,
+                      height: 0,
+                      borderLeft: '6px solid transparent',
+                      borderRight: '6px solid transparent',
+                      borderBottom: '6px solid #FFFFFF'
+                    }}></div>
+                  </div>
+                )}
               </div>
 
               <button 
@@ -369,117 +529,17 @@ const Login = () => {
                   marginBottom: '16px'
                 }}
               >
-                {isSubmitting ? 'Signing in...' : 'Sign in'}
+                {isSubmitting ? 'Registering...' : 'Register'}
               </button>
             </form>
 
-            <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-              <p style={{ fontSize: '11px', color: '#999', margin: '0 0 10px 0' }}>Or Continue With</p>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
-                <button 
-                  type="button" 
-                  onClick={() => handleSocialLogin('Google')}
-                  style={{ 
-                    width: '36px', 
-                    height: '36px', 
-                    borderRadius: '50%', 
-                    border: '1px solid #F0F0F0', 
-                    background: '#fff', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    cursor: 'pointer',
-                    transition: 'transform 0.2s, box-shadow 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'scale(1.1)';
-                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => handleSocialLogin('Apple')}
-                  style={{ 
-                    width: '36px', 
-                    height: '36px', 
-                    borderRadius: '50%', 
-                    border: '1px solid #F0F0F0', 
-                    background: '#000', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    cursor: 'pointer',
-                    transition: 'transform 0.2s, box-shadow 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'scale(1.1)';
-                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#FFFFFF"><path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => handleSocialLogin('Microsoft')}
-                  style={{ 
-                    width: '36px', 
-                    height: '36px', 
-                    borderRadius: '50%', 
-                    border: '1px solid #F0F0F0', 
-                    background: '#fff', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    cursor: 'pointer',
-                    transition: 'transform 0.2s, box-shadow 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'scale(1.1)';
-                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#00A4EF" d="M13 1h10v10H13z"/><path fill="#7FBA00" d="M1 13h10v10H1z"/><path fill="#FFB900" d="M13 13h10v10H13z"/></svg>
-                </button>
-              </div>
-            </div>
-
             <div style={{ textAlign: 'center' }}>
               <p style={{ fontSize: '11px', color: '#999' }}>
-                Don't have an account yet? <button
-                  type="button"
-                  onClick={handleRegister}
-                  style={{ 
-                    background: 'none',
-                    border: 'none',
-                    color: '#FF5722', 
-                    textDecoration: 'none', 
-                    fontWeight: '600', 
-                    cursor: 'pointer',
-                    padding: 0,
-                    fontSize: '11px'
-                  }}
-                >
-                  Register for free
-                </button>
+                Already have an account? <Link to="/login" style={{ color: '#FF5722', textDecoration: 'none', fontWeight: '600' }}>Login here</Link>
               </p>
             </div>
           </div>
 
-          {/* Right Side - Image Area */}
           <div style={{ 
             flex: '1', 
             display: 'flex',
@@ -499,15 +559,10 @@ const Login = () => {
                 zIndex: 1
               }} 
             />
-            {/* Decorative elements */}
-            <div style={{ position: 'absolute', top: '15%', right: '15%', width: '10px', height: '10px', background: '#D4E157', borderRadius: '50%', opacity: 0.5 }}></div>
-            <div style={{ position: 'absolute', top: '10%', left: '35%', width: '7px', height: '7px', background: '#D4E157', borderRadius: '50%', opacity: 0.3 }}></div>
-            <div style={{ position: 'absolute', bottom: '20%', left: '30%', width: '9px', height: '9px', background: '#D4E157', borderRadius: '50%', opacity: 0.4 }}></div>
           </div>
         </div>
       </div>
 
-      {/* Keyframe animations for background cards floating */}
       <style>
         {`
           @keyframes cardDrift1 {
@@ -528,4 +583,5 @@ const Login = () => {
   );
 };
 
-export default Login;
+export default Register;
+

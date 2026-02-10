@@ -6,6 +6,8 @@ USE twf_cattle_crm;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- Drop child tables first to avoid constraint issues even with checks disabled
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS user_sessions;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS cancelled_orders;
@@ -34,10 +36,17 @@ CREATE TABLE users (
     username VARCHAR(50) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
     email VARCHAR(100) NOT NULL UNIQUE,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    phone VARCHAR(20),
+    status ENUM('active', 'inactive', 'suspended') DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     role_id INT,
     last_login_at TIMESTAMP NULL,
-    FOREIGN KEY (role_id) REFERENCES roles(role_id)
+    created_by INT,
+    FOREIGN KEY (role_id) REFERENCES roles(role_id),
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
 );
 
 -- Leads Table
@@ -130,17 +139,53 @@ CREATE TABLE cancelled_orders (
     cancelled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Audit Logs Table
+CREATE TABLE audit_logs (
+    log_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT,
+    action VARCHAR(100) NOT NULL,
+    entity_type VARCHAR(50) NOT NULL,
+    entity_id VARCHAR(50),
+    old_values JSON,
+    new_values JSON,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+-- User Sessions Table
+CREATE TABLE user_sessions (
+    session_id VARCHAR(255) PRIMARY KEY,
+    user_id INT NOT NULL,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
 -- Adding foreign key to orders for payments (Circular dependency handled by adding after table creation)
 ALTER TABLE orders ADD CONSTRAINT fk_order_payment FOREIGN KEY (payment_id) REFERENCES payments(payment_id);
 
--- Insert a default Super Admin role
+-- Insert default roles
 INSERT INTO roles (role_name, control_management, booking_management, operation_management, farm_management, procurement_management, accounting_and_finance, performance_management)
-VALUES ('Super Admin', TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE);
+VALUES 
+('Super Admin', TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE),
+('Admin', TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE),
+('Manager - Bookings', FALSE, TRUE, FALSE, FALSE, FALSE, FALSE, FALSE),
+('Staff - Bookings', FALSE, TRUE, FALSE, FALSE, FALSE, FALSE, FALSE),
+('Manager - Farm', FALSE, FALSE, FALSE, TRUE, FALSE, FALSE, FALSE),
+('Staff - Farm', FALSE, FALSE, FALSE, TRUE, FALSE, FALSE, FALSE),
+('Manager - Procurement', FALSE, FALSE, FALSE, FALSE, TRUE, FALSE, FALSE),
+('Staff - Procurement', FALSE, FALSE, FALSE, FALSE, TRUE, FALSE, FALSE);
 
 -- Insert a default user (password: admin123)
 -- Hash for 'admin123': $2b$10$qTtom2qSm.WolhN7UjKtbuNJc6dw0QRfYgupreCMwGG8jy443czGW
-INSERT INTO users (username, password, email, role_id)
-VALUES ('admin', '$2b$10$qTtom2qSm.WolhN7UjKtbuNJc6dw0QRfYgupreCMwGG8jy443czGW', 'admin@twf.com', 1);
+INSERT INTO users (username, password, email, first_name, last_name, status, role_id, created_by)
+VALUES ('admin', '$2b$10$qTtom2qSm.WolhN7UjKtbuNJc6dw0QRfYgupreCMwGG8jy443czGW', 'admin@twf.com', 'System', 'Administrator', 'active', 1, 1);
 
 -- Sample Leads
 INSERT INTO leads (lead_id, customer_id, contact, order_type, booking_name, shareholder_name, address, area, day, booking_date, total_amount, order_source, description)

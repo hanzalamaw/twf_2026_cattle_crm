@@ -3,6 +3,9 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import SubSystemSelection from './pages/SubSystemSelection';
 import MainLayout from './components/layout/MainLayout';
 import Login from './pages/Login';
+import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
+import AuthCallback from './pages/AuthCallback';
 import Control from './pages/Control';
 import Bookings from './pages/Bookings';
 import Operations from './pages/Operations';
@@ -26,6 +29,9 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           
           <Route path="/" element={
             <ProtectedRoute>
