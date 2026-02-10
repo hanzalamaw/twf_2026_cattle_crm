@@ -534,7 +534,7 @@ const Control = () => {
           <div style={{
             background: '#FFFFFF',
             borderRadius: '10px',
-            padding: '16px',
+            padding: '8px 16px',
             boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
             borderLeft: '4px solid #1976D2',
             transition: 'transform 0.2s, box-shadow 0.2s'
@@ -548,15 +548,15 @@ const Control = () => {
             e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
           }}
           >
-            <div style={{ fontSize: '11px', color: '#666', marginBottom: '6px', fontWeight: '500' }}>Total Users</div>
+            <div style={{ fontSize: '11px', color: '#666', marginBottom: '2px', fontWeight: '500' }}>Total Users</div>
             <div style={{ fontSize: '24px', fontWeight: '700', color: '#1976D2' }}>{users.length}</div>
-            <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{activeUsers} active</div>
+            <div style={{ fontSize: '11px', color: '#888', marginTop: '1px' }}>{activeUsers} active</div>
           </div>
 
           <div style={{
             background: '#FFFFFF',
             borderRadius: '10px',
-            padding: '16px',
+            padding: '8px 16px',
             boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
             borderLeft: '4px solid #4CAF50',
             transition: 'transform 0.2s, box-shadow 0.2s'
@@ -570,15 +570,15 @@ const Control = () => {
             e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
           }}
           >
-            <div style={{ fontSize: '11px', color: '#666', marginBottom: '6px', fontWeight: '500' }}>Total Roles</div>
+            <div style={{ fontSize: '11px', color: '#666', marginBottom: '2px', fontWeight: '500' }}>Total Roles</div>
             <div style={{ fontSize: '24px', fontWeight: '700', color: '#4CAF50' }}>{totalRoles}</div>
-            <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>System roles</div>
+            <div style={{ fontSize: '11px', color: '#888', marginTop: '1px' }}>System roles</div>
           </div>
 
           <div style={{
             background: '#FFFFFF',
             borderRadius: '10px',
-            padding: '16px',
+            padding: '8px 16px',
             boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
             borderLeft: '4px solid #FF9800',
             transition: 'transform 0.2s, box-shadow 0.2s'
@@ -592,15 +592,15 @@ const Control = () => {
             e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
           }}
           >
-            <div style={{ fontSize: '11px', color: '#666', marginBottom: '6px', fontWeight: '500' }}>Active Sessions</div>
+            <div style={{ fontSize: '11px', color: '#666', marginBottom: '2px', fontWeight: '500' }}>Active Sessions</div>
             <div style={{ fontSize: '24px', fontWeight: '700', color: '#FF9800' }}>{activeSessionsCount}</div>
-            <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>Currently logged in</div>
+            <div style={{ fontSize: '11px', color: '#888', marginTop: '1px' }}>Currently logged in</div>
           </div>
 
           <div style={{
             background: '#FFFFFF',
             borderRadius: '10px',
-            padding: '16px',
+            padding: '8px 16px',
             boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
             borderLeft: '4px solid #9C27B0',
             transition: 'transform 0.2s, box-shadow 0.2s'
@@ -614,9 +614,9 @@ const Control = () => {
             e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
           }}
           >
-            <div style={{ fontSize: '11px', color: '#666', marginBottom: '6px', fontWeight: '500' }}>Audit Logs</div>
+            <div style={{ fontSize: '11px', color: '#666', marginBottom: '2px', fontWeight: '500' }}>Audit Logs</div>
             <div style={{ fontSize: '24px', fontWeight: '700', color: '#9C27B0' }}>{auditLogs.length}</div>
-            <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>Recent activities</div>
+            <div style={{ fontSize: '11px', color: '#888', marginTop: '1px' }}>Recent activities</div>
           </div>
         </div>
 
