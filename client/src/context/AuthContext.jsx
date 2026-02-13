@@ -10,7 +10,21 @@ export const AuthProvider = ({ children }) => {
     const savedUser = localStorage.getItem('user');
     const token = localStorage.getItem('token');
     if (savedUser && token) {
-      setUser(JSON.parse(savedUser));
+      const parsed = JSON.parse(savedUser);
+      setUser(parsed);
+      if (!parsed.permissions || parsed.role_id == null) {
+        fetch('http://localhost:5000/api/me', { headers: { Authorization: `Bearer ${token}` } })
+          .then((res) => res.ok ? res.json() : null)
+          .then((data) => {
+            if (data?.user) {
+              setUser(data.user);
+              localStorage.setItem('user', JSON.stringify(data.user));
+            }
+          })
+          .catch(() => {})
+          .finally(() => setLoading(false));
+        return;
+      }
     }
     setLoading(false);
   }, []);

@@ -148,7 +148,7 @@ const ForgotPassword = () => {
                 </div>
                 <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#333', marginBottom: '10px' }}>Check Your Email</h2>
                 <p style={{ fontSize: '12px', color: '#666', marginBottom: '20px' }}>
-                  We've sent a password reset link to <strong>{email}</strong>
+                  If this email exists in our system, we have sent you a reset password link.
                 </p>
                 <Link 
                   to="/login" 
