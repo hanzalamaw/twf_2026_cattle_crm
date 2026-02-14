@@ -147,8 +147,9 @@ const startServer = async () => {
       }
       try {
         const decoded = jwt.verify(token, JWT_SECRET);
-        if (decoded.sessionId) {
-          await db.execute("UPDATE user_sessions SET is_active = FALSE WHERE session_id = ?", [decoded.sessionId]);
+        if (decoded.id) {
+          // Deactivate all active sessions for this user
+          await db.execute("UPDATE user_sessions SET is_active = FALSE WHERE user_id = ? AND is_active = TRUE", [decoded.id]);
         }
         res.json({ message: "Logged out successfully" });
       } catch (error) {
