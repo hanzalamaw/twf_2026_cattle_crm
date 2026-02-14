@@ -35,7 +35,26 @@ export const AuthProvider = ({ children }) => {
     setUser(userData);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    const token = localStorage.getItem('token');
+    
+    // Call the logout API to deactivate the session
+    if (token) {
+      try {
+        await fetch('http://localhost:5000/api/logout', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+      } catch (error) {
+        // Silently fail - we'll still clear local storage
+        console.error('Logout API call failed:', error);
+      }
+    }
+    
+    // Always clear local storage and user state, regardless of API call result
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
