@@ -18,9 +18,7 @@ const MainLayout = ({ systemName, showSidebar = true }) => {
         justifyContent: 'space-between',
         flexShrink: 0,
       }}>
-        <h1 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#333' }}>
-          {systemName}
-        </h1>
+        {systemName ? <h1 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#333' }}>{systemName}</h1> : <span />}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Link to="/" style={{ fontSize: '13px', color: '#333', textDecoration: 'none' }}>Switch System</Link>
           <button type="button" onClick={logout} style={{ padding: '6px 12px', fontSize: '13px', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Logout</button>

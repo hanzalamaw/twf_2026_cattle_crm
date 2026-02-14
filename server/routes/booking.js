@@ -11,10 +11,16 @@ import { writeAuditLog } from "../utils/auditLog.js";
 export const registerBookingRoutes = (app, db, verifyToken) => {
   app.get("/api/booking/orders", verifyToken, async (req, res) => {
     try {
-      const { search, slot, order_type, day, reference, cow_number } = req.query;
+      const { search, slot, order_type, day, reference, cow_number, year } = req.query;
       const conditions = [];
       const params = [];
 
+      if (year === "2026" || year === "2025" || year === "2024") {
+        conditions.push("YEAR(o.booking_date) = ?");
+        params.push(year);
+      } else if (year === "other") {
+        conditions.push("(o.booking_date IS NULL OR YEAR(o.booking_date) NOT IN (2025, 2026))");
+      }
       if (search && search.trim()) {
         const term = `%${search.trim()}%`;
         conditions.push(`(
@@ -88,7 +94,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         user_id: req.userId,
         action: "ORDER_LIST",
         entity_type: "orders",
-        new_values: { count: rows.length, filters: { search: !!search, slot: !!slot, order_type: !!order_type, day: !!day, reference: !!reference, cow_number: !!cow_number } },
+        new_values: { count: rows.length, filters: { search: !!search, slot: !!slot, order_type: !!order_type, day: !!day, reference: !!reference, cow_number: !!cow_number, year } },
         ip_address: req.ip,
         user_agent: req.get("user-agent"),
       });
@@ -199,62 +205,178 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     }
   });
 
-  // Invoice PDF: all orders for customer_id in year 2026
+  // Invoice PDF: THE WARSI FARM style - all orders for customer_id in year 2026
   app.get("/api/booking/invoice/:customerId", verifyToken, async (req, res) => {
     try {
       const { customerId } = req.params;
       const [orders] = await db.execute(
-        `SELECT o.order_id, o.cow_number AS cow, o.hissa_number AS hissa, o.booking_name, o.shareholder_name, o.contact, o.alt_contact, o.address, o.area, o.day, o.order_type AS type, o.booking_date, o.total_amount, o.received_amount, o.pending_amount, o.order_source AS source, o.reference, o.description
+        `SELECT o.order_id, o.cow_number AS cow, o.hissa_number AS hissa, o.booking_name, o.shareholder_name, o.contact, o.alt_contact, o.address, o.area, o.day, o.order_type AS type, o.booking_date, o.total_amount, o.received_amount, o.pending_amount
          FROM orders o WHERE o.customer_id = ? AND YEAR(o.booking_date) = 2026 ORDER BY o.booking_date, o.order_id`,
         [customerId]
       );
       if (orders.length === 0) return res.status(404).json({ message: "No orders found for this customer in 2026" });
       const customer = orders[0];
-      const invoiceNumber = `I-${String(orders.length).padStart(4, "0")}-2026`;
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="Invoice-${invoiceNumber}-${customerId}.pdf"`);
-      const doc = new PDFDocument({ margin: 50 });
-      doc.pipe(res);
-      doc.fontSize(20).text("TWF Cattle CRM - Invoice", { align: "center" });
-      doc.moveDown(0.5);
-      doc.fontSize(10).text(`Invoice No: ${invoiceNumber}`, { align: "center" });
-      doc.text(`Customer ID: ${customerId}`, { align: "center" });
-      doc.moveDown(1);
-      doc.fontSize(11).text(`Booking Name: ${customer.booking_name || ""}  |  Shareholder: ${customer.shareholder_name || ""}`, { continued: false });
-      doc.text(`Contact: ${customer.contact || ""}  ${customer.alt_contact ? `| Alt: ${customer.alt_contact}` : ""}`, { continued: false });
-      doc.text(`Address: ${[customer.address, customer.area].filter(Boolean).join(", ") || "—"}`, { continued: false });
-      doc.moveDown(1);
-      const tableTop = doc.y;
-      doc.fontSize(9).text("Order ID", 50, tableTop, { width: 70 });
-      doc.text("Cow/Hissa", 125, tableTop, { width: 60 });
-      doc.text("Type", 190, tableTop, { width: 70 });
-      doc.text("Date", 265, tableTop, { width: 65 });
-      doc.text("Total", 335, tableTop, { width: 70 });
-      doc.text("Received", 410, tableTop, { width: 70 });
-      doc.text("Pending", 485, tableTop, { width: 70 });
-      doc.moveDown(0.5);
-      let y = doc.y;
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "INVOICE_GENERATED",
+        entity_type: "invoice",
+        entity_id: customerId,
+        new_values: { customer_id: customerId, order_count: orders.length },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      const invoiceNumber = `#I-${String(orders.length).padStart(4, "0")}-2026`;
+      const bookingDateStr = customer.booking_date ? (typeof customer.booking_date === "string" ? customer.booking_date.split("T")[0] : customer.booking_date.toISOString().split("T")[0]) : "";
+      const issuedDate = new Date().toISOString().split("T")[0];
       let grandTotal = 0;
       let grandReceived = 0;
       let grandPending = 0;
       for (const row of orders) {
-        const dateStr = row.booking_date ? (typeof row.booking_date === "string" ? row.booking_date.split("T")[0] : row.booking_date.toISOString().split("T")[0]) : "";
-        doc.text(row.order_id || "", 50, y, { width: 70 });
-        doc.text(`${row.cow || ""}/${row.hissa || ""}`, 125, y, { width: 60 });
-        doc.text(row.type || "", 190, y, { width: 70 });
-        doc.text(dateStr, 265, y, { width: 65 });
-        doc.text(Number(row.total_amount || 0).toLocaleString("en-PK"), 335, y, { width: 70 });
-        doc.text(Number(row.received_amount || 0).toLocaleString("en-PK"), 410, y, { width: 70 });
-        doc.text(Number(row.pending_amount || 0).toLocaleString("en-PK"), 485, y, { width: 70 });
         grandTotal += Number(row.total_amount || 0);
         grandReceived += Number(row.received_amount || 0);
         grandPending += Number(row.pending_amount || 0);
+      }
+      const fmt = (n) => Math.round(Number(n)).toLocaleString("en-PK");
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="Invoice-${invoiceNumber.replace("#", "")}-${customerId}.pdf"`);
+      const doc = new PDFDocument({ margin: 50, size: "A4" });
+      doc.pipe(res);
+      const pageW = doc.page.width - 100;
+      const left = 50;
+      const right = doc.page.width - 50;
+
+      // Header: THE WARSI FARM (left), INVOICE + number (right)
+      doc.fontSize(18).font("Helvetica-Bold").text("THE WARSI FARM", left, 50);
+      doc.fontSize(14).font("Helvetica-Bold").text("INVOICE", right - 150, 50, { width: 150, align: "right" });
+      doc.fontSize(10).font("Helvetica").text(invoiceNumber, right - 150, 66, { width: 150, align: "right" });
+      // Horizontal line under INVOICE block extending left
+      doc.moveTo(right, 82).lineTo(left, 82).stroke();
+
+      // Three-column block with vertical separators
+      const col1Right = left + 160;
+      const col2Left = left + 180;
+      const col2Right = right - 190;
+      const col3Left = right - 180;
+      const blockTop = 88;
+      const blockBottom = 162;
+
+      // Booking Date, Issued Date (column 1)
+      doc.fontSize(10).font("Helvetica-Bold").text("Booking Date", left, blockTop);
+      doc.font("Helvetica").text(bookingDateStr || "—", left, blockTop + 13);
+      doc.font("Helvetica-Bold").text("Issued Date", left, blockTop + 30);
+      doc.font("Helvetica").text(issuedDate, left, blockTop + 43);
+
+      // Billed to (column 2)
+      doc.font("Helvetica-Bold").text("Billed to", col2Left, blockTop);
+      const billedName = [customer.booking_name, customer.shareholder_name].filter(Boolean).join(" / ") || "—";
+      doc.font("Helvetica").text(billedName, col2Left, blockTop + 13, { width: col2Right - col2Left });
+      doc.text(customer.contact || "", col2Left, blockTop + 26, { width: col2Right - col2Left });
+      if (customer.alt_contact) doc.text(customer.alt_contact, col2Left, blockTop + 39, { width: col2Right - col2Left });
+      const billedAddr = [customer.address, customer.area].filter(Boolean).join(", ") || "";
+      if (billedAddr) doc.text(billedAddr, col2Left, customer.alt_contact ? blockTop + 52 : blockTop + 39, { width: col2Right - col2Left });
+
+      // From (column 3)
+      doc.font("Helvetica-Bold").text("From", col3Left, blockTop, { width: 180, align: "right" });
+      doc.font("Helvetica").text("The Warsi Farm", col3Left, blockTop + 13, { width: 180, align: "right" });
+      doc.text("B-655, F.B.A Block # 13,", col3Left, blockTop + 26, { width: 180, align: "right" });
+      doc.text("Gulberg, Karachi", col3Left, blockTop + 39, { width: 180, align: "right" });
+
+      // Vertical lines between columns
+      doc.moveTo(col2Left, blockTop).lineTo(col2Left, blockBottom).stroke();
+      doc.moveTo(col3Left, blockTop).lineTo(col3Left, blockBottom).stroke();
+
+      let y = 165;
+      doc.moveTo(left, y).lineTo(right, y).stroke();
+      y += 14;
+
+      // Service table: Service | Qty | Total Amount
+      doc.fontSize(10).font("Helvetica-Bold");
+      doc.text("Service", left, y);
+      doc.text("Qty", right - 180, y, { width: 50, align: "center" });
+      doc.text("Total Amount", right - 120, y, { width: 120, align: "right" });
+      y += 20;
+
+      doc.font("Helvetica").fontSize(10);
+      for (const row of orders) {
+        const serviceTitle = row.type || "Booking";
+        const serviceSub = `Cow No: ${row.cow || "—"} | Hissa No: ${row.hissa || "—"} • ${row.day || "—"}`;
+        doc.font("Helvetica-Bold").text(serviceTitle, left, y, { width: pageW - 180 });
+        y += 14;
+        doc.font("Helvetica").text(serviceSub, left, y, { width: pageW - 180 });
+        doc.text("1", right - 180, y - 14, { width: 50, align: "center" });
+        doc.text(`PKR ${fmt(row.total_amount)}`, right - 120, y - 14, { width: 120, align: "right" });
         y += 22;
       }
-      doc.moveDown(1);
-      doc.fontSize(10).text(`Total: ${grandTotal.toLocaleString("en-PK")}  |  Received: ${grandReceived.toLocaleString("en-PK")}  |  Pending: ${grandPending.toLocaleString("en-PK")}`, { continued: false });
-      doc.moveDown(2);
-      doc.fontSize(9).text("Thank you for your business.", { align: "center" });
+
+      y += 6;
+      doc.moveTo(left, y).lineTo(right, y).stroke();
+      y += 16;
+
+      // Subtotal, Shipping, Total
+      doc.font("Helvetica-Bold").text("Subtotal:", left, y);
+      doc.text(`PKR ${fmt(grandTotal)}`, right - 120, y, { width: 120, align: "right" });
+      y += 16;
+      doc.text("Shipping:", left, y);
+      doc.text("Free", right - 120, y, { width: 120, align: "right" });
+      y += 16;
+      doc.text("Total:", left, y);
+      doc.text(`PKR ${fmt(grandTotal)}`, right - 120, y, { width: 120, align: "right" });
+      y += 20;
+      doc.moveTo(left, y).lineTo(right, y).stroke();
+      y += 16;
+
+      // Amount Paid (green) with full-width green underline
+      doc.fillColor("#166534").font("Helvetica-Bold").text("Amount Paid:", left, y);
+      doc.text(`PKR ${fmt(grandReceived)}`, right - 120, y, { width: 120, align: "right" });
+      y += 14;
+      doc.moveTo(left, y).lineTo(right, y).stroke("#166534");
+      y += 18;
+      // Amount Due (red) with full-width red underline
+      doc.fillColor("#b91c1c").text("Amount Due:", left, y);
+      doc.text(`PKR ${fmt(grandPending)}`, right - 120, y, { width: 120, align: "right" });
+      y += 14;
+      doc.moveTo(left, y).lineTo(right, y).stroke("#b91c1c");
+      doc.fillColor("#000000");
+      y += 28;
+
+      // PAYMENT INFO
+      doc.font("Helvetica-Bold").fontSize(10).text("PAYMENT INFO", left, y);
+      y += 16;
+      doc.font("Helvetica").fontSize(9);
+      doc.text("ACCOUNT NAME (HBL)", left, y);
+      doc.text("BRANCH", left + 140, y);
+      doc.text("IBAN", left + 280, y);
+      doc.text("ACCOUNT NO", left + 400, y);
+      y += 14;
+      doc.text("TW TRADERS", left, y);
+      doc.text("ZIAUDDIN SHAHEED ROA", left + 140, y);
+      doc.text("PK10HABB0016787900655603", left + 280, y, { width: 110 });
+      doc.text("16787900655603", left + 400, y);
+      y += 32;
+
+      // TERMS & CONDITIONS
+      doc.font("Helvetica-Bold").fontSize(10).text("TERMS & CONDITIONS", left, y);
+      y += 14;
+      doc.font("Helvetica").fontSize(8);
+      const terms = [
+        "Livestock bookings must be paid in full at the time of purchase. For Qurbani orders, full payment is required at least 7 days before Eid.",
+        "Accepted payment methods: Cash, Bank Transfer, Easypaisa, JazzCash, or Online Checkout.",
+        "Free delivery within Karachi. Delivery timelines are communicated at the time of booking. Delays due to unforeseen events will be informed in advance.",
+        "Ensure accurate delivery information and availability at the time of delivery. Any delays caused due to incorrect information or unavailability at delivery address will not be compensated.",
+        "THE WARSI FARM is not liable for delays or issues caused by unforeseen circumstances like natural disasters, transport strikes, or technical faults.",
+      ];
+      for (let i = 0; i < terms.length; i++) {
+        doc.text(`${i + 1}. ${terms[i]}`, left, y, { width: pageW, align: "left" });
+        y += doc.heightOfString(terms[i], { width: pageW }) + 4;
+      }
+      y += 20;
+
+      // Footer (below terms or bottom of page)
+      const footerY = Math.max(y, doc.page.height - 40);
+      doc.font("Helvetica").fontSize(9).text("The Warsi Farm", left, footerY);
+      doc.text("(0331 & 0332) - 9911466 | thewarsifarm.com", right - 280, footerY, { width: 280, align: "right" });
+
       doc.end();
     } catch (error) {
       logError("BOOKING", "Invoice error", error);

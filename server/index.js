@@ -236,10 +236,10 @@ const startServer = async () => {
           await db.execute("UPDATE user_sessions SET is_active = FALSE WHERE user_id = ? AND is_active = TRUE", [decoded.id]);
           await writeAuditLog(db, {
             user_id: decoded.id,
-            session_id: decoded.sessionId || null,
             action: "LOGOUT",
             entity_type: "auth",
             entity_id: String(decoded.id),
+            new_values: { username: decoded.username },
             ip_address: req.ip,
             user_agent: req.get("user-agent")
           });

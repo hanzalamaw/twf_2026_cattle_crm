@@ -92,7 +92,7 @@ function App() {
             <Route index element={<Control />} />
           </Route>
 
-          <Route path="/bookings" element={<ProtectedRoute><RequirePermission permission="booking_management"><MainLayout systemName="Bookings Management" /></RequirePermission></ProtectedRoute>}>
+          <Route path="/bookings" element={<ProtectedRoute><RequirePermission permission="booking_management"><MainLayout systemName="" /></RequirePermission></ProtectedRoute>}>
             <Route index element={<Navigate to="/bookings/queries" replace />} />
             <Route path="dashboard" element={<RequireBookingDashboard><Dashboard /></RequireBookingDashboard>} />
             <Route path="new-query" element={<BookingPlaceholder title="New Query" />} />

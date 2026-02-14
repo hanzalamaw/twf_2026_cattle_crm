@@ -90,6 +90,13 @@ export const registerPasswordResetRoutes = (app, db) => {
       );
       if (rows.length === 0) {
         log("PASSWORD_RESET", "Reset password failed: invalid or expired token");
+        await writeAuditLog(db, {
+          action: "PASSWORD_RESET_FAILED",
+          entity_type: "auth",
+          new_values: { reason: "invalid_or_expired_token" },
+          ip_address: req.ip,
+          user_agent: req.get("user-agent"),
+        });
         return res.status(400).json({ message: "Invalid or expired reset link. Please request a new one." });
       }
       const userId = rows[0].user_id;

@@ -90,6 +90,48 @@ const defaultEditRow = () => ({
   description: '',
 });
 
+function validateOrderEdit(row) {
+  const errors = {};
+  const trim = (v) => (v == null ? '' : String(v).trim());
+
+  if (!trim(row.customer_id)) errors.customer_id = 'Customer ID is required';
+  if (!trim(row.booking_name)) errors.booking_name = 'Booking name is required';
+  if (!trim(row.shareholder_name)) errors.shareholder_name = 'Shareholder name is required';
+
+  const phone = trim(row.phone_number);
+  if (!phone) errors.phone_number = 'Phone number is required';
+  else if (!/^[\d\s\-+()]{7,20}$/.test(phone)) errors.phone_number = 'Enter a valid phone number (7–20 digits/symbols)';
+
+  const altPhone = trim(row.alt_phone);
+  if (altPhone && !/^[\d\s\-+()]{7,20}$/.test(altPhone)) errors.alt_phone = 'Enter a valid phone number';
+
+  const dateStr = trim(row.booking_date);
+  if (dateStr) {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateStr)) errors.booking_date = 'Date must be YYYY-MM-DD';
+    else {
+      const d = new Date(dateStr);
+      if (Number.isNaN(d.getTime())) errors.booking_date = 'Invalid date';
+    }
+  }
+
+  const numFields = ['total_amount', 'received', 'pending'];
+  for (const key of numFields) {
+    const val = trim(row[key]);
+    if (val === '') continue;
+    const n = Number(val);
+    if (Number.isNaN(n) || n < 0) errors[key] = 'Must be a number ≥ 0';
+  }
+
+  if (!errors.phone_number && trim(row.phone_number).length > 20) errors.phone_number = 'Phone number too long';
+  if (!errors.alt_phone && trim(row.alt_phone).length > 20) errors.alt_phone = 'Alt phone too long';
+  if (!errors.customer_id && trim(row.customer_id).length > 50) errors.customer_id = 'Customer ID too long';
+  if (!errors.booking_name && trim(row.booking_name).length > 100) errors.booking_name = 'Booking name too long';
+  if (!errors.shareholder_name && trim(row.shareholder_name).length > 100) errors.shareholder_name = 'Shareholder name too long';
+
+  return errors;
+}
+
 export default function OrderManagement() {
   const [orders, setOrders] = useState([]);
   const [filters, setFilters] = useState({ slots: [], order_types: [], days: [], references: [] });
@@ -99,11 +141,13 @@ export default function OrderManagement() {
   const [day, setDay] = useState('');
   const [reference, setReference] = useState('');
   const [cowNumber, setCowNumber] = useState('');
+  const [yearFilter, setYearFilter] = useState('2026');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [editOpen, setEditOpen] = useState(false);
   const [editRow, setEditRow] = useState(defaultEditRow);
+  const [editErrors, setEditErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(null);
 
@@ -134,6 +178,7 @@ export default function OrderManagement() {
       if (day) params.set('day', day);
       if (reference) params.set('reference', reference);
       if (cowNumber.trim()) params.set('cow_number', cowNumber.trim());
+      if (yearFilter) params.set('year', yearFilter);
       const res = await fetch(`${API}/api/booking/orders?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -148,7 +193,7 @@ export default function OrderManagement() {
     } finally {
       setLoading(false);
     }
-  }, [token, search, slot, orderType, day, reference, cowNumber]);
+  }, [token, search, slot, orderType, day, reference, cowNumber, yearFilter]);
 
   useEffect(() => { fetchFilters(); }, [fetchFilters]);
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
@@ -190,13 +235,20 @@ export default function OrderManagement() {
       reference: row.reference ?? '',
       description: row.description ?? '',
     });
+    setEditErrors({});
     setEditOpen(true);
   };
 
   const handleSaveEdit = async () => {
+    const errors = validateOrderEdit(editRow);
+    if (Object.keys(errors).length > 0) {
+      setEditErrors(errors);
+      return;
+    }
+    setEditErrors({});
     setSaving(true);
     try {
-      const res = await fetch(`${API}/api/booking/orders/${editRow.order_id}`, {
+      const res = await fetch(`${API}/api/booking/orders/${encodeURIComponent(editRow.order_id)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -287,90 +339,97 @@ export default function OrderManagement() {
   };
 
   const filterRowStyle = {
-    display: 'grid',
-    gridTemplateColumns: 'minmax(180px, 1fr) minmax(100px, 120px) minmax(100px, 140px) minmax(100px, 140px) minmax(80px, 120px) minmax(80px, 120px) auto',
+    display: 'flex',
+    flexWrap: 'wrap',
     gap: '12px',
     marginBottom: '20px',
-    alignItems: 'end',
+    alignItems: 'flex-end',
   };
+  const filterFieldStyle = (width) => ({
+    width: width || 120,
+    minWidth: width || 120,
+    flexShrink: 0,
+  });
+
+  const labelStyle = { display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px', whiteSpace: 'nowrap' };
 
   return (
     <div style={{ padding: '24px', fontFamily: "'Poppins', 'Inter', sans-serif" }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>
+        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', whiteSpace: 'nowrap' }}>
           Order Management
         </h2>
-        <button
-          type="button"
-          onClick={handleExport}
-          style={{
-            padding: '8px 16px',
-            background: '#2e7d32',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: '600',
-            cursor: 'pointer',
-          }}
-        >
-          Export
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <label style={{ ...labelStyle, marginBottom: 0, marginRight: '6px' }}>Year</label>
+          <select
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px', minWidth: '140px' }}
+          >
+            <option value="2026">Year 2026</option>
+            <option value="2025">Year 2025</option>
+            <option value="2024">Year 2024</option>
+            <option value="other">2024 &amp; earlier</option>
+          </select>
+        </div>
       </div>
 
       <div style={filterRowStyle}>
-        <div style={{ minWidth: 0 }}>
-          <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>Search (name, phone, area, address)</label>
+        <div style={{ flex: 1, minWidth: '180px' }}>
+          <label style={labelStyle}>Search (name, phone, area, address)</label>
           <input
             type="text"
             placeholder="Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && fetchOrders()}
-            style={{ width: '100%', minWidth: 0, padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }}
+            style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }}
           />
         </div>
-        <div style={{ minWidth: 0 }}>
-          <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>Cow number</label>
+        <div style={filterFieldStyle(110)}>
+          <label style={labelStyle}>Cow number</label>
           <input
             type="text"
             placeholder="Cow #"
             value={cowNumber}
             onChange={(e) => setCowNumber(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && fetchOrders()}
-            style={{ width: '100%', minWidth: 0, padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }}
+            style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }}
           />
         </div>
-        <div>
-          <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>Slot</label>
-          <select value={slot} onChange={(e) => setSlot(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }}>
+        <div style={filterFieldStyle(130)}>
+          <label style={labelStyle}>Slot</label>
+          <select value={slot} onChange={(e) => setSlot(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }}>
             <option value="">All</option>
             {filters.slots.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-        <div>
-          <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>Type</label>
-          <select value={orderType} onChange={(e) => setOrderType(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }}>
+        <div style={filterFieldStyle(130)}>
+          <label style={labelStyle}>Type</label>
+          <select value={orderType} onChange={(e) => setOrderType(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }}>
             <option value="">All</option>
             {filters.order_types.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
-        <div>
-          <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>Day</label>
-          <select value={day} onChange={(e) => setDay(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }}>
+        <div style={filterFieldStyle(100)}>
+          <label style={labelStyle}>Day</label>
+          <select value={day} onChange={(e) => setDay(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }}>
             <option value="">All</option>
             {filters.days.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
         </div>
-        <div>
-          <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>Reference</label>
-          <select value={reference} onChange={(e) => setReference(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }}>
+        <div style={filterFieldStyle(110)}>
+          <label style={labelStyle}>Reference</label>
+          <select value={reference} onChange={(e) => setReference(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }}>
             <option value="">All</option>
             {filters.references.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
-        <button type="button" onClick={fetchOrders} style={{ padding: '8px 16px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
+        <button type="button" onClick={fetchOrders} style={{ padding: '8px 16px', height: '36px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>
           Apply
+        </button>
+        <button type="button" onClick={handleExport} style={{ padding: '8px 16px', height: '36px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>
+          Export
         </button>
       </div>
 
@@ -432,29 +491,50 @@ export default function OrderManagement() {
       </div>
 
       {editOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !saving && setEditOpen(false)}>
-          <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '520px', width: '90%', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 16px 0' }}>Edit Order</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !saving && (setEditErrors({}), setEditOpen(false))}>
+          <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(680px, 95vw)', maxHeight: '85vh', overflowY: 'auto', overflowX: 'hidden', boxSizing: 'border-box' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Edit Order</h3>
+            {Object.keys(editErrors).length > 0 && (
+              <div style={{ marginBottom: '10px', padding: '8px 10px', background: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '12px' }}>
+                Please fix the errors below before saving.
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
               {['order_id', 'customer_id', 'cow', 'hissa', 'slot', 'booking_name', 'shareholder_name', 'phone_number', 'alt_phone', 'address', 'area', 'day', 'type', 'booking_date', 'total_amount', 'received', 'pending', 'source', 'reference'].map((key) => (
-                <div key={key} style={{ gridColumn: key === 'address' || key === 'reference' || key === 'description' ? '1 / -1' : 'auto' }}>
-                  <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>{key.replace(/_/g, ' ')}</label>
+                <div key={key} style={{ minWidth: 0 }}>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>{key.replace(/_/g, ' ')}</label>
                   <input
                     disabled={key === 'order_id'}
                     value={editRow[key] ?? ''}
-                    onChange={(e) => setEditRow((p) => ({ ...p, [key]: e.target.value }))}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }}
+                    onChange={(e) => {
+                      setEditRow((p) => ({ ...p, [key]: e.target.value }));
+                      if (editErrors[key]) setEditErrors((p) => { const n = { ...p }; delete n[key]; return n; });
+                    }}
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      border: editErrors[key] ? '1px solid #dc2626' : '1px solid #e0e0e0',
+                      fontSize: '13px',
+                    }}
                   />
+                  {editErrors[key] && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{editErrors[key]}</div>}
                 </div>
               ))}
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>description</label>
-                <textarea value={editRow.description ?? ''} onChange={(e) => setEditRow((p) => ({ ...p, description: e.target.value }))} rows={2} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px' }} />
+              <div style={{ minWidth: 0, gridColumn: '1 / -1' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>description</label>
+                <textarea
+                  value={editRow.description ?? ''}
+                  onChange={(e) => setEditRow((p) => ({ ...p, description: e.target.value }))}
+                  rows={2}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px', resize: 'vertical' }}
+                />
               </div>
             </div>
-            <div style={{ marginTop: '20px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setEditOpen(false)} disabled={saving} style={{ padding: '8px 16px', background: '#f5f5f5', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Close</button>
-              <button type="button" onClick={handleSaveEdit} disabled={saving} style={{ padding: '8px 16px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Save'}</button>
+            <div style={{ marginTop: '14px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setEditOpen(false)} disabled={saving} style={{ padding: '6px 14px', fontSize: '13px', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>
+              <button type="button" onClick={handleSaveEdit} disabled={saving} style={{ padding: '6px 14px', fontSize: '13px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Save'}</button>
             </div>
           </div>
         </div>
