@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import loginImage from '../assets/loginPageImage.png';
 
 const Login = () => {
@@ -12,6 +12,13 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const err = searchParams.get('error');
+    if (err === 'user_not_found') setError('User not found. Contact admin to get access.');
+    else if (err === 'oauth_failed') setError('Sign-in failed. Try again or use username/password.');
+  }, [searchParams]);
 
   const validateField = (name, value) => {
     if (!value.trim()) {
@@ -66,7 +73,12 @@ const Login = () => {
 
       if (response.ok) {
         login(data.user, data.token);
-        navigate('/');
+        const redirect = searchParams.get('redirect') || '/';
+        if (data.user.has_prev_logged_in) {
+          navigate(redirect);
+        } else {
+          navigate(`/accept-terms?redirect=${encodeURIComponent(redirect)}`);
+        }
       } else {
         setError(data.message || 'Invalid credentials');
       }

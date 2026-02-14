@@ -114,7 +114,6 @@ const Control = () => {
   });
   const [roleFormData, setRoleFormData] = useState({
     role_name: '',
-    has_prev_logged_in: false,
     control_management: false,
     booking_management: false,
     operation_management: false,
@@ -320,7 +319,6 @@ const Control = () => {
         setEditingRole(null);
         setRoleFormData({
           role_name: '',
-          has_prev_logged_in: false,
           control_management: false,
           booking_management: false,
           operation_management: false,
@@ -389,7 +387,6 @@ const Control = () => {
       setEditingRole(role);
       setRoleFormData({
         role_name: role.role_name,
-        has_prev_logged_in: role.has_prev_logged_in || false,
         control_management: role.control_management || false,
         booking_management: role.booking_management || false,
         operation_management: role.operation_management || false,
@@ -402,7 +399,6 @@ const Control = () => {
       setEditingRole(null);
       setRoleFormData({
         role_name: '',
-        has_prev_logged_in: false,
         control_management: false,
         booking_management: false,
         operation_management: false,
@@ -1598,21 +1594,6 @@ const Control = () => {
                 </label>
               </div>
             ))}
-          </div>
-
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
-              <input
-                type="checkbox"
-                id="has_prev_logged_in"
-                checked={roleFormData.has_prev_logged_in}
-                onChange={(e) => setRoleFormData({ ...roleFormData, has_prev_logged_in: e.target.checked })}
-                style={{ marginRight: '10px', width: '18px', height: '18px', cursor: 'pointer' }}
-              />
-              <label htmlFor="has_prev_logged_in" style={{ fontSize: '13px', color: '#333', cursor: 'pointer' }}>
-                Has Previously Logged In
-              </label>
-            </div>
           </div>
 
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '30px' }}>

@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { log, logError } from "../utils/logger.js";
 
 /**
  * Control Management API: users, roles, audit-logs, sessions.
@@ -7,11 +8,11 @@ import bcrypt from "bcryptjs";
  * @param {Function} verifyToken - auth middleware
  */
 export const registerControlRoutes = (app, db, verifyToken) => {
-  const logAuditAction = async (userId, action, entityType, entityId, oldValues, newValues, ipAddress, userAgent, sessionId) => {
+  const logAuditAction = async (userId, action, entityType, entityId, oldValues, newValues, ipAddress, userAgent) => {
     try {
       await db.execute(
-        `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_values, new_values, ip_address, user_agent, session_id) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_values, new_values, ip_address, user_agent) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           userId,
           action,
@@ -20,12 +21,11 @@ export const registerControlRoutes = (app, db, verifyToken) => {
           oldValues ? JSON.stringify(oldValues) : null,
           newValues ? JSON.stringify(newValues) : null,
           ipAddress,
-          userAgent,
-          sessionId || null
+          userAgent
         ]
       );
     } catch (error) {
-      console.error('Error logging audit action:', error);
+      logError("CONTROL", "Audit log insert failed", error);
     }
   };
 
@@ -43,7 +43,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       );
       res.json(users);
     } catch (error) {
-      console.error(error);
+      logError("CONTROL", "List users error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -60,7 +60,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       if (users.length === 0) return res.status(404).json({ message: "User not found" });
       res.json(users[0]);
     } catch (error) {
-      console.error(error);
+      logError("CONTROL", "Get user error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -81,10 +81,11 @@ export const registerControlRoutes = (app, db, verifyToken) => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [username, email, hashedPassword, first_name || null, last_name || null, phone || null, role_id, status || 'active', req.userId]
       );
-      await logAuditAction(req.userId, 'CREATE_USER', 'users', result.insertId.toString(), null, { username, email, role_id, status }, req.ip, req.get('user-agent'), req.sessionId);
+      await logAuditAction(req.userId, 'CREATE_USER', 'users', result.insertId.toString(), null, { username, email, role_id, status }, req.ip, req.get('user-agent'));
+      log("CONTROL", "User created", { by: req.userId, user_id: result.insertId, username });
       res.status(201).json({ message: "User created successfully", user_id: result.insertId });
     } catch (error) {
-      console.error(error);
+      logError("CONTROL", "Create user error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -119,10 +120,11 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       values.push(req.params.id);
       await db.execute(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, values);
       const [newUsers] = await db.execute("SELECT * FROM users WHERE user_id = ?", [req.params.id]);
-      await logAuditAction(req.userId, 'UPDATE_USER', 'users', req.params.id, oldUser, newUsers[0], req.ip, req.get('user-agent'), req.sessionId);
+      await logAuditAction(req.userId, 'UPDATE_USER', 'users', req.params.id, oldUser, newUsers[0], req.ip, req.get('user-agent'));
+      log("CONTROL", "User updated", { by: req.userId, user_id: req.params.id });
       res.json({ message: "User updated successfully" });
     } catch (error) {
-      console.error(error);
+      logError("CONTROL", "Update user error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -133,10 +135,11 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       if (oldUsers.length === 0) return res.status(404).json({ message: "User not found" });
       if (parseInt(req.params.id) === req.userId) return res.status(400).json({ message: "Cannot delete your own account" });
       await db.execute("DELETE FROM users WHERE user_id = ?", [req.params.id]);
-      await logAuditAction(req.userId, 'DELETE_USER', 'users', req.params.id, oldUsers[0], null, req.ip, req.get('user-agent'), req.sessionId);
+      await logAuditAction(req.userId, 'DELETE_USER', 'users', req.params.id, oldUsers[0], null, req.ip, req.get('user-agent'));
+      log("CONTROL", "User deleted", { by: req.userId, user_id: req.params.id });
       res.json({ message: "User deleted successfully" });
     } catch (error) {
-      console.error(error);
+      logError("CONTROL", "Delete user error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -147,7 +150,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       const [roles] = await db.execute("SELECT * FROM roles ORDER BY role_id");
       res.json(roles);
     } catch (error) {
-      console.error(error);
+      logError("CONTROL", "List roles error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -158,7 +161,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       if (roles.length === 0) return res.status(404).json({ message: "Role not found" });
       res.json(roles[0]);
     } catch (error) {
-      console.error(error);
+      logError("CONTROL", "Get role error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -167,7 +170,6 @@ export const registerControlRoutes = (app, db, verifyToken) => {
     try {
       const {
         role_name,
-        has_prev_logged_in,
         control_management,
         booking_management,
         operation_management,
@@ -180,13 +182,12 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       const [existingRoles] = await db.execute("SELECT role_id FROM roles WHERE role_name = ?", [role_name]);
       if (existingRoles.length > 0) return res.status(400).json({ message: "Role name already exists" });
       const [result] = await db.execute(
-        `INSERT INTO roles (role_name, has_prev_logged_in, control_management, booking_management, 
+        `INSERT INTO roles (role_name, control_management, booking_management, 
                            operation_management, farm_management, procurement_management, 
                            accounting_and_finance, performance_management) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           role_name,
-          has_prev_logged_in || false,
           control_management || false,
           booking_management || false,
           operation_management || false,
@@ -196,10 +197,11 @@ export const registerControlRoutes = (app, db, verifyToken) => {
           performance_management || false
         ]
       );
-      await logAuditAction(req.userId, 'CREATE_ROLE', 'roles', result.insertId.toString(), null, req.body, req.ip, req.get('user-agent'), req.sessionId);
+      await logAuditAction(req.userId, 'CREATE_ROLE', 'roles', result.insertId.toString(), null, req.body, req.ip, req.get('user-agent'));
+      log("CONTROL", "Role created", { by: req.userId, role_id: result.insertId, role_name });
       res.status(201).json({ message: "Role created successfully", role_id: result.insertId });
     } catch (error) {
-      console.error(error);
+      logError("CONTROL", "Create role error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -210,7 +212,6 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       if (oldRoles.length === 0) return res.status(404).json({ message: "Role not found" });
       const {
         role_name,
-        has_prev_logged_in,
         control_management,
         booking_management,
         operation_management,
@@ -225,13 +226,12 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       }
       await db.execute(
         `UPDATE roles SET 
-         role_name = ?, has_prev_logged_in = ?, control_management = ?, booking_management = ?,
+         role_name = ?, control_management = ?, booking_management = ?,
          operation_management = ?, farm_management = ?, procurement_management = ?,
          accounting_and_finance = ?, performance_management = ?
          WHERE role_id = ?`,
         [
           role_name || oldRoles[0].role_name,
-          has_prev_logged_in !== undefined ? has_prev_logged_in : oldRoles[0].has_prev_logged_in,
           control_management !== undefined ? control_management : oldRoles[0].control_management,
           booking_management !== undefined ? booking_management : oldRoles[0].booking_management,
           operation_management !== undefined ? operation_management : oldRoles[0].operation_management,
@@ -243,10 +243,11 @@ export const registerControlRoutes = (app, db, verifyToken) => {
         ]
       );
       const [newRoles] = await db.execute("SELECT * FROM roles WHERE role_id = ?", [req.params.id]);
-      await logAuditAction(req.userId, 'UPDATE_ROLE', 'roles', req.params.id, oldRoles[0], newRoles[0], req.ip, req.get('user-agent'), req.sessionId);
+      await logAuditAction(req.userId, 'UPDATE_ROLE', 'roles', req.params.id, oldRoles[0], newRoles[0], req.ip, req.get('user-agent'));
+      log("CONTROL", "Role updated", { by: req.userId, role_id: req.params.id });
       res.json({ message: "Role updated successfully" });
     } catch (error) {
-      console.error(error);
+      logError("CONTROL", "Update role error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -258,10 +259,11 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       const [oldRoles] = await db.execute("SELECT * FROM roles WHERE role_id = ?", [req.params.id]);
       if (oldRoles.length === 0) return res.status(404).json({ message: "Role not found" });
       await db.execute("DELETE FROM roles WHERE role_id = ?", [req.params.id]);
-      await logAuditAction(req.userId, 'DELETE_ROLE', 'roles', req.params.id, oldRoles[0], null, req.ip, req.get('user-agent'), req.sessionId);
+      await logAuditAction(req.userId, 'DELETE_ROLE', 'roles', req.params.id, oldRoles[0], null, req.ip, req.get('user-agent'));
+      log("CONTROL", "Role deleted", { by: req.userId, role_id: req.params.id });
       res.json({ message: "Role deleted successfully" });
     } catch (error) {
-      console.error(error);
+      logError("CONTROL", "Delete role error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -271,11 +273,9 @@ export const registerControlRoutes = (app, db, verifyToken) => {
     try {
       const { limit = 100, offset = 0, entity_type, action } = req.query;
       let query = `
-        SELECT al.*, u.username, u.email, 
-               COALESCE(al.user_agent, s.user_agent) as user_agent
+        SELECT al.*, u.username, u.email, al.user_agent
         FROM audit_logs al
         LEFT JOIN users u ON al.user_id = u.user_id
-        LEFT JOIN user_sessions s ON al.session_id = s.session_id
         WHERE 1=1
       `;
       const params = [];
@@ -286,7 +286,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       const [logs] = await db.execute(query, params);
       res.json(logs);
     } catch (error) {
-      console.error(error);
+      logError("CONTROL", "Audit logs list error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -304,7 +304,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       );
       res.json(sessions);
     } catch (error) {
-      console.error(error);
+      logError("CONTROL", "Sessions list error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -312,10 +312,11 @@ export const registerControlRoutes = (app, db, verifyToken) => {
   app.delete("/api/control/sessions/:sessionId", verifyToken, async (req, res) => {
     try {
       await db.execute("UPDATE user_sessions SET is_active = FALSE WHERE session_id = ?", [req.params.sessionId]);
-      await logAuditAction(req.userId, 'TERMINATE_SESSION', 'sessions', req.params.sessionId, null, null, req.ip, req.get('user-agent'), req.sessionId);
+      await logAuditAction(req.userId, 'TERMINATE_SESSION', 'sessions', req.params.sessionId, null, null, req.ip, req.get('user-agent'));
+      log("CONTROL", "Session terminated", { by: req.userId, session_id: req.params.sessionId?.slice(0, 8) + "..." });
       res.json({ message: "Session terminated successfully" });
     } catch (error) {
-      console.error(error);
+      logError("CONTROL", "Terminate session error", error);
       res.status(500).json({ message: "Server error" });
     }
   });

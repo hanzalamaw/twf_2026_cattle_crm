@@ -1,0 +1,55 @@
+/* Main content area responds to sidebar open/close via margin-left transition.
+   Sidebar is fixed; this content needs margin so it doesn't sit under the sidebar.
+   Match Sidebar.css: .sidebar.expanded = 220px, .sidebar.collapsed = 56px. */
+
+.layout-wrapper {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.layout-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-width: 0;
+  margin-left: 220px;
+  transition: margin-left 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Sidebar collapsed: shrink content margin to match narrow sidebar */
+.layout-wrapper:has(.sidebar.collapsed) .layout-main {
+  margin-left: 56px;
+}
+
+/* No sidebar (e.g. Control Management): no margin */
+.layout-wrapper:not(:has(.sidebar)) .layout-main {
+  margin-left: 0;
+}
+
+@media (max-width: 768px) {
+  .layout-main {
+    margin-left: 56px;
+  }
+
+  .layout-wrapper:has(.sidebar.collapsed) .layout-main {
+    margin-left: 56px;
+  }
+
+  .layout-wrapper:not(:has(.sidebar)) .layout-main {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .layout-main {
+    margin-left: 52px;
+  }
+
+  .layout-wrapper:has(.sidebar.collapsed) .layout-main {
+    margin-left: 52px;
+  }
+}

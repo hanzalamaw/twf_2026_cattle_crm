@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import SubSystemSelection from './pages/SubSystemSelection';
 import MainLayout from './components/layout/MainLayout';
@@ -8,18 +8,24 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import AuthCallback from './pages/AuthCallback';
 import Control from './pages/Control';
-import Bookings from './pages/Bookings';
 import Operations from './pages/Operations';
 import Farm from './pages/Farm';
 import Procurement from './pages/Procurement';
 import Accounting from './pages/Accounting';
 import Performance from './pages/Performance';
 import Dashboard from './pages/Dashboard';
+import BookingPlaceholder from './pages/BookingPlaceholder';
+import AcceptTerms from './pages/AcceptTerms';
+import OrderManagement from './pages/OrderManagement';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading) return null;
-  if (!user) return <Navigate to="/login" />;
+  if (!user) {
+    const redirect = encodeURIComponent(location.pathname || '/');
+    return <Navigate to={`/login?redirect=${redirect}`} replace />;
+  }
   return children;
 };
 
@@ -39,6 +45,22 @@ const RequireManager = ({ children }) => {
   return children;
 };
 
+const RequireBookingDashboard = ({ children }) => {
+  const { user } = useAuth();
+  const roleId = user?.role_id;
+  const canSeeBookingDashboard = [1, 2, 3, 5, 7].includes(roleId);
+  if (!canSeeBookingDashboard) return <Navigate to="/bookings" replace />;
+  return children;
+};
+
+const TermsOrHome = () => {
+  const { user } = useAuth();
+  if (user && !user.has_prev_logged_in) {
+    return <Navigate to="/accept-terms" replace />;
+  }
+  return <SubSystemSelection />;
+};
+
 function App() {
   return (
     <AuthProvider>
@@ -49,10 +71,16 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+
+          <Route path="/accept-terms" element={
+            <ProtectedRoute>
+              <AcceptTerms />
+            </ProtectedRoute>
+          } />
           
           <Route path="/" element={
             <ProtectedRoute>
-              <SubSystemSelection />
+              <TermsOrHome />
             </ProtectedRoute>
           } />
 
@@ -65,7 +93,14 @@ function App() {
           </Route>
 
           <Route path="/bookings" element={<ProtectedRoute><RequirePermission permission="booking_management"><MainLayout systemName="Bookings Management" /></RequirePermission></ProtectedRoute>}>
-            <Route index element={<Bookings />} />
+            <Route index element={<Navigate to="/bookings/queries" replace />} />
+            <Route path="dashboard" element={<RequireBookingDashboard><Dashboard /></RequireBookingDashboard>} />
+            <Route path="new-query" element={<BookingPlaceholder title="New Query" />} />
+            <Route path="new-order" element={<BookingPlaceholder title="New Order" />} />
+            <Route path="queries" element={<BookingPlaceholder title="Query Management" />} />
+            <Route path="orders" element={<OrderManagement />} />
+            <Route path="transactions" element={<BookingPlaceholder title="Transactions" />} />
+            <Route path="expenses" element={<BookingPlaceholder title="Expenses" />} />
           </Route>
 
           <Route path="/operations" element={<ProtectedRoute><RequirePermission permission="operation_management"><MainLayout systemName="Operations Management" /></RequirePermission></ProtectedRoute>}>

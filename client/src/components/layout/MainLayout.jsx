@@ -1,18 +1,13 @@
 import { Outlet, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Sidebar from '../Sidebar';
+import './MainLayout.css';
 
 const MainLayout = ({ systemName, showSidebar = true }) => {
   const { logout } = useAuth();
 
   const content = (
-    <div style={{
-      flex: 1,
-      display: 'flex',
-      flexDirection: 'column',
-      minWidth: 0,
-      marginLeft: 0,
-    }}>
+    <div className="layout-main" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <header style={{
         padding: '0 24px',
         background: '#FFFFFF',
@@ -31,7 +26,7 @@ const MainLayout = ({ systemName, showSidebar = true }) => {
           <button type="button" onClick={logout} style={{ padding: '6px 12px', fontSize: '13px', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Logout</button>
         </div>
       </header>
-      <main style={{ flex: 1, overflow: 'auto', padding: 0, boxSizing: 'border-box' }}>
+      <main style={{ flex: 1, overflow: 'auto', padding: 0, boxSizing: 'border-box', minHeight: 0 }}>
         <Outlet />
       </main>
     </div>
@@ -50,8 +45,10 @@ const MainLayout = ({ systemName, showSidebar = true }) => {
       boxSizing: 'border-box',
       overflow: 'hidden',
     }}>
-      {showSidebar && <Sidebar />}
-      {content}
+      <div className="layout-wrapper" style={{ display: 'flex', flex: 1, minHeight: 0, width: '100%' }}>
+        {showSidebar && <Sidebar />}
+        {content}
+      </div>
     </div>
   );
 };

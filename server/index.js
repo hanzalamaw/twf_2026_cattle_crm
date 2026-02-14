@@ -11,6 +11,9 @@ import { registerRegisterRoutes } from "./routes/register.js";
 import { registerPasswordResetRoutes } from "./routes/passwordReset.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerControlRoutes } from "./routes/control.js";
+import { registerBookingRoutes } from "./routes/booking.js";
+import { log, logError } from "./utils/logger.js";
+import { writeAuditLog } from "./utils/auditLog.js";
 
 dotenv.config();
 
@@ -35,10 +38,12 @@ const startServer = async () => {
     // ---------- Login ----------
     app.post("/api/login", async (req, res) => {
       const { username, password } = req.body;
+      log("AUTH", "Login attempt", { username: username ? `${username.slice(0, 3)}***` : null });
 
       try {
         const [rows] = await db.execute(
-          `SELECT u.user_id, u.username, u.email, u.password, u.role_id, r.role_name,
+          `SELECT u.user_id, u.username, u.email, u.password, u.role_id, u.terms_accepted_at, u.has_prev_logged_in,
+            r.role_name,
             r.control_management, r.booking_management, r.operation_management,
             r.farm_management, r.procurement_management, r.accounting_and_finance, r.performance_management
            FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.username = ?`,
@@ -46,6 +51,8 @@ const startServer = async () => {
         );
 
         if (rows.length === 0) {
+          log("AUTH", "Login failed: user not found", { username: username ? `${username.slice(0, 3)}***` : null });
+          await writeAuditLog(db, { action: "LOGIN_FAILED", entity_type: "auth", new_values: { reason: "user_not_found" }, ip_address: req.ip, user_agent: req.get("user-agent") });
           return res.status(401).json({ message: "Invalid credentials" });
         }
 
@@ -53,6 +60,8 @@ const startServer = async () => {
         const isMatch = await bcrypt.compare(password, user.password);
 
         if (!isMatch) {
+          log("AUTH", "Login failed: wrong password", { username: user.username });
+          await writeAuditLog(db, { action: "LOGIN_FAILED", entity_type: "auth", new_values: { reason: "wrong_password", username: user.username }, ip_address: req.ip, user_agent: req.get("user-agent") });
           return res.status(401).json({ message: "Invalid credentials" });
         }
 
@@ -67,6 +76,17 @@ const startServer = async () => {
            VALUES (?, ?, ?, ?, ?)`,
           [sessionId, user.user_id, req.ip, req.get('user-agent'), expiresAt]
         );
+
+        await writeAuditLog(db, {
+          user_id: user.user_id,
+          session_id: sessionId,
+          action: "LOGIN",
+          entity_type: "auth",
+          entity_id: String(user.user_id),
+          new_values: { username: user.username },
+          ip_address: req.ip,
+          user_agent: req.get("user-agent")
+        });
 
         const permissions = {
           control_management: !!user.control_management,
@@ -84,6 +104,7 @@ const startServer = async () => {
           { expiresIn: "24h" }
         );
 
+        log("AUTH", "Login success", { user_id: user.user_id, username: user.username });
         res.json({
           token,
           sessionId,
@@ -93,20 +114,24 @@ const startServer = async () => {
             email: user.email,
             role: user.role_name,
             role_id: user.role_id,
-            permissions
+            permissions,
+            terms_accepted_at: user.terms_accepted_at || null,
+            has_prev_logged_in: user.has_prev_logged_in != null ? !!user.has_prev_logged_in : (user.terms_accepted_at != null)
           }
         });
       } catch (error) {
-        console.error(error);
+        logError("AUTH", "Login error", error);
         res.status(500).json({ message: "Server error" });
       }
     });
 
     // ---------- Current user (for OAuth callback and session load) ----------
     app.get("/api/me", verifyToken, async (req, res) => {
+      log("AUTH", "Current user loaded", { user_id: req.userId });
       try {
         const [rows] = await db.execute(
-          `SELECT u.user_id, u.username, u.email, u.role_id, r.role_name,
+          `SELECT u.user_id, u.username, u.email, u.role_id, u.terms_accepted_at, u.has_prev_logged_in,
+            r.role_name,
             r.control_management, r.booking_management, r.operation_management,
             r.farm_management, r.procurement_management, r.accounting_and_finance, r.performance_management
            FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.user_id = ?`,
@@ -130,11 +155,70 @@ const startServer = async () => {
             email: user.email,
             role: user.role_name,
             role_id: user.role_id,
-            permissions
+            permissions,
+            terms_accepted_at: user.terms_accepted_at || null,
+            has_prev_logged_in: user.has_prev_logged_in != null ? !!user.has_prev_logged_in : (user.terms_accepted_at != null)
           }
         });
       } catch (error) {
-        console.error(error);
+        logError("AUTH", "/api/me error", error);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // ---------- Accept Terms (first-time login) ----------
+    app.post("/api/accept-terms", verifyToken, async (req, res) => {
+      try {
+        const userId = req.userId;
+        const [userRows] = await db.execute("SELECT role_id FROM users WHERE user_id = ?", [userId]);
+        if (userRows.length === 0) return res.status(404).json({ message: "User not found" });
+        const roleId = userRows[0].role_id;
+
+        await db.execute("UPDATE users SET terms_accepted_at = NOW(), has_prev_logged_in = 1 WHERE user_id = ?", [userId]);
+
+        await writeAuditLog(db, {
+          user_id: userId,
+          action: "TERMS_ACCEPTED",
+          entity_type: "auth",
+          entity_id: String(userId),
+          new_values: { role_id: roleId },
+          ip_address: req.ip,
+          user_agent: req.get("user-agent")
+        });
+        log("AUTH", "Terms accepted", { user_id: userId, role_id: roleId });
+
+        const [rows] = await db.execute(
+          `SELECT u.user_id, u.username, u.email, u.role_id, u.terms_accepted_at, u.has_prev_logged_in,
+            r.role_name,
+            r.control_management, r.booking_management, r.operation_management,
+            r.farm_management, r.procurement_management, r.accounting_and_finance, r.performance_management
+           FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.user_id = ?`,
+          [userId]
+        );
+        const u = rows[0];
+        const permissions = {
+          control_management: !!u.control_management,
+          booking_management: !!u.booking_management,
+          operation_management: !!u.operation_management,
+          farm_management: !!u.farm_management,
+          procurement_management: !!u.procurement_management,
+          accounting_and_finance: !!u.accounting_and_finance,
+          performance_management: true
+        };
+        res.json({
+          user: {
+            id: u.user_id,
+            username: u.username,
+            email: u.email,
+            role: u.role_name,
+            role_id: u.role_id,
+            permissions,
+            terms_accepted_at: u.terms_accepted_at,
+            has_prev_logged_in: !!u.has_prev_logged_in
+          }
+        });
+      } catch (error) {
+        logError("AUTH", "Accept terms error", error);
         res.status(500).json({ message: "Server error" });
       }
     });
@@ -143,13 +227,23 @@ const startServer = async () => {
     app.post("/api/logout", async (req, res) => {
       const token = req.headers.authorization?.split(' ')[1] || req.headers['x-access-token'];
       if (!token) {
+        log("AUTH", "Logout (no token)");
         return res.status(200).json({ message: "Logged out" });
       }
       try {
         const decoded = jwt.verify(token, JWT_SECRET);
         if (decoded.id) {
-          // Deactivate all active sessions for this user
           await db.execute("UPDATE user_sessions SET is_active = FALSE WHERE user_id = ? AND is_active = TRUE", [decoded.id]);
+          await writeAuditLog(db, {
+            user_id: decoded.id,
+            session_id: decoded.sessionId || null,
+            action: "LOGOUT",
+            entity_type: "auth",
+            entity_id: String(decoded.id),
+            ip_address: req.ip,
+            user_agent: req.get("user-agent")
+          });
+          log("AUTH", "Logout success", { user_id: decoded.id });
         }
         res.json({ message: "Logged out successfully" });
       } catch (error) {
@@ -162,15 +256,17 @@ const startServer = async () => {
     registerPasswordResetRoutes(app, db);
     registerOAuthRoutes(app, db, JWT_SECRET);
     registerControlRoutes(app, db, verifyToken);
+    registerBookingRoutes(app, db, verifyToken);
 
     // ---------- 404 ----------
     app.use((req, res) => {
-      console.log(`Route not found: ${req.method} ${req.path}`);
+      log("SERVER", "Route not found", { method: req.method, path: req.path });
       res.status(404).json({ message: `Not Found - ${req.path}` });
     });
 
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => {
+      log("SERVER", "Server started", { port: PORT });
       console.log(`Server running on http://localhost:${PORT}`);
       console.log('Auth: POST /api/login, POST /api/logout');
       console.log('  POST /api/register, POST /api/forgot-password, GET /api/reset-password/validate, POST /api/reset-password');
@@ -178,7 +274,7 @@ const startServer = async () => {
       console.log('Control: GET/POST/PUT/DELETE /api/control/users, /api/control/roles, /api/control/audit-logs, /api/control/sessions');
     });
   } catch (error) {
-    console.error("Database connection failed:", error.message);
+    logError("SERVER", "Database connection failed", error);
     process.exit(1);
   }
 };

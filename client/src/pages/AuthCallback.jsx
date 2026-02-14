@@ -24,15 +24,16 @@ const AuthCallback = () => {
         if (res.ok) {
           const data = await res.json();
           login(data.user, token);
-          navigate('/');
+          navigate(data.user.has_prev_logged_in ? '/' : '/accept-terms');
           return;
         }
       } catch (e) { /* fallback below */ }
       if (userParam) {
         try {
           const user = JSON.parse(decodeURIComponent(userParam));
-          login({ ...user, permissions: { control_management: true, booking_management: true, operation_management: true, farm_management: true, procurement_management: true, accounting_and_finance: true, performance_management: true }, role_id: 1 }, token);
-          navigate('/');
+          const userWithPerms = { ...user, permissions: { control_management: true, booking_management: true, operation_management: true, farm_management: true, procurement_management: true, accounting_and_finance: true, performance_management: true }, role_id: user.role_id || 1 };
+          login(userWithPerms, token);
+          navigate(user.has_prev_logged_in ? '/' : '/accept-terms');
         } catch (error) {
           navigate('/login?error=oauth_failed');
         }

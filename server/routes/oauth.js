@@ -1,9 +1,10 @@
-import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as MicrosoftStrategy } from "passport-microsoft";
+import { log, logError } from "../utils/logger.js";
+import { writeAuditLog } from "../utils/auditLog.js";
 
 /**
  * OAuth (Google, Microsoft, Apple) routes and Passport strategies.
@@ -22,27 +23,23 @@ export const registerOAuthRoutes = (app, db, JWT_SECRET) => {
     }, async (accessToken, refreshToken, profile, done) => {
       try {
         const email = profile.emails?.[0]?.value;
-        let [users] = await db.execute(
+        if (!email) {
+          logError("OAUTH_GOOGLE", "No email in profile – user must grant email scope", null);
+          return done(new Error("Google did not provide an email. Please grant email access."), null);
+        }
+        const [users] = await db.execute(
           "SELECT u.*, r.role_name FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.email = ?",
           [email]
         );
-        let user = users[0];
+        const user = users[0];
         if (!user) {
-          const [roleRows] = await db.execute("SELECT role_id FROM roles ORDER BY role_id LIMIT 1");
-          const defaultRoleId = roleRows.length > 0 ? roleRows[0].role_id : 1;
-          const username = email.split('@')[0] + Math.floor(Math.random() * 1000);
-          await db.execute(
-            "INSERT INTO users (username, email, password, role_id) VALUES (?, ?, ?, ?)",
-            [username, email, await bcrypt.hash(Math.random().toString(36), 10), defaultRoleId]
-          );
-          [users] = await db.execute(
-            "SELECT u.*, r.role_name FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.email = ?",
-            [email]
-          );
-          user = users[0];
+          log("OAUTH_GOOGLE", "Sign-in rejected: user not in database (admin must add user)", { email });
+          return done(new Error("USER_NOT_FOUND"), null);
         }
+        log("OAUTH_GOOGLE", "Existing user signed in via Google", { email: user.email, user_id: user.user_id });
         return done(null, user);
       } catch (error) {
+        logError("OAUTH_GOOGLE", "Strategy error", error);
         return done(error, null);
       }
     }));
@@ -56,34 +53,30 @@ export const registerOAuthRoutes = (app, db, JWT_SECRET) => {
       tenant: process.env.MICROSOFT_TENANT || "common"
     }, async (accessToken, refreshToken, profile, done) => {
       try {
-        const email = profile.emails?.[0]?.value || profile._json.mail || profile._json.userPrincipalName;
-        let [users] = await db.execute(
+        const email = profile.emails?.[0]?.value || profile._json?.mail || profile._json?.userPrincipalName;
+        if (!email) {
+          logError("OAUTH_MICROSOFT", "No email in profile", null);
+          return done(new Error("Microsoft did not provide an email."), null);
+        }
+        const [users] = await db.execute(
           "SELECT u.*, r.role_name FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.email = ?",
           [email]
         );
-        let user = users[0];
+        const user = users[0];
         if (!user) {
-          const [roleRows] = await db.execute("SELECT role_id FROM roles ORDER BY role_id LIMIT 1");
-          const defaultRoleId = roleRows.length > 0 ? roleRows[0].role_id : 1;
-          const username = email.split('@')[0] + Math.floor(Math.random() * 1000);
-          await db.execute(
-            "INSERT INTO users (username, email, password, role_id) VALUES (?, ?, ?, ?)",
-            [username, email, await bcrypt.hash(Math.random().toString(36), 10), defaultRoleId]
-          );
-          [users] = await db.execute(
-            "SELECT u.*, r.role_name FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.email = ?",
-            [email]
-          );
-          user = users[0];
+          log("OAUTH_MICROSOFT", "Sign-in rejected: user not in database (admin must add user)", { email });
+          return done(new Error("USER_NOT_FOUND"), null);
         }
+        log("OAUTH_MICROSOFT", "Existing user signed in via Microsoft", { email: user.email, user_id: user.user_id });
         return done(null, user);
       } catch (error) {
+        logError("OAUTH_MICROSOFT", "Strategy error", error);
         return done(error, null);
       }
     }));
   }
 
-  const redirectWithToken = async (req, res, user) => {
+  const redirectWithToken = async (req, res, user, provider) => {
     try {
       await db.execute("UPDATE users SET last_login_at = NOW() WHERE user_id = ?", [user.user_id]);
       const sessionId = crypto.randomBytes(32).toString('hex');
@@ -94,12 +87,23 @@ export const registerOAuthRoutes = (app, db, JWT_SECRET) => {
          VALUES (?, ?, ?, ?, ?)`,
         [sessionId, user.user_id, req.ip, req.get('user-agent'), expiresAt]
       );
+      await writeAuditLog(db, {
+        user_id: user.user_id,
+        session_id: sessionId,
+        action: "LOGIN_OAUTH",
+        entity_type: "auth",
+        entity_id: String(user.user_id),
+        new_values: { provider, email: user.email },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent")
+      });
       const token = jwt.sign(
         { id: user.user_id, username: user.username, role: user.role_name, sessionId },
         JWT_SECRET,
         { expiresIn: "24h" }
       );
       const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+      log("OAUTH", `${provider} sign-in success, redirecting to client`, { user_id: user.user_id, email: user.email });
       res.redirect(`${clientUrl}/auth/callback?token=${token}&user=${encodeURIComponent(JSON.stringify({
         id: user.user_id,
         username: user.username,
@@ -107,23 +111,73 @@ export const registerOAuthRoutes = (app, db, JWT_SECRET) => {
         role: user.role_name
       }))}`);
     } catch (error) {
+      logError("OAUTH", `${provider} redirect/session failed`, error);
       res.redirect(`${process.env.CLIENT_URL || "http://localhost:5173"}/login?error=oauth_failed`);
     }
   };
 
-  app.get("/api/auth/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+  app.get("/api/auth/google", (req, res, next) => {
+    log("OAUTH", "Google sign-in started");
+    passport.authenticate("google", { scope: ["profile", "email"] })(req, res, next);
+  });
   app.get("/api/auth/google/callback",
-    passport.authenticate("google", { session: false }),
-    async (req, res) => { await redirectWithToken(req, res, req.user); }
+    (req, res, next) => {
+      log("OAUTH", "Google callback hit");
+      passport.authenticate("google", { session: false }, async (err, user) => {
+        if (err) {
+          logError("OAUTH", "Google callback auth failed", err);
+          await writeAuditLog(db, {
+            action: err.message === "USER_NOT_FOUND" ? "OAUTH_USER_NOT_FOUND" : "OAUTH_FAILED",
+            entity_type: "auth",
+            new_values: { provider: "Google", reason: err.message },
+            ip_address: req.ip,
+            user_agent: req.get("user-agent")
+          });
+          const errorParam = err.message === "USER_NOT_FOUND" ? "user_not_found" : "oauth_failed";
+          return res.redirect(`${process.env.CLIENT_URL || "http://localhost:5173"}/login?error=${errorParam}`);
+        }
+        if (!user) {
+          log("OAUTH", "Google callback: no user");
+          await writeAuditLog(db, { action: "OAUTH_FAILED", entity_type: "auth", new_values: { provider: "Google" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+          return res.redirect(`${process.env.CLIENT_URL || "http://localhost:5173"}/login?error=oauth_failed`);
+        }
+        redirectWithToken(req, res, user, "Google");
+      })(req, res, next);
+    }
   );
 
-  app.get("/api/auth/microsoft", passport.authenticate("microsoft", { scope: ["user.read"] }));
+  app.get("/api/auth/microsoft", (req, res, next) => {
+    log("OAUTH", "Microsoft sign-in started");
+    passport.authenticate("microsoft", { scope: ["user.read"] })(req, res, next);
+  });
   app.get("/api/auth/microsoft/callback",
-    passport.authenticate("microsoft", { session: false }),
-    async (req, res) => { await redirectWithToken(req, res, req.user); }
+    (req, res, next) => {
+      log("OAUTH", "Microsoft callback hit");
+      passport.authenticate("microsoft", { session: false }, async (err, user) => {
+        if (err) {
+          logError("OAUTH", "Microsoft callback auth failed", err);
+          await writeAuditLog(db, {
+            action: err.message === "USER_NOT_FOUND" ? "OAUTH_USER_NOT_FOUND" : "OAUTH_FAILED",
+            entity_type: "auth",
+            new_values: { provider: "Microsoft", reason: err.message },
+            ip_address: req.ip,
+            user_agent: req.get("user-agent")
+          });
+          const errorParam = err.message === "USER_NOT_FOUND" ? "user_not_found" : "oauth_failed";
+          return res.redirect(`${process.env.CLIENT_URL || "http://localhost:5173"}/login?error=${errorParam}`);
+        }
+        if (!user) {
+          log("OAUTH", "Microsoft callback: no user");
+          await writeAuditLog(db, { action: "OAUTH_FAILED", entity_type: "auth", new_values: { provider: "Microsoft" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+          return res.redirect(`${process.env.CLIENT_URL || "http://localhost:5173"}/login?error=oauth_failed`);
+        }
+        redirectWithToken(req, res, user, "Microsoft");
+      })(req, res, next);
+    }
   );
 
   app.get("/api/auth/apple", (req, res) => {
+    log("OAUTH", "Apple sign-in started");
     const clientId = process.env.APPLE_CLIENT_ID;
     const redirectUri = `${process.env.SERVER_URL || "http://localhost:5000"}/api/auth/apple/callback`;
     if (!clientId) {
@@ -134,6 +188,7 @@ export const registerOAuthRoutes = (app, db, JWT_SECRET) => {
   });
 
   app.post("/api/auth/apple/callback", async (req, res) => {
+    log("OAUTH", "Apple callback hit (not fully implemented)");
     res.redirect(`${process.env.CLIENT_URL || "http://localhost:5173"}/login?error=apple_oauth_not_fully_implemented`);
   });
 };

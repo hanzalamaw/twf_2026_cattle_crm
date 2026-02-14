@@ -68,6 +68,30 @@ const PerformanceIcon = () => (
   </svg>
 );
 
+const QueryIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+  </svg>
+);
+
+const OrderIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+  </svg>
+);
+
+const TransactionsIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+  </svg>
+);
+
+const ExpensesIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+  </svg>
+);
+
 const ChevronIcon = ({ direction = 'right' }) => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: direction === 'left' ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s ease' }}>
     <polyline points="9 18 15 12 9 6"/>
@@ -93,8 +117,18 @@ const MENU_ITEMS = [
   { id: 'performance', label: 'Performance Management', icon: <PerformanceIcon />, path: '/performance', permission: 'performance_management' },
 ];
 
+const BOOKING_MENU_ITEMS = [
+  { id: 'bm-dashboard', label: 'Dashboard', icon: <DashboardIcon />, path: '/bookings/dashboard', managersOnly: true },
+  { id: 'bm-new-query', label: 'New Query', icon: <QueryIcon />, path: '/bookings/new-query', permission: 'booking_management' },
+  { id: 'bm-new-order', label: 'New Order', icon: <OrderIcon />, path: '/bookings/new-order', permission: 'booking_management' },
+  { id: 'bm-queries', label: 'Query Management', icon: <QueryIcon />, path: '/bookings/queries', permission: 'booking_management' },
+  { id: 'bm-orders', label: 'Order Management', icon: <OrderIcon />, path: '/bookings/orders', permission: 'booking_management' },
+  { id: 'bm-transactions', label: 'Transactions', icon: <TransactionsIcon />, path: '/bookings/transactions', permission: 'booking_management' },
+  { id: 'bm-expenses', label: 'Expenses', icon: <ExpensesIcon />, path: '/bookings/expenses', permission: 'booking_management' },
+];
+
 function Sidebar() {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
@@ -102,9 +136,14 @@ function Sidebar() {
   const permissions = user?.permissions || {};
   const roleId = user?.role_id;
   const isManager = [3, 5, 7].includes(roleId);
+  const isBookingContext = location.pathname.startsWith('/bookings');
 
-  const visibleItems = MENU_ITEMS.filter((item) => {
-    if (item.managersOnly) return isManager;
+  const isAdminOrManager = [1, 2, 3, 5, 7].includes(roleId);
+  const items = isBookingContext ? BOOKING_MENU_ITEMS : MENU_ITEMS;
+  const visibleItems = items.filter((item) => {
+    if (item.managersOnly) {
+      return isBookingContext ? isAdminOrManager : isManager;
+    }
     if (item.permission) return item.permission === 'performance_management' ? true : !!permissions[item.permission];
     return true;
   });
@@ -143,7 +182,7 @@ function Sidebar() {
       </div>
 
       <nav className="sidebar-nav">
-        <span className="nav-section-label">{isExpanded ? 'MANAGEMENT' : ''}</span>
+        <span className="nav-section-label">{isExpanded ? (isBookingContext ? 'BOOKING MANAGEMENT' : 'MANAGEMENT') : ''}</span>
         <ul className="nav-list">
           {visibleItems.map((item) => (
             <li key={item.id} className={`nav-item ${isActive(item.path) ? 'active' : ''}`}>

@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { log, logError } from "../utils/logger.js";
 
 /**
  * Returns middleware that verifies JWT and attaches userId, userRole, sessionId to req.
@@ -10,6 +11,7 @@ export const createVerifyToken = (db, JWT_SECRET) => {
     const token = req.headers.authorization?.split(' ')[1] || req.headers['x-access-token'];
 
     if (!token) {
+      log("AUTH", "Request rejected: no token", { path: req.path });
       return res.status(401).json({ message: 'No token provided' });
     }
 
@@ -23,11 +25,13 @@ export const createVerifyToken = (db, JWT_SECRET) => {
         );
 
         if (sessions.length === 0 || !sessions[0].is_active) {
+          log("AUTH", "Request rejected: session terminated", { user_id: decoded.id, path: req.path });
           return res.status(401).json({ message: 'Session has been terminated' });
         }
 
         if (new Date(sessions[0].expires_at) < new Date()) {
           await db.execute("UPDATE user_sessions SET is_active = FALSE WHERE session_id = ?", [decoded.sessionId]);
+          log("AUTH", "Request rejected: session expired", { user_id: decoded.id, path: req.path });
           return res.status(401).json({ message: 'Session has expired' });
         }
 
@@ -42,6 +46,7 @@ export const createVerifyToken = (db, JWT_SECRET) => {
       req.sessionId = decoded.sessionId;
       next();
     } catch (error) {
+      log("AUTH", "Request rejected: invalid token", { path: req.path });
       return res.status(401).json({ message: 'Invalid token' });
     }
   };
