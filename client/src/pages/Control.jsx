@@ -102,6 +102,7 @@ const Control = () => {
   const userModalMounted = useRef(false);
   const roleModalMounted = useRef(false);
   const auditModalMounted = useRef(false);
+  const [showUserPassword, setShowUserPassword] = useState(false);
   const [userFormData, setUserFormData] = useState({
     username: '',
     email: '',
@@ -340,6 +341,7 @@ const Control = () => {
   const openUserModal = (user = null) => {
     if (user) {
       setEditingUser(user);
+      setShowUserPassword(false);
       setUserFormData({
         username: user.username,
         email: user.email,
@@ -352,6 +354,7 @@ const Control = () => {
       });
     } else {
       setEditingUser(null);
+      setShowUserPassword(false);
       setUserFormData({
         username: '',
         email: '',
@@ -1261,6 +1264,7 @@ const Control = () => {
           onClose={() => {
             setShowUserModal(false);
             setEditingUser(null);
+            setShowUserPassword(false);
           }}
           title={editingUser ? 'Edit User' : 'Add User'}
           hasAnimated={userModalMounted.current}
@@ -1323,19 +1327,19 @@ const Control = () => {
               />
             </div>
 
-            <div style={{ marginBottom: '20px' }}>
+            <div style={{ marginBottom: '20px', position: 'relative' }}>
               <label style={{ display: 'block', fontSize: '12px', color: '#333', marginBottom: '6px', fontWeight: '500' }}>
                 Password {!editingUser && <span style={{ color: '#FF5722' }}>*</span>}
               </label>
               <input
-                type="password"
+                type={showUserPassword ? 'text' : 'password'}
                 value={userFormData.password}
                 onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
                 required={!editingUser}
                 placeholder={editingUser ? 'Leave blank to keep current password' : ''}
                 style={{
                   width: '100%',
-                  padding: '10px 12px',
+                  padding: '10px 40px 10px 12px',
                   borderRadius: '8px',
                   border: '1px solid #E0E0E0',
                   fontSize: '13px',
@@ -1347,6 +1351,30 @@ const Control = () => {
                 onFocus={(e) => e.target.style.borderColor = '#1976D2'}
                 onBlur={(e) => e.target.style.borderColor = '#E0E0E0'}
               />
+              <button
+                type="button"
+                onClick={() => setShowUserPassword(!showUserPassword)}
+                style={{
+                  position: 'absolute',
+                  right: '10px',
+                  top: '32px',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#888',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0
+                }}
+                title={showUserPassword ? 'Hide password' : 'Show password'}
+              >
+                {showUserPassword ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                )}
+              </button>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
@@ -1722,13 +1750,15 @@ const Control = () => {
               const isUpdate = actionUpper.includes('UPDATE') || actionUpper.includes('EDIT');
               const isCreate = actionUpper.includes('CREATE') || actionUpper.includes('ADD');
               const isDelete = actionUpper.includes('DELETE') || actionUpper.includes('REMOVE');
+              const isCancelOrder = actionUpper === 'CANCEL_ORDER';
+              const isOrderExport = actionUpper === 'ORDER_EXPORT';
 
               return (
                 <div>
-                  {isUpdate && oldValues && newValues && (
+                  {isUpdate && (oldValues || newValues) && (
                     <div style={{ marginBottom: '20px' }}>
                       <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#333' }}>
-                        Changes Made
+                        Changes Made (before → after)
                       </h3>
                       <div style={{
                         background: '#F9F9F9',
@@ -1741,42 +1771,93 @@ const Control = () => {
                           <thead>
                             <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
                               <th style={{ textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' }}>Field</th>
-                              <th style={{ textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' }}>Before</th>
-                              <th style={{ textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' }}>After</th>
+                              <th style={{ textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' }}>Old value (replaced)</th>
+                              <th style={{ textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' }}>New value (replaced with)</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {Object.keys(newValues).map(key => {
-                              const oldVal = oldValues[key];
-                              const newVal = newValues[key];
+                            {Object.keys({ ...(oldValues || {}), ...(newValues || {}) }).map(key => {
+                              const oldVal = oldValues && oldValues[key];
+                              const newVal = newValues && newValues[key];
                               const changed = oldVal !== newVal;
-                              
                               return (
                                 <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
                                   <td style={{ padding: '8px', fontSize: '12px', fontWeight: '500', color: '#333' }}>
                                     {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                                   </td>
-                                  <td style={{ 
-                                    padding: '8px', 
-                                    fontSize: '12px',
-                                    color: changed ? '#C62828' : '#666',
-                                    textDecoration: changed ? 'line-through' : 'none'
-                                  }}>
-                                    {oldVal !== null && oldVal !== undefined ? String(oldVal) : 'N/A'}
+                                  <td style={{ padding: '8px', fontSize: '12px', color: changed ? '#C62828' : '#666', textDecoration: changed ? 'line-through' : 'none' }}>
+                                    {oldVal !== null && oldVal !== undefined ? String(oldVal) : '—'}
                                   </td>
-                                  <td style={{ 
-                                    padding: '8px', 
-                                    fontSize: '12px',
-                                    color: changed ? '#2E7D32' : '#666',
-                                    fontWeight: changed ? '500' : '400'
-                                  }}>
-                                    {newVal !== null && newVal !== undefined ? String(newVal) : 'N/A'}
+                                  <td style={{ padding: '8px', fontSize: '12px', color: changed ? '#2E7D32' : '#666', fontWeight: changed ? '500' : '400' }}>
+                                    {newVal !== null && newVal !== undefined ? String(newVal) : '—'}
                                   </td>
                                 </tr>
                               );
                             })}
                           </tbody>
                         </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {isCancelOrder && newValues && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#333' }}>
+                        Cancelled order details
+                      </h3>
+                      <div style={{ background: '#FFF5F5', borderRadius: '8px', padding: '16px', maxHeight: '400px', overflow: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
+                              <th style={{ textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' }}>Field</th>
+                              <th style={{ textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' }}>Value</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(newValues).map(([key, value]) => (
+                              <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
+                                <td style={{ padding: '8px', fontSize: '12px', fontWeight: '500', color: '#333' }}>
+                                  {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                </td>
+                                <td style={{ padding: '8px', fontSize: '12px', color: '#333' }}>
+                                  {value !== null && value !== undefined ? String(value) : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {isOrderExport && newValues && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#333' }}>
+                        Export summary
+                      </h3>
+                      <div style={{ background: '#F0F7FF', borderRadius: '8px', padding: '16px' }}>
+                        <div style={{ fontSize: '13px', color: '#333', lineHeight: '1.7' }}>
+                          <div><strong>Rows exported:</strong> {newValues.count ?? 0}</div>
+                          {newValues.order_ids && newValues.order_ids.length > 0 ? (
+                            <div style={{ marginTop: '8px' }}>
+                              <strong>Selected order IDs:</strong>
+                              <div style={{ marginTop: '4px', fontFamily: 'monospace', fontSize: '12px', wordBreak: 'break-all' }}>
+                                {newValues.order_ids.join(', ')}
+                              </div>
+                            </div>
+                          ) : newValues.filters && Object.keys(newValues.filters).length > 0 ? (
+                            <div style={{ marginTop: '8px' }}>
+                              <strong>Filters applied:</strong>
+                              <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                                {Object.entries(newValues.filters).map(([k, v]) => (
+                                  <li key={k}>{k.replace(/_/g, ' ')}: {String(v)}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : (
+                            <div style={{ marginTop: '8px', color: '#2E7D32' }}>All data exported (no filters, no selection)</div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1853,7 +1934,7 @@ const Control = () => {
                     </div>
                   )}
 
-                  {!isUpdate && !isCreate && !isDelete && (
+                  {!isUpdate && !isCreate && !isDelete && !isCancelOrder && !isOrderExport && (
                     <div style={{ marginBottom: '20px' }}>
                       <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#333' }}>
                         Action Details

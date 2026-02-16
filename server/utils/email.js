@@ -88,3 +88,32 @@ export const sendResetLinkEmail = async (email, resetLink) => {
     return false;
   }
 };
+
+export const sendLoginNotificationEmail = async (email) => {
+  try {
+    const transporter = createEmailTransporter();
+    if (!transporter) {
+      console.warn("Email not configured. Please set SMTP_USER and SMTP_PASS in .env file");
+      return false;
+    }
+    const mailOptions = {
+      from: process.env.SMTP_FROM || process.env.EMAIL_USER || "noreply@twfcattlecrm.com",
+      to: email,
+      subject: "You just logged in - TWF Cattle CRM",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #FF5722;">Login notification</h2>
+          <p>You just logged in to your TWF Cattle CRM account.</p>
+          <p style="color: #999; font-size: 12px; margin-top: 30px;">If this wasn't you, please change your password and contact support.</p>
+        </div>
+      `,
+      text: "You just logged in to your TWF Cattle CRM account.\n\nIf this wasn't you, please change your password and contact support."
+    };
+    const info = await transporter.sendMail(mailOptions);
+    console.log("Login notification email sent:", info.messageId);
+    return true;
+  } catch (error) {
+    console.error("Error sending login notification email:", error.message);
+    return false;
+  }
+};

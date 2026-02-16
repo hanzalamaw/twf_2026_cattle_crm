@@ -14,6 +14,7 @@ import { registerControlRoutes } from "./routes/control.js";
 import { registerBookingRoutes } from "./routes/booking.js";
 import { log, logError } from "./utils/logger.js";
 import { writeAuditLog } from "./utils/auditLog.js";
+import { sendLoginNotificationEmail } from "./utils/email.js";
 
 dotenv.config();
 
@@ -40,6 +41,11 @@ const startServer = async () => {
       const { username, password } = req.body;
       log("AUTH", "Login attempt", { username: username ? `${username.slice(0, 3)}***` : null });
 
+      if (!username || typeof username !== "string" || !password || typeof password !== "string") {
+        await writeAuditLog(db, { action: "LOGIN_FAILED", entity_type: "auth", new_values: { reason: "invalid_request" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+        return res.status(400).json({ message: "Please enter username and password.", reason: "invalid_request" });
+      }
+
       try {
         const [rows] = await db.execute(
           `SELECT u.user_id, u.username, u.email, u.password, u.role_id, u.terms_accepted_at, u.has_prev_logged_in,
@@ -53,7 +59,7 @@ const startServer = async () => {
         if (rows.length === 0) {
           log("AUTH", "Login failed: user not found", { username: username ? `${username.slice(0, 3)}***` : null });
           await writeAuditLog(db, { action: "LOGIN_FAILED", entity_type: "auth", new_values: { reason: "user_not_found" }, ip_address: req.ip, user_agent: req.get("user-agent") });
-          return res.status(401).json({ message: "Invalid credentials" });
+          return res.status(401).json({ message: "Invalid credentials", reason: "user_not_found" });
         }
 
         const user = rows[0];
@@ -62,7 +68,7 @@ const startServer = async () => {
         if (!isMatch) {
           log("AUTH", "Login failed: wrong password", { username: user.username });
           await writeAuditLog(db, { action: "LOGIN_FAILED", entity_type: "auth", new_values: { reason: "wrong_password", username: user.username }, ip_address: req.ip, user_agent: req.get("user-agent") });
-          return res.status(401).json({ message: "Invalid credentials" });
+          return res.status(401).json({ message: "Invalid credentials", reason: "wrong_password" });
         }
 
         await db.execute("UPDATE users SET last_login_at = NOW() WHERE user_id = ?", [user.user_id]);
@@ -105,6 +111,11 @@ const startServer = async () => {
         );
 
         log("AUTH", "Login success", { user_id: user.user_id, username: user.username });
+        if (user.email) {
+          sendLoginNotificationEmail(user.email).catch((err) =>
+            logError("AUTH", "Login notification email failed", err)
+          );
+        }
         res.json({
           token,
           sessionId,
@@ -121,7 +132,8 @@ const startServer = async () => {
         });
       } catch (error) {
         logError("AUTH", "Login error", error);
-        res.status(500).json({ message: "Server error" });
+        await writeAuditLog(db, { action: "LOGIN_ERROR", entity_type: "auth", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+        res.status(500).json({ message: "Something went wrong. Please try again.", reason: "server_error" });
       }
     });
 
@@ -171,7 +183,10 @@ const startServer = async () => {
       try {
         const userId = req.userId;
         const [userRows] = await db.execute("SELECT role_id FROM users WHERE user_id = ?", [userId]);
-        if (userRows.length === 0) return res.status(404).json({ message: "User not found" });
+        if (userRows.length === 0) {
+          await writeAuditLog(db, { user_id: userId, action: "TERMS_ACCEPT_FAILED", entity_type: "auth", entity_id: String(userId), new_values: { reason: "user_not_found" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+          return res.status(404).json({ message: "User not found" });
+        }
         const roleId = userRows[0].role_id;
 
         await db.execute("UPDATE users SET terms_accepted_at = NOW(), has_prev_logged_in = 1 WHERE user_id = ?", [userId]);
@@ -219,6 +234,7 @@ const startServer = async () => {
         });
       } catch (error) {
         logError("AUTH", "Accept terms error", error);
+        await writeAuditLog(db, { user_id: req.userId, action: "TERMS_ACCEPT_ERROR", entity_type: "auth", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
         res.status(500).json({ message: "Server error" });
       }
     });

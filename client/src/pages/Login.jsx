@@ -18,6 +18,7 @@ const Login = () => {
     const err = searchParams.get('error');
     if (err === 'user_not_found') setError('User not found. Contact admin to get access.');
     else if (err === 'oauth_failed') setError('Sign-in failed. Try again or use username/password.');
+    else if (err === 'apple_oauth_not_fully_implemented') setError('Apple sign-in is not fully set up yet. Use Google, Microsoft, or username/password.');
   }, [searchParams]);
 
   const validateField = (name, value) => {
@@ -80,10 +81,15 @@ const Login = () => {
           navigate(`/accept-terms?redirect=${encodeURIComponent(redirect)}`);
         }
       } else {
-        setError(data.message || 'Invalid credentials');
+        const reason = data.reason;
+        if (reason === 'user_not_found') setError('User not found. Contact admin to get access.');
+        else if (reason === 'wrong_password') setError('Incorrect password.');
+        else if (reason === 'invalid_request') setError('Please enter username and password.');
+        else if (reason === 'server_error') setError('Something went wrong. Please try again.');
+        else setError(data.message || 'Invalid credentials');
       }
     } catch (err) {
-      setError('Could not connect to server');
+      setError('Could not connect to server.');
     } finally {
       setIsSubmitting(false);
     }

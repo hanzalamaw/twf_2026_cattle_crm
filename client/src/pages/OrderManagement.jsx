@@ -294,7 +294,7 @@ export default function OrderManagement() {
   const handleCancelConfirm = async () => {
     if (!cancelConfirm) return;
     try {
-      const res = await fetch(`${API}/api/booking/orders/${cancelConfirm.order_id}/cancel`, {
+      const res = await fetch(`${API}/api/booking/orders/${encodeURIComponent(cancelConfirm.order_id)}/cancel`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -315,7 +315,19 @@ export default function OrderManagement() {
     }
   };
 
-  const handleExport = () => {
+  const handleResetFilters = () => {
+    setSearch('');
+    setSlot('');
+    setOrderType('');
+    setDay('');
+    setReference('');
+    setCowNumber('');
+    setYearFilter('2026');
+    setSelectedIds(new Set());
+    setError('');
+  };
+
+  const handleExport = async () => {
     const ids = Array.from(selectedIds);
     const toExport = ids.length ? orders.filter((r) => ids.includes(r.order_id)) : orders;
     if (toExport.length === 0) {
@@ -336,6 +348,28 @@ export default function OrderManagement() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Orders');
     XLSX.writeFile(wb, `orders-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    try {
+      const filters = {};
+      if (search?.trim()) filters.search = search.trim();
+      if (slot) filters.slot = slot;
+      if (orderType) filters.order_type = orderType;
+      if (day) filters.day = day;
+      if (reference) filters.reference = reference;
+      if (cowNumber?.trim()) filters.cow_number = cowNumber.trim();
+      if (yearFilter) filters.year = yearFilter;
+      const payload = {
+        count: toExport.length,
+        ...(Object.keys(filters).length > 0 && { filters }),
+        ...(ids.length > 0 && { order_ids: ids }),
+      };
+      await fetch(`${API}/api/booking/orders/export-audit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      console.error('Export audit failed', e);
+    }
   };
 
   const filterRowStyle = {
@@ -354,8 +388,17 @@ export default function OrderManagement() {
   const labelStyle = { display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px', whiteSpace: 'nowrap' };
 
   return (
-    <div style={{ padding: '24px', fontFamily: "'Poppins', 'Inter', sans-serif" }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+    <div style={{
+      padding: '24px',
+      fontFamily: "'Poppins', 'Inter', sans-serif",
+      display: 'flex',
+      flexDirection: 'column',
+      minHeight: 0,
+      height: '100%',
+      overflow: 'hidden',
+      boxSizing: 'border-box',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
         <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', whiteSpace: 'nowrap' }}>
           Order Management
         </h2>
@@ -374,7 +417,7 @@ export default function OrderManagement() {
         </div>
       </div>
 
-      <div style={filterRowStyle}>
+      <div style={{ ...filterRowStyle, flexShrink: 0 }}>
         <div style={{ flex: 1, minWidth: '180px' }}>
           <label style={labelStyle}>Search (name, phone, area, address)</label>
           <input
@@ -428,16 +471,26 @@ export default function OrderManagement() {
         <button type="button" onClick={fetchOrders} style={{ padding: '8px 16px', height: '36px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>
           Apply
         </button>
+        <button type="button" onClick={handleResetFilters} style={{ padding: '8px 16px', height: '36px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>
+          Reset
+        </button>
         <button type="button" onClick={handleExport} style={{ padding: '8px 16px', height: '36px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>
           Export
         </button>
       </div>
 
       {error && (
-        <div style={{ padding: '12px', background: '#FFF5F2', color: '#C62828', borderRadius: '8px', marginBottom: '16px' }}>{error}</div>
+        <div style={{ padding: '12px', background: '#FFF5F2', color: '#C62828', borderRadius: '8px', marginBottom: '16px', flexShrink: 0 }}>{error}</div>
       )}
 
-      <div style={{ overflowX: 'auto', border: '1px solid #e0e0e0', borderRadius: '8px', background: '#fff' }}>
+      <div style={{
+        flex: 1,
+        minHeight: 0,
+        overflow: 'auto',
+        border: '1px solid #e0e0e0',
+        borderRadius: '8px',
+        background: '#fff',
+      }}>
         {loading ? (
           <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Loading orders...</div>
         ) : (

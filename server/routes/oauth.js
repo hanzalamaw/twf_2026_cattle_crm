@@ -5,6 +5,7 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as MicrosoftStrategy } from "passport-microsoft";
 import { log, logError } from "../utils/logger.js";
 import { writeAuditLog } from "../utils/auditLog.js";
+import { sendLoginNotificationEmail } from "../utils/email.js";
 
 /**
  * OAuth (Google, Microsoft, Apple) routes and Passport strategies.
@@ -97,6 +98,11 @@ export const registerOAuthRoutes = (app, db, JWT_SECRET) => {
         ip_address: req.ip,
         user_agent: req.get("user-agent")
       });
+      if (user.email) {
+        sendLoginNotificationEmail(user.email).catch((err) =>
+          logError("OAUTH", "Login notification email failed", err)
+        );
+      }
       const token = jwt.sign(
         { id: user.user_id, username: user.username, role: user.role_name, sessionId },
         JWT_SECRET,
@@ -189,6 +195,13 @@ export const registerOAuthRoutes = (app, db, JWT_SECRET) => {
 
   app.post("/api/auth/apple/callback", async (req, res) => {
     log("OAUTH", "Apple callback hit (not fully implemented)");
+    await writeAuditLog(db, {
+      action: "OAUTH_FAILED",
+      entity_type: "auth",
+      new_values: { provider: "Apple", reason: "not_fully_implemented" },
+      ip_address: req.ip,
+      user_agent: req.get("user-agent")
+    });
     res.redirect(`${process.env.CLIENT_URL || "http://localhost:5173"}/login?error=apple_oauth_not_fully_implemented`);
   });
 };

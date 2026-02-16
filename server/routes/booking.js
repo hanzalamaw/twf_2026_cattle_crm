@@ -89,20 +89,11 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       `;
 
       const [rows] = await db.execute(query, params);
-
-      await writeAuditLog(db, {
-        user_id: req.userId,
-        action: "ORDER_LIST",
-        entity_type: "orders",
-        new_values: { count: rows.length, filters: { search: !!search, slot: !!slot, order_type: !!order_type, day: !!day, reference: !!reference, cow_number: !!cow_number, year } },
-        ip_address: req.ip,
-        user_agent: req.get("user-agent"),
-      });
       log("BOOKING", "Orders list fetched", { user_id: req.userId, count: rows.length });
-
       res.json(rows);
     } catch (error) {
       logError("BOOKING", "Orders list error", error);
+      await writeAuditLog(db, { user_id: req.userId, action: "ORDER_LIST_ERROR", entity_type: "orders", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -121,6 +112,35 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       });
     } catch (error) {
       logError("BOOKING", "Orders filters error", error);
+      await writeAuditLog(db, { user_id: req.userId, action: "ORDER_FILTERS_ERROR", entity_type: "orders", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Log order export (client calls after generating Excel)
+  app.post("/api/booking/orders/export-audit", verifyToken, async (req, res) => {
+    try {
+      const { count, filters, order_ids } = req.body || {};
+      const exportCount = typeof count === "number" && count >= 0 ? count : 0;
+      const newValues = { count: exportCount };
+      if (filters && typeof filters === "object" && Object.keys(filters).length > 0) {
+        newValues.filters = filters;
+      }
+      if (order_ids && Array.isArray(order_ids) && order_ids.length > 0) {
+        newValues.order_ids = order_ids;
+      }
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "ORDER_EXPORT",
+        entity_type: "orders",
+        new_values: newValues,
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      log("BOOKING", "Orders export", { user_id: req.userId, count: exportCount });
+      res.json({ ok: true });
+    } catch (error) {
+      logError("BOOKING", "Export audit error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -130,6 +150,12 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     try {
       const { orderId } = req.params;
       const body = req.body;
+      const [oldRows] = await db.execute(
+        `SELECT customer_id, cow_number AS cow, hissa_number AS hissa, slot, booking_name, shareholder_name, contact AS phone_number, alt_contact AS alt_phone, address, area, day, order_type AS type, booking_date, total_amount, received_amount AS received, pending_amount AS pending, order_source AS source, reference, description FROM orders WHERE order_id = ?`,
+        [orderId]
+      );
+      const oldValues = oldRows.length > 0 ? oldRows[0] : null;
+
       const updates = [];
       const params = [];
       const fieldMap = {
@@ -165,11 +191,12 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         `UPDATE orders SET ${updates.join(", ")} WHERE order_id = ?`,
         params
       );
-      await writeAuditLog(db, { user_id: req.userId, action: "UPDATE_ORDER", entity_type: "orders", entity_id: orderId, new_values: body, ip_address: req.ip, user_agent: req.get("user-agent") });
+      await writeAuditLog(db, { user_id: req.userId, action: "UPDATE_ORDER", entity_type: "orders", entity_id: orderId, old_values: oldValues, new_values: body, ip_address: req.ip, user_agent: req.get("user-agent") });
       log("BOOKING", "Order updated", { user_id: req.userId, orderId });
       res.json({ message: "Order updated", order_id: orderId });
     } catch (error) {
       logError("BOOKING", "Update order error", error);
+      await writeAuditLog(db, { user_id: req.userId, action: "UPDATE_ORDER_ERROR", entity_type: "orders", entity_id: req.params.orderId, new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -196,11 +223,13 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       );
       await db.execute("DELETE FROM payments WHERE order_id = ?", [orderId]);
       await db.execute("DELETE FROM orders WHERE order_id = ?", [orderId]);
-      await writeAuditLog(db, { user_id: req.userId, action: "CANCEL_ORDER", entity_type: "orders", entity_id: orderId, new_values: { cancelled_id: cancelId }, ip_address: req.ip, user_agent: req.get("user-agent") });
+      const orderDetail = { order_id: orderId, cancelled_id: cancelId, ...o };
+      await writeAuditLog(db, { user_id: req.userId, action: "CANCEL_ORDER", entity_type: "orders", entity_id: orderId, new_values: orderDetail, ip_address: req.ip, user_agent: req.get("user-agent") });
       log("BOOKING", "Order cancelled", { user_id: req.userId, orderId, cancelId });
       res.json({ message: "Order cancelled", cancelled_id: cancelId });
     } catch (error) {
       logError("BOOKING", "Cancel order error", error);
+      await writeAuditLog(db, { user_id: req.userId, action: "CANCEL_ORDER_ERROR", entity_type: "orders", entity_id: req.params.orderId, new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -214,7 +243,10 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
          FROM orders o WHERE o.customer_id = ? AND YEAR(o.booking_date) = 2026 ORDER BY o.booking_date, o.order_id`,
         [customerId]
       );
-      if (orders.length === 0) return res.status(404).json({ message: "No orders found for this customer in 2026" });
+      if (orders.length === 0) {
+        await writeAuditLog(db, { user_id: req.userId, action: "INVOICE_NO_ORDERS", entity_type: "invoice", entity_id: customerId, new_values: { reason: "no_orders_2026" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+        return res.status(404).json({ message: "No orders found for this customer in 2026" });
+      }
       const customer = orders[0];
       await writeAuditLog(db, {
         user_id: req.userId,
@@ -240,124 +272,164 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="Invoice-${invoiceNumber.replace("#", "")}-${customerId}.pdf"`);
-      const doc = new PDFDocument({ margin: 50, size: "A4" });
+      const doc = new PDFDocument({ margin: 50, size: "A4", autoFirstPage: true });
       doc.pipe(res);
+
       const pageW = doc.page.width - 100;
+      const pageHeight = doc.page.height;
       const left = 50;
       const right = doc.page.width - 50;
 
-      // Header: THE WARSI FARM (left), INVOICE + number (right)
+      const footerZoneTop = pageHeight - 48;
+      const contentBottom = footerZoneTop - 4;
+
+      const wrapLines = (text, width, fontSize) => {
+        doc.font("Helvetica").fontSize(fontSize);
+        const words = String(text).split(/\s+/);
+        const lines = [];
+        let line = "";
+        for (const w of words) {
+          const tryLine = line ? `${line} ${w}` : w;
+          if (doc.widthOfString(tryLine) <= width) line = tryLine;
+          else {
+            if (line) lines.push(line);
+            line = w;
+          }
+        }
+        if (line) lines.push(line);
+        return lines;
+      };
+
+      const textClip = (str, x, y, opts) => {
+        const h = opts.height || 200;
+        doc.text(str, x, y, { ...opts, height: h });
+      };
+
+      const gray = "#888888";
+
+      // --- Header ---
       doc.fontSize(18).font("Helvetica-Bold").text("THE WARSI FARM", left, 50);
       doc.fontSize(14).font("Helvetica-Bold").text("INVOICE", right - 150, 50, { width: 150, align: "right" });
       doc.fontSize(10).font("Helvetica").text(invoiceNumber, right - 150, 66, { width: 150, align: "right" });
-      // Horizontal line under INVOICE block extending left
-      doc.moveTo(right, 82).lineTo(left, 82).stroke();
+      doc.strokeColor(gray).lineWidth(0.5).moveTo(left, 82).lineTo(right, 82).stroke().strokeColor("#000000").lineWidth(1);
 
-      // Three-column block with vertical separators
       const col1Right = left + 160;
       const col2Left = left + 180;
       const col2Right = right - 190;
       const col3Left = right - 180;
       const blockTop = 88;
       const blockBottom = 162;
+      const sectionPad = 14;
 
-      // Booking Date, Issued Date (column 1)
+      const billedLeft = col2Left + sectionPad;
+      const billedWidth = col2Right - billedLeft;
+      const fromLeft = col3Left + sectionPad;
+      const fromWidth = right - fromLeft;
+
       doc.fontSize(10).font("Helvetica-Bold").text("Booking Date", left, blockTop);
       doc.font("Helvetica").text(bookingDateStr || "—", left, blockTop + 13);
       doc.font("Helvetica-Bold").text("Issued Date", left, blockTop + 30);
       doc.font("Helvetica").text(issuedDate, left, blockTop + 43);
 
-      // Billed to (column 2)
-      doc.font("Helvetica-Bold").text("Billed to", col2Left, blockTop);
-      const billedName = [customer.booking_name, customer.shareholder_name].filter(Boolean).join(" / ") || "—";
-      doc.font("Helvetica").text(billedName, col2Left, blockTop + 13, { width: col2Right - col2Left });
-      doc.text(customer.contact || "", col2Left, blockTop + 26, { width: col2Right - col2Left });
-      if (customer.alt_contact) doc.text(customer.alt_contact, col2Left, blockTop + 39, { width: col2Right - col2Left });
+      // Billed to: Bold heading only; then Full Name (not bold), Phone (not bold), Address (not bold)
+      doc.fontSize(10).font("Helvetica-Bold").text("Billed to", billedLeft, blockTop);
+      doc.font("Helvetica");
+      const fullName = (customer.shareholder_name || customer.booking_name || "—").trim();
+      doc.text(fullName, billedLeft, blockTop + 14, { width: billedWidth, height: 16 });
+      doc.text(customer.contact || "—", billedLeft, blockTop + 30, { width: billedWidth, height: 14 });
       const billedAddr = [customer.address, customer.area].filter(Boolean).join(", ") || "";
-      if (billedAddr) doc.text(billedAddr, col2Left, customer.alt_contact ? blockTop + 52 : blockTop + 39, { width: col2Right - col2Left });
+      if (billedAddr) doc.text(billedAddr, billedLeft, blockTop + 46, { width: billedWidth, height: 20 });
 
-      // From (column 3)
-      doc.font("Helvetica-Bold").text("From", col3Left, blockTop, { width: 180, align: "right" });
-      doc.font("Helvetica").text("The Warsi Farm", col3Left, blockTop + 13, { width: 180, align: "right" });
-      doc.text("B-655, F.B.A Block # 13,", col3Left, blockTop + 26, { width: 180, align: "right" });
-      doc.text("Gulberg, Karachi", col3Left, blockTop + 39, { width: 180, align: "right" });
+      // From section: left-aligned with padding left
+      doc.font("Helvetica-Bold").text("From", fromLeft, blockTop);
+      doc.font("Helvetica").text("The Warsi Farm", fromLeft, blockTop + 14);
+      doc.text("B-655, F.B.A Block # 13,", fromLeft, blockTop + 28);
+      doc.text("Gulberg, Karachi", fromLeft, blockTop + 42);
 
-      // Vertical lines between columns
+      doc.strokeColor(gray).lineWidth(0.5);
       doc.moveTo(col2Left, blockTop).lineTo(col2Left, blockBottom).stroke();
       doc.moveTo(col3Left, blockTop).lineTo(col3Left, blockBottom).stroke();
+      doc.strokeColor("#000000").lineWidth(1);
 
       let y = 165;
-      doc.moveTo(left, y).lineTo(right, y).stroke();
-      y += 14;
+      doc.strokeColor(gray).lineWidth(0.5).moveTo(left, y).lineTo(right, y).stroke().strokeColor("#000000").lineWidth(1);
+      y += 12;
 
-      // Service table: Service | Qty | Total Amount
       doc.fontSize(10).font("Helvetica-Bold");
       doc.text("Service", left, y);
       doc.text("Qty", right - 180, y, { width: 50, align: "center" });
       doc.text("Total Amount", right - 120, y, { width: 120, align: "right" });
-      y += 20;
+      y += 14;
 
       doc.font("Helvetica").fontSize(10);
       for (const row of orders) {
         const serviceTitle = row.type || "Booking";
         const serviceSub = `Cow No: ${row.cow || "—"} | Hissa No: ${row.hissa || "—"} • ${row.day || "—"}`;
-        doc.font("Helvetica-Bold").text(serviceTitle, left, y, { width: pageW - 180 });
-        y += 14;
-        doc.font("Helvetica").text(serviceSub, left, y, { width: pageW - 180 });
-        doc.text("1", right - 180, y - 14, { width: 50, align: "center" });
-        doc.text(`PKR ${fmt(row.total_amount)}`, right - 120, y - 14, { width: 120, align: "right" });
-        y += 22;
+        textClip(serviceTitle, left, y, { width: pageW - 200, height: 14 });
+        y += 12;
+        textClip(serviceSub, left, y, { width: pageW - 200, height: 14 });
+        doc.text("1", right - 180, y - 12, { width: 50, align: "center" });
+        doc.text(`PKR ${fmt(row.total_amount)}`, right - 120, y - 12, { width: 120, align: "right" });
+        y += 16;
       }
 
+      y += 4;
+      doc.strokeColor(gray).lineWidth(0.5).moveTo(left, y).lineTo(right, y).stroke().strokeColor("#000000").lineWidth(1);
+      y += 10;
+
+      // --- Calculation summary: HALF WIDTH, RIGHT SIDE ONLY (not full page) ---
+      const summaryWidth = Math.floor(pageW / 2);
+      const summaryLeft = right - summaryWidth;
+      const sumLineLeft = summaryLeft;
+      const sumLineRight = right;
+      const labelW = 100;
+      const valW = 100;
+      const valX = right - valW;
+
+      doc.font("Helvetica-Bold").text("Subtotal:", sumLineLeft, y, { width: labelW, align: "right" });
+      doc.text(`PKR ${fmt(grandTotal)}`, valX, y, { width: valW, align: "right" });
+      y += 11;
+      doc.strokeColor("#999999").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
       y += 6;
-      doc.moveTo(left, y).lineTo(right, y).stroke();
-      y += 16;
+      doc.font("Helvetica").text("Shipping:", sumLineLeft, y, { width: labelW, align: "right" });
+      doc.text("Free", valX, y, { width: valW, align: "right" });
+      y += 11;
+      doc.strokeColor("#999999").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
+      y += 6;
+      doc.font("Helvetica-Bold").text("Total:", sumLineLeft, y, { width: labelW, align: "right" });
+      doc.text(`PKR ${fmt(grandTotal)}`, valX, y, { width: valW, align: "right" });
+      y += 11;
+      doc.strokeColor("#999999").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
+      y += 8;
 
-      // Subtotal, Shipping, Total
-      doc.font("Helvetica-Bold").text("Subtotal:", left, y);
-      doc.text(`PKR ${fmt(grandTotal)}`, right - 120, y, { width: 120, align: "right" });
-      y += 16;
-      doc.text("Shipping:", left, y);
-      doc.text("Free", right - 120, y, { width: 120, align: "right" });
-      y += 16;
-      doc.text("Total:", left, y);
-      doc.text(`PKR ${fmt(grandTotal)}`, right - 120, y, { width: 120, align: "right" });
-      y += 20;
-      doc.moveTo(left, y).lineTo(right, y).stroke();
-      y += 16;
-
-      // Amount Paid (green) with full-width green underline
-      doc.fillColor("#166534").font("Helvetica-Bold").text("Amount Paid:", left, y);
-      doc.text(`PKR ${fmt(grandReceived)}`, right - 120, y, { width: 120, align: "right" });
-      y += 14;
-      doc.moveTo(left, y).lineTo(right, y).stroke("#166534");
-      y += 18;
-      // Amount Due (red) with full-width red underline
-      doc.fillColor("#b91c1c").text("Amount Due:", left, y);
-      doc.text(`PKR ${fmt(grandPending)}`, right - 120, y, { width: 120, align: "right" });
-      y += 14;
-      doc.moveTo(left, y).lineTo(right, y).stroke("#b91c1c");
+      doc.fillColor("#166534").font("Helvetica-Bold").text("Amount Paid:", sumLineLeft, y, { width: labelW, align: "right" });
+      doc.text(`PKR ${fmt(grandReceived)}`, valX, y, { width: valW, align: "right" });
+      y += 11;
+      doc.strokeColor("#166534").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
+      y += 10;
+      doc.fillColor("#b91c1c").font("Helvetica-Bold").text("Amount Due:", sumLineLeft, y, { width: labelW, align: "right" });
+      doc.text(`PKR ${fmt(grandPending)}`, valX, y, { width: valW, align: "right" });
+      y += 11;
+      doc.strokeColor("#b91c1c").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
       doc.fillColor("#000000");
-      y += 28;
+      y += 18;
 
-      // PAYMENT INFO
       doc.font("Helvetica-Bold").fontSize(10).text("PAYMENT INFO", left, y);
-      y += 16;
+      y += 10;
       doc.font("Helvetica").fontSize(9);
       doc.text("ACCOUNT NAME (HBL)", left, y);
       doc.text("BRANCH", left + 140, y);
       doc.text("IBAN", left + 280, y);
       doc.text("ACCOUNT NO", left + 400, y);
-      y += 14;
+      y += 11;
       doc.text("TW TRADERS", left, y);
       doc.text("ZIAUDDIN SHAHEED ROA", left + 140, y);
       doc.text("PK10HABB0016787900655603", left + 280, y, { width: 110 });
       doc.text("16787900655603", left + 400, y);
-      y += 32;
+      y += 18;
 
-      // TERMS & CONDITIONS
       doc.font("Helvetica-Bold").fontSize(10).text("TERMS & CONDITIONS", left, y);
-      y += 14;
+      y += 12;
       doc.font("Helvetica").fontSize(8);
       const terms = [
         "Livestock bookings must be paid in full at the time of purchase. For Qurbani orders, full payment is required at least 7 days before Eid.",
@@ -366,20 +438,30 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         "Ensure accurate delivery information and availability at the time of delivery. Any delays caused due to incorrect information or unavailability at delivery address will not be compensated.",
         "THE WARSI FARM is not liable for delays or issues caused by unforeseen circumstances like natural disasters, transport strikes, or technical faults.",
       ];
+      const lineHeight = 11;
+      const termGap = 4;
       for (let i = 0; i < terms.length; i++) {
-        doc.text(`${i + 1}. ${terms[i]}`, left, y, { width: pageW, align: "left" });
-        y += doc.heightOfString(terms[i], { width: pageW }) + 4;
+        const lines = wrapLines(`${i + 1}. ${terms[i]}`, pageW, 8);
+        for (const line of lines) {
+          if (y + lineHeight > contentBottom) break;
+          doc.text(line, left, y, { width: pageW, height: lineHeight + 2 });
+          y += lineHeight;
+        }
+        y += termGap;
       }
-      y += 20;
 
-      // Footer (below terms or bottom of page)
-      const footerY = Math.max(y, doc.page.height - 40);
-      doc.font("Helvetica").fontSize(9).text("The Warsi Farm", left, footerY);
-      doc.text("(0331 & 0332) - 9911466 | thewarsifarm.com", right - 280, footerY, { width: 280, align: "right" });
+      // Footer: The Warsi Farm left (unchanged); phone | website on same line, right-aligned
+      const footerY = footerZoneTop + 2;
+      doc.strokeColor(gray).lineWidth(0.5).moveTo(left, footerZoneTop - 4).lineTo(right, footerZoneTop - 4).stroke().strokeColor("#000000").lineWidth(1);
+      doc.font("Helvetica").fontSize(9);
+      doc.text("The Warsi Farm", left, footerY, { lineBreak: false });
+      const footerRightStr = "(0331 & 0332) - 9911466  |  thewarsifarm.com";
+      doc.text(footerRightStr, right - doc.widthOfString(footerRightStr), footerY, { lineBreak: false });
 
       doc.end();
     } catch (error) {
       logError("BOOKING", "Invoice error", error);
+      await writeAuditLog(db, { user_id: req.userId, action: "INVOICE_ERROR", entity_type: "invoice", entity_id: req.params.customerId, new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
       res.status(500).json({ message: "Server error" });
     }
   });

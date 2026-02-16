@@ -55,6 +55,7 @@ export const registerPasswordResetRoutes = (app, db) => {
       res.json({ message: "If that email exists, we've sent you a reset link." });
     } catch (error) {
       logError("PASSWORD_RESET", "Forgot password error", error);
+      await writeAuditLog(db, { action: "FORGOT_PASSWORD_ERROR", entity_type: "auth", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -67,10 +68,12 @@ export const registerPasswordResetRoutes = (app, db) => {
         "SELECT user_id FROM password_reset_tokens WHERE token = ? AND expires_at > NOW()",
         [token]
       );
-      log("PASSWORD_RESET", "Token validated", { valid: rows.length > 0 });
-      res.json({ valid: rows.length > 0 });
+      const valid = rows.length > 0;
+      log("PASSWORD_RESET", "Token validated", { valid });
+      res.json({ valid });
     } catch (error) {
       logError("PASSWORD_RESET", "Validate token error", error);
+      await writeAuditLog(db, { action: "RESET_PASSWORD_VALIDATE_ERROR", entity_type: "auth", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
       res.status(500).json({ valid: false });
     }
   });
@@ -116,6 +119,7 @@ export const registerPasswordResetRoutes = (app, db) => {
       res.json({ message: "Password updated successfully. You can now log in." });
     } catch (error) {
       logError("PASSWORD_RESET", "Reset password error", error);
+      await writeAuditLog(db, { action: "PASSWORD_RESET_ERROR", entity_type: "auth", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
       res.status(500).json({ message: "Server error" });
     }
   });

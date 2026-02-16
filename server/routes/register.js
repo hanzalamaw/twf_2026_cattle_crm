@@ -59,6 +59,7 @@ export const registerRegisterRoutes = (app, db) => {
       res.status(201).json({ message: "User registered successfully" });
     } catch (error) {
       logError("REGISTER", "Registration error", error);
+      await writeAuditLog(db, { action: "REGISTER_ERROR", entity_type: "auth", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
       res.status(500).json({ message: "Server error" });
     }
   });
