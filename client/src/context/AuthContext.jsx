@@ -6,6 +6,8 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const API_BASE = 'http://localhost:5000';
+
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
     const token = localStorage.getItem('token');
@@ -13,10 +15,36 @@ export const AuthProvider = ({ children }) => {
       const parsed = JSON.parse(savedUser);
       setUser(parsed);
       if (!parsed.permissions || parsed.role_id == null) {
-        fetch('http://localhost:5000/api/me', { headers: { Authorization: `Bearer ${token}` } })
-          .then((res) => res.ok ? res.json() : null)
+        const tryMe = (accessToken) =>
+          fetch(`${API_BASE}/api/me`, { headers: { Authorization: `Bearer ${accessToken}` } });
+        tryMe(token)
+          .then((res) => {
+            if (res.status === 401) {
+              const refreshToken = localStorage.getItem('refreshToken');
+              if (refreshToken) {
+                return fetch(`${API_BASE}/api/refresh`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ refreshToken })
+                })
+                  .then((r) => (r.ok ? r.json() : null))
+                  .then((data) => {
+                    if (data && data.token) {
+                      localStorage.setItem('token', data.token);
+                      return tryMe(data.token);
+                    }
+                    return res;
+                  });
+              }
+            }
+            return res;
+          })
+          .then((res) => {
+            if (res && res.ok) return res.json();
+            return null;
+          })
           .then((data) => {
-            if (data?.user) {
+            if (data && data.user) {
               setUser(data.user);
               localStorage.setItem('user', JSON.stringify(data.user));
             }
@@ -29,33 +57,32 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-  const login = (userData, token) => {
+  const login = (userData, token, refreshToken = null) => {
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(userData));
+    if (refreshToken != null) localStorage.setItem('refreshToken', refreshToken);
     setUser(userData);
   };
 
   const logout = async () => {
     const token = localStorage.getItem('token');
-    
-    // Call the logout API to deactivate the session
-    if (token) {
-      try {
-        await fetch('http://localhost:5000/api/logout', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-      } catch (error) {
-        // Silently fail - we'll still clear local storage
-        console.error('Logout API call failed:', error);
-      }
+    const refreshToken = localStorage.getItem('refreshToken');
+
+    try {
+      await fetch(`${API_BASE}/api/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(refreshToken ? { refreshToken } : {})
+      });
+    } catch (error) {
+      console.error('Logout API call failed:', error);
     }
-    
-    // Always clear local storage and user state, regardless of API call result
+
     localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     setUser(null);
   };

@@ -61,3 +61,10 @@ ALTER TABLE `password_reset_tokens`
 -- ------------------------------------------------------------
 UPDATE `roles` SET `control_management` = 0 WHERE `role_id` = 2;
 UPDATE `roles` SET `performance_management` = 1 WHERE `role_id` IN (1, 2, 3, 4, 5, 6, 7, 8);
+
+-- ------------------------------------------------------------
+-- 7. USER_SESSIONS: Refresh token for 10–12h session
+-- ------------------------------------------------------------
+ALTER TABLE `user_sessions`
+ADD COLUMN `refresh_token` varchar(64) DEFAULT NULL AFTER `expires_at`,
+ADD UNIQUE KEY `refresh_token` (`refresh_token`);

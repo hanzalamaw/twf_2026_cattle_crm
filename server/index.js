@@ -34,6 +34,8 @@ const startServer = async () => {
     console.log("Connected to MySQL Database");
 
     const JWT_SECRET = process.env.JWT_SECRET || "your_super_secret_key";
+    const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1h";
+    const SESSION_EXPIRY_HOURS = Math.max(1, Math.min(168, parseInt(process.env.SESSION_EXPIRY_HOURS, 10) || 11));
     const verifyToken = createVerifyToken(db, JWT_SECRET);
 
     // ---------- Login ----------
@@ -48,7 +50,7 @@ const startServer = async () => {
 
       try {
         const [rows] = await db.execute(
-          `SELECT u.user_id, u.username, u.email, u.password, u.role_id, u.terms_accepted_at, u.has_prev_logged_in,
+          `SELECT u.user_id, u.username, u.email, u.first_name, u.last_name, u.password, u.role_id, u.terms_accepted_at, u.has_prev_logged_in,
             r.role_name,
             r.control_management, r.booking_management, r.operation_management,
             r.farm_management, r.procurement_management, r.accounting_and_finance, r.performance_management
@@ -74,14 +76,27 @@ const startServer = async () => {
         await db.execute("UPDATE users SET last_login_at = NOW() WHERE user_id = ?", [user.user_id]);
 
         const sessionId = crypto.randomBytes(32).toString('hex');
+        let refreshToken = null;
         const expiresAt = new Date();
-        expiresAt.setHours(expiresAt.getHours() + 24);
+        expiresAt.setHours(expiresAt.getHours() + SESSION_EXPIRY_HOURS);
 
-        await db.execute(
-          `INSERT INTO user_sessions (session_id, user_id, ip_address, user_agent, expires_at) 
-           VALUES (?, ?, ?, ?, ?)`,
-          [sessionId, user.user_id, req.ip, req.get('user-agent'), expiresAt]
-        );
+        try {
+          refreshToken = crypto.randomBytes(32).toString('hex');
+          await db.execute(
+            `INSERT INTO user_sessions (session_id, user_id, ip_address, user_agent, expires_at, refresh_token) 
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [sessionId, user.user_id, req.ip, req.get('user-agent'), expiresAt, refreshToken]
+          );
+        } catch (err) {
+          if (err.message && err.message.includes("refresh_token")) {
+            await db.execute(
+              `INSERT INTO user_sessions (session_id, user_id, ip_address, user_agent, expires_at) 
+               VALUES (?, ?, ?, ?, ?)`,
+              [sessionId, user.user_id, req.ip, req.get('user-agent'), expiresAt]
+            );
+            refreshToken = null;
+          } else throw err;
+        }
 
         await writeAuditLog(db, {
           user_id: user.user_id,
@@ -107,17 +122,20 @@ const startServer = async () => {
         const token = jwt.sign(
           { id: user.user_id, username: user.username, role: user.role_name, role_id: user.role_id, sessionId, permissions },
           JWT_SECRET,
-          { expiresIn: "24h" }
+          { expiresIn: JWT_EXPIRES_IN }
         );
 
         log("AUTH", "Login success", { user_id: user.user_id, username: user.username });
         if (user.email) {
-          sendLoginNotificationEmail(user.email).catch((err) =>
+          const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || user.username;
+          const loginTime = new Date();
+          sendLoginNotificationEmail(user.email, fullName, user.username, loginTime).catch((err) =>
             logError("AUTH", "Login notification email failed", err)
           );
         }
         res.json({
           token,
+          ...(refreshToken != null && { refreshToken }),
           sessionId,
           user: {
             id: user.user_id,
@@ -239,8 +257,82 @@ const startServer = async () => {
       }
     });
 
-    // ---------- Logout ----------
+    // ---------- Refresh token (issue new access token; session remains 10–12h) ----------
+    app.post("/api/refresh", async (req, res) => {
+      const refreshToken = req.body?.refreshToken || req.headers['x-refresh-token'];
+      if (!refreshToken || typeof refreshToken !== 'string') {
+        return res.status(401).json({ message: 'Refresh token required' });
+      }
+      try {
+        const [sessions] = await db.execute(
+          "SELECT session_id, user_id FROM user_sessions WHERE refresh_token = ? AND is_active = 1 AND expires_at > NOW()",
+          [refreshToken.trim()]
+        );
+        if (sessions.length === 0) {
+          return res.status(401).json({ message: 'Invalid or expired refresh token' });
+        }
+        const session = sessions[0];
+        const [rows] = await db.execute(
+          `SELECT u.user_id, u.username, u.email, u.role_id, u.terms_accepted_at, u.has_prev_logged_in,
+            r.role_name,
+            r.control_management, r.booking_management, r.operation_management,
+            r.farm_management, r.procurement_management, r.accounting_and_finance, r.performance_management
+           FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.user_id = ?`,
+          [session.user_id]
+        );
+        if (rows.length === 0) {
+          await db.execute("UPDATE user_sessions SET is_active = FALSE WHERE session_id = ?", [session.session_id]);
+          return res.status(401).json({ message: 'User not found' });
+        }
+        const user = rows[0];
+        const permissions = {
+          control_management: !!user.control_management,
+          booking_management: !!user.booking_management,
+          operation_management: !!user.operation_management,
+          farm_management: !!user.farm_management,
+          procurement_management: !!user.procurement_management,
+          accounting_and_finance: !!user.accounting_and_finance,
+          performance_management: true
+        };
+        const token = jwt.sign(
+          { id: user.user_id, username: user.username, role: user.role_name, role_id: user.role_id, sessionId: session.session_id, permissions },
+          JWT_SECRET,
+          { expiresIn: JWT_EXPIRES_IN }
+        );
+        await db.execute(
+          "UPDATE user_sessions SET last_activity_at = NOW() WHERE session_id = ?",
+          [session.session_id]
+        );
+        res.json({ token });
+      } catch (error) {
+        logError("AUTH", "Refresh token error", error);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // ---------- Logout (invalidate session; accepts access token or refresh token in body) ----------
     app.post("/api/logout", async (req, res) => {
+      const refreshToken = req.body?.refreshToken;
+      if (refreshToken && typeof refreshToken === 'string') {
+        const [sessions] = await db.execute(
+          "SELECT session_id, user_id FROM user_sessions WHERE refresh_token = ? AND is_active = 1",
+          [refreshToken.trim()]
+        );
+        if (sessions.length > 0) {
+          await db.execute("UPDATE user_sessions SET is_active = FALSE WHERE session_id = ?", [sessions[0].session_id]);
+          await writeAuditLog(db, {
+            user_id: sessions[0].user_id,
+            action: "LOGOUT",
+            entity_type: "auth",
+            entity_id: String(sessions[0].user_id),
+            new_values: { via: "refresh_token" },
+            ip_address: req.ip,
+            user_agent: req.get("user-agent")
+          });
+          log("AUTH", "Logout via refresh token", { user_id: sessions[0].user_id });
+        }
+        return res.json({ message: "Logged out successfully" });
+      }
       const token = req.headers.authorization?.split(' ')[1] || req.headers['x-access-token'];
       if (!token) {
         log("AUTH", "Logout (no token)");
@@ -249,7 +341,11 @@ const startServer = async () => {
       try {
         const decoded = jwt.verify(token, JWT_SECRET);
         if (decoded.id) {
-          await db.execute("UPDATE user_sessions SET is_active = FALSE WHERE user_id = ? AND is_active = TRUE", [decoded.id]);
+          if (decoded.sessionId) {
+            await db.execute("UPDATE user_sessions SET is_active = FALSE WHERE session_id = ?", [decoded.sessionId]);
+          } else {
+            await db.execute("UPDATE user_sessions SET is_active = FALSE WHERE user_id = ? AND is_active = TRUE", [decoded.id]);
+          }
           await writeAuditLog(db, {
             user_id: decoded.id,
             action: "LOGOUT",

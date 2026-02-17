@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 
 const API = 'http://localhost:5000';
+const PAGE_SIZE = 50;
 
 const COLUMNS = [
   { key: 'customer_id', label: 'Customer ID' },
@@ -150,6 +151,8 @@ export default function OrderManagement() {
   const [editErrors, setEditErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(null);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
   const token = localStorage.getItem('token');
 
@@ -179,12 +182,17 @@ export default function OrderManagement() {
       if (reference) params.set('reference', reference);
       if (cowNumber.trim()) params.set('cow_number', cowNumber.trim());
       if (yearFilter) params.set('year', yearFilter);
+      params.set('page', String(page));
+      params.set('limit', String(PAGE_SIZE));
       const res = await fetch(`${API}/api/booking/orders?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
-        const data = await res.json();
-        setOrders(data);
+        const json = await res.json();
+        const data = Array.isArray(json) ? json : json.data;
+        const total = typeof json.total === 'number' ? json.total : (data?.length ?? 0);
+        setOrders(Array.isArray(data) ? data : []);
+        setTotalCount(total);
       } else {
         setError('Failed to load orders');
       }
@@ -193,9 +201,10 @@ export default function OrderManagement() {
     } finally {
       setLoading(false);
     }
-  }, [token, search, slot, orderType, day, reference, cowNumber, yearFilter]);
+  }, [token, search, slot, orderType, day, reference, cowNumber, yearFilter, page]);
 
   useEffect(() => { fetchFilters(); }, [fetchFilters]);
+  useEffect(() => { setPage(1); }, [search, slot, orderType, day, reference, cowNumber, yearFilter]);
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
   const toggleSelect = (orderId) => {
@@ -542,6 +551,81 @@ export default function OrderManagement() {
           </table>
         )}
       </div>
+
+      {!loading && totalCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px' }}>
+          <span style={{ fontSize: '13px', color: '#666' }}>
+            Showing {orders.length} of {totalCount} orders
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              style={{
+                padding: '6px 12px',
+                fontSize: '13px',
+                background: page <= 1 ? '#f0f0f0' : '#fff',
+                color: page <= 1 ? '#999' : '#333',
+                border: '1px solid #e0e0e0',
+                borderRadius: '6px',
+                cursor: page <= 1 ? 'not-allowed' : 'pointer',
+              }}
+            >
+              Previous
+            </button>
+            {(() => {
+              const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
+              const showPages = 5;
+              let start = Math.max(1, page - Math.floor(showPages / 2));
+              let end = Math.min(totalPages, start + showPages - 1);
+              if (end - start + 1 < showPages) start = Math.max(1, end - showPages + 1);
+              const pages = [];
+              for (let i = start; i <= end; i++) pages.push(i);
+              return (
+                <>
+                  {pages.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPage(p)}
+                      style={{
+                        minWidth: '32px',
+                        padding: '6px 10px',
+                        fontSize: '13px',
+                        background: p === page ? '#FF5722' : '#fff',
+                        color: p === page ? '#fff' : '#333',
+                        border: '1px solid #e0e0e0',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontWeight: p === page ? 600 : 400,
+                      }}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </>
+              );
+            })()}
+            <button
+              type="button"
+              disabled={page >= Math.ceil(totalCount / PAGE_SIZE)}
+              onClick={() => setPage((p) => Math.min(Math.ceil(totalCount / PAGE_SIZE) || 1, p + 1))}
+              style={{
+                padding: '6px 12px',
+                fontSize: '13px',
+                background: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#f0f0f0' : '#fff',
+                color: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#999' : '#333',
+                border: '1px solid #e0e0e0',
+                borderRadius: '6px',
+                cursor: page >= Math.ceil(totalCount / PAGE_SIZE) ? 'not-allowed' : 'pointer',
+              }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {editOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !saving && (setEditErrors({}), setEditOpen(false))}>

@@ -73,7 +73,7 @@ const Login = () => {
       const data = await response.json();
 
       if (response.ok) {
-        login(data.user, data.token);
+        login(data.user, data.token, data.refreshToken ?? null);
         const redirect = searchParams.get('redirect') || '/';
         if (data.user.has_prev_logged_in) {
           navigate(redirect);

@@ -81,13 +81,27 @@ export const registerOAuthRoutes = (app, db, JWT_SECRET) => {
     try {
       await db.execute("UPDATE users SET last_login_at = NOW() WHERE user_id = ?", [user.user_id]);
       const sessionId = crypto.randomBytes(32).toString('hex');
+      let refreshToken = null;
+      const sessionExpiryHours = Math.max(1, Math.min(168, parseInt(process.env.SESSION_EXPIRY_HOURS, 10) || 11));
       const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + 24);
-      await db.execute(
-        `INSERT INTO user_sessions (session_id, user_id, ip_address, user_agent, expires_at) 
-         VALUES (?, ?, ?, ?, ?)`,
-        [sessionId, user.user_id, req.ip, req.get('user-agent'), expiresAt]
-      );
+      expiresAt.setHours(expiresAt.getHours() + sessionExpiryHours);
+      try {
+        refreshToken = crypto.randomBytes(32).toString('hex');
+        await db.execute(
+          `INSERT INTO user_sessions (session_id, user_id, ip_address, user_agent, expires_at, refresh_token) 
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [sessionId, user.user_id, req.ip, req.get('user-agent'), expiresAt, refreshToken]
+        );
+      } catch (err) {
+        if (err.message && err.message.includes("refresh_token")) {
+          await db.execute(
+            `INSERT INTO user_sessions (session_id, user_id, ip_address, user_agent, expires_at) 
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [sessionId, user.user_id, req.ip, req.get('user-agent'), expiresAt]
+          );
+          refreshToken = null;
+        } else throw err;
+      }
       await writeAuditLog(db, {
         user_id: user.user_id,
         session_id: sessionId,
@@ -99,23 +113,28 @@ export const registerOAuthRoutes = (app, db, JWT_SECRET) => {
         user_agent: req.get("user-agent")
       });
       if (user.email) {
-        sendLoginNotificationEmail(user.email).catch((err) =>
+        const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || user.username;
+        sendLoginNotificationEmail(user.email, fullName, user.username, new Date()).catch((err) =>
           logError("OAUTH", "Login notification email failed", err)
         );
       }
+      const jwtExpiresIn = process.env.JWT_EXPIRES_IN || "1h";
       const token = jwt.sign(
-        { id: user.user_id, username: user.username, role: user.role_name, sessionId },
+        { id: user.user_id, username: user.username, role: user.role_name, role_id: user.role_id, sessionId },
         JWT_SECRET,
-        { expiresIn: "24h" }
+        { expiresIn: jwtExpiresIn }
       );
       const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
-      log("OAUTH", `${provider} sign-in success, redirecting to client`, { user_id: user.user_id, email: user.email });
-      res.redirect(`${clientUrl}/auth/callback?token=${token}&user=${encodeURIComponent(JSON.stringify({
+      const userPayload = {
         id: user.user_id,
         username: user.username,
         email: user.email,
-        role: user.role_name
-      }))}`);
+        role: user.role_name,
+        role_id: user.role_id
+      };
+      log("OAUTH", `${provider} sign-in success, redirecting to client`, { user_id: user.user_id, email: user.email });
+      const refreshPart = refreshToken ? `&refreshToken=${encodeURIComponent(refreshToken)}` : '';
+      res.redirect(`${clientUrl}/auth/callback?token=${encodeURIComponent(token)}&user=${encodeURIComponent(JSON.stringify(userPayload))}${refreshPart}`);
     } catch (error) {
       logError("OAUTH", `${provider} redirect/session failed`, error);
       res.redirect(`${process.env.CLIENT_URL || "http://localhost:5173"}/login?error=oauth_failed`);

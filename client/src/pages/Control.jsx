@@ -1776,24 +1776,36 @@ const Control = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {Object.keys({ ...(oldValues || {}), ...(newValues || {}) }).map(key => {
-                              const oldVal = oldValues && oldValues[key];
-                              const newVal = newValues && newValues[key];
-                              const changed = oldVal !== newVal;
-                              return (
-                                <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
-                                  <td style={{ padding: '8px', fontSize: '12px', fontWeight: '500', color: '#333' }}>
-                                    {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                                  </td>
-                                  <td style={{ padding: '8px', fontSize: '12px', color: changed ? '#C62828' : '#666', textDecoration: changed ? 'line-through' : 'none' }}>
-                                    {oldVal !== null && oldVal !== undefined ? String(oldVal) : '—'}
-                                  </td>
-                                  <td style={{ padding: '8px', fontSize: '12px', color: changed ? '#2E7D32' : '#666', fontWeight: changed ? '500' : '400' }}>
-                                    {newVal !== null && newVal !== undefined ? String(newVal) : '—'}
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                            {Object.keys({ ...(oldValues || {}), ...(newValues || {}) })
+                              .filter((key) => key !== 'order_id')
+                              .map(key => {
+                                const oldVal = oldValues && oldValues[key];
+                                const newVal = newValues && newValues[key];
+                                const toDatePart = (v) => {
+                                  if (v == null || v === '') return v;
+                                  const s = String(v);
+                                  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+                                  return m ? m[1] : s;
+                                };
+                                const oldNorm = key === 'booking_date' ? toDatePart(oldVal) : oldVal;
+                                const newNorm = key === 'booking_date' ? toDatePart(newVal) : newVal;
+                                const changed = oldNorm !== newNorm;
+                                const displayOld = oldVal !== null && oldVal !== undefined ? String(key === 'booking_date' ? (toDatePart(oldVal) || oldVal) : oldVal) : '—';
+                                const displayNew = newVal !== null && newVal !== undefined ? String(key === 'booking_date' ? (toDatePart(newVal) || newVal) : newVal) : '—';
+                                return (
+                                  <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
+                                    <td style={{ padding: '8px', fontSize: '12px', fontWeight: '500', color: '#333' }}>
+                                      {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                    </td>
+                                    <td style={{ padding: '8px', fontSize: '12px', color: changed ? '#C62828' : '#666', textDecoration: changed ? 'line-through' : 'none' }}>
+                                      {displayOld}
+                                    </td>
+                                    <td style={{ padding: '8px', fontSize: '12px', color: changed ? '#2E7D32' : '#666', fontWeight: changed ? '500' : '400' }}>
+                                      {displayNew}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                           </tbody>
                         </table>
                       </div>

@@ -11,7 +11,7 @@ import { writeAuditLog } from "../utils/auditLog.js";
 export const registerBookingRoutes = (app, db, verifyToken) => {
   app.get("/api/booking/orders", verifyToken, async (req, res) => {
     try {
-      const { search, slot, order_type, day, reference, cow_number, year } = req.query;
+      const { search, slot, order_type, day, reference, cow_number, year, page, limit } = req.query;
       const conditions = [];
       const params = [];
 
@@ -52,6 +52,25 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       }
 
       const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+      const fromClause = `
+        FROM orders o
+        LEFT JOIN (
+          SELECT order_id, SUM(bank) AS bank, SUM(cash) AS cash
+          FROM payments
+          GROUP BY order_id
+        ) p ON o.order_id = p.order_id
+        ${whereClause}
+      `;
+
+      const limitNum = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
+      const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+      const offset = (pageNum - 1) * limitNum;
+
+      const [countRows] = await db.execute(
+        `SELECT COUNT(*) AS total FROM orders o ${whereClause}`,
+        params
+      );
+      const total = countRows[0]?.total ?? 0;
 
       const query = `
         SELECT
@@ -78,19 +97,14 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           o.reference AS reference,
           o.description AS description,
           CASE WHEN COALESCE(o.pending_amount, 0) > 0 THEN 'Pending' ELSE 'Paid' END AS payment_status
-        FROM orders o
-        LEFT JOIN (
-          SELECT order_id, SUM(bank) AS bank, SUM(cash) AS cash
-          FROM payments
-          GROUP BY order_id
-        ) p ON o.order_id = p.order_id
-        ${whereClause}
+        ${fromClause}
         ORDER BY o.created_at DESC
+        LIMIT ? OFFSET ?
       `;
 
-      const [rows] = await db.execute(query, params);
-      log("BOOKING", "Orders list fetched", { user_id: req.userId, count: rows.length });
-      res.json(rows);
+      const [rows] = await db.execute(query, [...params, limitNum, offset]);
+      log("BOOKING", "Orders list fetched", { user_id: req.userId, count: rows.length, total, page: pageNum });
+      res.json({ data: rows, total });
     } catch (error) {
       logError("BOOKING", "Orders list error", error);
       await writeAuditLog(db, { user_id: req.userId, action: "ORDER_LIST_ERROR", entity_type: "orders", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
@@ -154,7 +168,23 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         `SELECT customer_id, cow_number AS cow, hissa_number AS hissa, slot, booking_name, shareholder_name, contact AS phone_number, alt_contact AS alt_phone, address, area, day, order_type AS type, booking_date, total_amount, received_amount AS received, pending_amount AS pending, order_source AS source, reference, description FROM orders WHERE order_id = ?`,
         [orderId]
       );
-      const oldValues = oldRows.length > 0 ? oldRows[0] : null;
+      const rawOld = oldRows.length > 0 ? oldRows[0] : null;
+      const rawNew = { ...body };
+
+      const toDateOnly = (v) => {
+        if (v == null || v === "") return v;
+        const s = String(v);
+        const match = s.match(/^(\d{4}-\d{2}-\d{2})/);
+        return match ? match[1] : s;
+      };
+      const omitOrderId = (obj) => {
+        if (!obj || typeof obj !== "object") return obj;
+        const out = { ...obj };
+        delete out.order_id;
+        return out;
+      };
+      const oldValues = rawOld ? omitOrderId({ ...rawOld, booking_date: toDateOnly(rawOld.booking_date) }) : null;
+      const newValues = omitOrderId({ ...rawNew, booking_date: body.booking_date !== undefined ? toDateOnly(body.booking_date) : undefined });
 
       const updates = [];
       const params = [];
@@ -191,7 +221,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         `UPDATE orders SET ${updates.join(", ")} WHERE order_id = ?`,
         params
       );
-      await writeAuditLog(db, { user_id: req.userId, action: "UPDATE_ORDER", entity_type: "orders", entity_id: orderId, old_values: oldValues, new_values: body, ip_address: req.ip, user_agent: req.get("user-agent") });
+      await writeAuditLog(db, { user_id: req.userId, action: "UPDATE_ORDER", entity_type: "orders", entity_id: orderId, old_values: oldValues, new_values: newValues, ip_address: req.ip, user_agent: req.get("user-agent") });
       log("BOOKING", "Order updated", { user_id: req.userId, orderId });
       res.json({ message: "Order updated", order_id: orderId });
     } catch (error) {
