@@ -212,7 +212,8 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       for (const [clientKey, dbCol] of Object.entries(fieldMap)) {
         if (body[clientKey] !== undefined) {
           updates.push(`\`${dbCol}\` = ?`);
-          params.push(body[clientKey]);
+          const value = clientKey === "booking_date" ? toDateOnly(body[clientKey]) : body[clientKey];
+          params.push(value);
         }
       }
       if (updates.length === 0) return res.status(400).json({ message: "No fields to update" });

@@ -103,9 +103,6 @@ function validateOrderEdit(row) {
   if (!phone) errors.phone_number = 'Phone number is required';
   else if (!/^[\d\s\-+()]{7,20}$/.test(phone)) errors.phone_number = 'Enter a valid phone number (7–20 digits/symbols)';
 
-  const altPhone = trim(row.alt_phone);
-  if (altPhone && !/^[\d\s\-+()]{7,20}$/.test(altPhone)) errors.alt_phone = 'Enter a valid phone number';
-
   const dateStr = trim(row.booking_date);
   if (dateStr) {
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -125,7 +122,6 @@ function validateOrderEdit(row) {
   }
 
   if (!errors.phone_number && trim(row.phone_number).length > 20) errors.phone_number = 'Phone number too long';
-  if (!errors.alt_phone && trim(row.alt_phone).length > 20) errors.alt_phone = 'Alt phone too long';
   if (!errors.customer_id && trim(row.customer_id).length > 50) errors.customer_id = 'Customer ID too long';
   if (!errors.booking_name && trim(row.booking_name).length > 100) errors.booking_name = 'Booking name too long';
   if (!errors.shareholder_name && trim(row.shareholder_name).length > 100) errors.shareholder_name = 'Shareholder name too long';
@@ -257,13 +253,19 @@ export default function OrderManagement() {
     setEditErrors({});
     setSaving(true);
     try {
+      const payload = { ...editRow };
+      if (payload.booking_date != null && payload.booking_date !== '') {
+        const s = String(payload.booking_date);
+        const dateOnly = s.includes('T') ? s.split('T')[0] : s.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || s;
+        payload.booking_date = dateOnly;
+      }
       const res = await fetch(`${API}/api/booking/orders/${encodeURIComponent(editRow.order_id)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(editRow),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         setEditOpen(false);
