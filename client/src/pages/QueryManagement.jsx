@@ -66,6 +66,7 @@ export default function QueryManagement() {
   const [area, setArea] = useState('');
   const [editOpen, setEditOpen] = useState(false);
   const [editRow, setEditRow] = useState(null);
+  const [editPreviousRow, setEditPreviousRow] = useState(null);
   const [editErrors, setEditErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -175,7 +176,7 @@ export default function QueryManagement() {
   };
 
   const handleEditLead = (row) => {
-    setEditRow({
+    const initial = {
       lead_id: row.lead_id,
       customer_id: row.customer_id ?? '',
       phone_number: row.phone_number ?? '',
@@ -191,17 +192,42 @@ export default function QueryManagement() {
       source: row.source ?? '',
       reference: row.reference ?? '',
       description: row.description ?? '',
-    });
+    };
+    setEditPreviousRow(initial);
+    setEditRow({ ...initial });
     setEditErrors({});
     setEditOpen(true);
   };
 
+  const validateLeadEdit = (row) => {
+    const err = {};
+    const trim = (v) => (v == null ? '' : String(v).trim());
+    if (!trim(row.booking_name)) err.booking_name = 'Booking name is required';
+    if (!trim(row.shareholder_name)) err.shareholder_name = 'Shareholder name is required';
+    const phone = trim(row.phone_number);
+    if (!phone) err.phone_number = 'Phone number is required';
+    else if (!/^[\d\s\-+()]{7,20}$/.test(phone)) err.phone_number = 'Enter a valid phone number (7–20 digits/symbols)';
+    const dateStr = trim(row.booking_date);
+    if (dateStr) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) err.booking_date = 'Date must be YYYY-MM-DD';
+      else if (Number.isNaN(new Date(dateStr).getTime())) err.booking_date = 'Invalid date';
+    }
+    const total = trim(row.total_amount);
+    if (total !== '') {
+      const n = Number(total);
+      if (Number.isNaN(n) || n < 0) err.total_amount = 'Must be a number ≥ 0';
+    }
+    if (trim(row.phone_number).length > 20) err.phone_number = err.phone_number || 'Phone number too long';
+    if (trim(row.booking_name).length > 100) err.booking_name = err.booking_name || 'Booking name too long';
+    if (trim(row.shareholder_name).length > 100) err.shareholder_name = err.shareholder_name || 'Shareholder name too long';
+    return err;
+  };
+
   const handleSaveEdit = async () => {
     if (!editRow) return;
-    const err = {};
-    if (!String(editRow.booking_name || '').trim()) err.booking_name = 'Required';
-    if (!String(editRow.shareholder_name || '').trim()) err.shareholder_name = 'Required';
+    const err = validateLeadEdit(editRow);
     if (Object.keys(err).length > 0) { setEditErrors(err); return; }
+    setEditErrors({});
     setSaving(true);
     try {
       const payload = { ...editRow };
@@ -216,6 +242,7 @@ export default function QueryManagement() {
       if (res.ok) {
         setEditOpen(false);
         setEditRow(null);
+        setEditPreviousRow(null);
         fetchLeads();
       } else {
         setEditErrors({ submit: data.message || 'Failed to update lead' });
@@ -266,6 +293,27 @@ export default function QueryManagement() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Queries');
     XLSX.writeFile(wb, `queries-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    try {
+      const filters = {};
+      if (search?.trim()) filters.search = search.trim();
+      if (area) filters.area = area;
+      if (orderType) filters.order_type = orderType;
+      if (day) filters.day = day;
+      if (reference) filters.reference = reference;
+      if (yearFilter) filters.year = yearFilter;
+      const payload = {
+        count: toExport.length,
+        ...(Object.keys(filters).length > 0 && { filters }),
+        ...(ids.length > 0 && { lead_ids: ids }),
+      };
+      await fetch(`${API}/api/booking/leads/export-audit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      console.error('Export audit failed', e);
+    }
   };
 
   const filterRowStyle = {
@@ -458,10 +506,14 @@ export default function QueryManagement() {
       )}
 
       {editOpen && editRow && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !saving && (setEditOpen(false), setEditRow(null))}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !saving && (setEditOpen(false), setEditRow(null), setEditPreviousRow(null))}>
           <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(680px, 95vw)', maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Edit Lead</h3>
-            {editErrors.submit && <div style={{ marginBottom: '10px', padding: '8px', background: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '12px' }}>{editErrors.submit}</div>}
+            {(editErrors.submit || Object.keys(editErrors).some((k) => k !== 'submit' && editErrors[k])) && (
+              <div style={{ marginBottom: '10px', padding: '8px', background: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '12px' }}>
+                {editErrors.submit || 'Please fix the errors below.'}
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
               {['customer_id', 'phone_number', 'alt_phone', 'type', 'booking_name', 'shareholder_name', 'address', 'area', 'day', 'booking_date', 'total_amount', 'source', 'reference'].map((key) => (
                 <div key={key}>
@@ -469,9 +521,10 @@ export default function QueryManagement() {
                   <input
                     disabled={key === 'lead_id'}
                     value={editRow[key] ?? ''}
-                    onChange={(e) => setEditRow((p) => ({ ...p, [key]: e.target.value }))}
-                    style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }}
+                    onChange={(e) => { setEditRow((p) => ({ ...p, [key]: e.target.value })); if (editErrors[key]) setEditErrors((p) => ({ ...p, [key]: undefined })); }}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: editErrors[key] ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px' }}
                   />
+                  {editErrors[key] && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{editErrors[key]}</div>}
                 </div>
               ))}
               <div style={{ gridColumn: '1 / -1' }}>

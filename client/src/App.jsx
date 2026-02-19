@@ -19,6 +19,7 @@ import AcceptTerms from './pages/AcceptTerms';
 import OrderManagement from './pages/OrderManagement';
 import QueryManagement from './pages/QueryManagement';
 import Transactions from './pages/Transactions';
+import Expenses from './pages/Expenses';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -102,7 +103,7 @@ function App() {
             <Route path="queries" element={<QueryManagement />} />
             <Route path="orders" element={<OrderManagement />} />
             <Route path="transactions" element={<Transactions />} />
-            <Route path="expenses" element={<BookingPlaceholder title="Expenses" />} />
+            <Route path="expenses" element={<Expenses />} />
           </Route>
 
           <Route path="/operations" element={<ProtectedRoute><RequirePermission permission="operation_management"><MainLayout systemName="Operations Management" /></RequirePermission></ProtectedRoute>}>

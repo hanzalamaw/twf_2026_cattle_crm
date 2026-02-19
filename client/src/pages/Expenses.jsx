@@ -32,7 +32,7 @@ function formatDate(val) {
   return s;
 }
 
-export default function Transactions() {
+export default function Expenses() {
   const [summary, setSummary] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -167,7 +167,7 @@ export default function Transactions() {
   if (loading && orders.length === 0) {
     return (
       <div style={{ padding: '24px', fontFamily: "'Poppins', 'Inter', sans-serif" }}>
-        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', marginBottom: '20px' }}>Transactions</h2>
+        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', marginBottom: '20px' }}>Expenses</h2>
         <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Loading...</div>
       </div>
     );
@@ -198,7 +198,7 @@ export default function Transactions() {
   return (
     <div style={{ padding: '24px', fontFamily: "'Poppins', 'Inter', sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0, flexWrap: 'nowrap', gap: '12px' }}>
-        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', flexShrink: 0 }}>Transactions</h2>
+        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', flexShrink: 0 }}>Expenses</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'nowrap', marginLeft: 'auto' }} ref={typeDropdownRef}>
           <label style={{ fontSize: '12px', color: '#666', whiteSpace: 'nowrap' }}>Year</label>
           <select value={yearFilter} onChange={(e) => { setYearFilter(e.target.value); setAppliedTypes([]); setSelectedTypes([]); }} style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', minWidth: '120px', cursor: 'pointer' }}>

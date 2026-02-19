@@ -247,13 +247,31 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     }
   });
 
+  /** Map lead row from DB (contact, alt_contact, order_type, order_source) to client shape (phone_number, alt_phone, type, source) for audit display */
+  function leadRowToClientShape(row) {
+    if (!row) return null;
+    const { contact, alt_contact, order_type, order_source, booking_date, ...rest } = row;
+    return {
+      ...rest,
+      phone_number: contact,
+      alt_phone: alt_contact,
+      type: order_type,
+      source: order_source,
+      booking_date: toDateOnly(booking_date) ?? booking_date,
+    };
+  }
+
   // Update lead
   app.put("/api/booking/leads/:leadId", verifyToken, async (req, res) => {
     try {
       const { leadId } = req.params;
       const body = req.body;
-      const [existing] = await db.execute("SELECT lead_id FROM leads WHERE lead_id = ?", [leadId]);
-      if (existing.length === 0) return res.status(404).json({ message: "Lead not found" });
+      const [existingRows] = await db.execute(
+        "SELECT lead_id, customer_id, contact, alt_contact, order_type, booking_name, shareholder_name, address, area, day, booking_date, total_amount, order_source, reference, description FROM leads WHERE lead_id = ?",
+        [leadId]
+      );
+      if (existingRows.length === 0) return res.status(404).json({ message: "Lead not found" });
+      const oldValues = leadRowToClientShape(existingRows[0]);
 
       const fields = [];
       const params = [];
@@ -263,7 +281,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         order_type: body.order_type ?? body.type,
         booking_name: body.booking_name,
         shareholder_name: body.shareholder_name,
-        alt_contact: body.alt_contact,
+        alt_contact: body.alt_contact ?? body.alt_phone,
         address: body.address,
         area: body.area,
         day: body.day,
@@ -282,7 +300,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       if (fields.length === 0) return res.status(400).json({ message: "No fields to update" });
       params.push(leadId);
       await db.execute(`UPDATE leads SET ${fields.join(", ")} WHERE lead_id = ?`, params);
-      await writeAuditLog(db, { user_id: req.userId, action: "UPDATE_LEAD", entity_type: "leads", entity_id: leadId, new_values: body, ip_address: req.ip, user_agent: req.get("user-agent") });
+      await writeAuditLog(db, { user_id: req.userId, action: "UPDATE_LEAD", entity_type: "leads", entity_id: leadId, old_values: oldValues, new_values: body, ip_address: req.ip, user_agent: req.get("user-agent") });
       log("BOOKING", "Lead updated", { user_id: req.userId, leadId });
       res.json({ message: "Lead updated", lead_id: leadId });
     } catch (error) {
@@ -291,14 +309,18 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     }
   });
 
-  // Delete lead (permanent)
+  // Delete lead (permanent) — store full deleted lead for audit (same pattern as cancel order)
   app.delete("/api/booking/leads/:leadId", verifyToken, async (req, res) => {
     try {
       const { leadId } = req.params;
-      const [existing] = await db.execute("SELECT lead_id, booking_name, shareholder_name FROM leads WHERE lead_id = ?", [leadId]);
+      const [existing] = await db.execute(
+        "SELECT lead_id, customer_id, contact, alt_contact, order_type, booking_name, shareholder_name, address, area, day, booking_date, total_amount, order_source, reference, description FROM leads WHERE lead_id = ?",
+        [leadId]
+      );
       if (existing.length === 0) return res.status(404).json({ message: "Lead not found" });
+      const deletedLead = leadRowToClientShape(existing[0]);
       await db.execute("DELETE FROM leads WHERE lead_id = ?", [leadId]);
-      await writeAuditLog(db, { user_id: req.userId, action: "DELETE_LEAD", entity_type: "leads", entity_id: leadId, new_values: { deleted: existing[0] }, ip_address: req.ip, user_agent: req.get("user-agent") });
+      await writeAuditLog(db, { user_id: req.userId, action: "DELETE_LEAD", entity_type: "leads", entity_id: leadId, new_values: deletedLead, ip_address: req.ip, user_agent: req.get("user-agent") });
       log("BOOKING", "Lead deleted", { user_id: req.userId, leadId });
       res.json({ message: "Lead deleted" });
     } catch (error) {
@@ -458,6 +480,34 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       res.json({ message: "Payment added", payment_id: paymentId, received: newReceived, pending: Math.max(0, totalAmount - newReceived) });
     } catch (error) {
       logError("BOOKING", "Add payment error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Log lead/query export (client calls after generating Excel)
+  app.post("/api/booking/leads/export-audit", verifyToken, async (req, res) => {
+    try {
+      const { count, filters, lead_ids } = req.body || {};
+      const exportCount = typeof count === "number" && count >= 0 ? count : 0;
+      const newValues = { count: exportCount };
+      if (filters && typeof filters === "object" && Object.keys(filters).length > 0) {
+        newValues.filters = filters;
+      }
+      if (lead_ids && Array.isArray(lead_ids) && lead_ids.length > 0) {
+        newValues.lead_ids = lead_ids;
+      }
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "LEAD_EXPORT",
+        entity_type: "leads",
+        new_values: newValues,
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      log("BOOKING", "Leads export", { user_id: req.userId, count: exportCount });
+      res.json({ ok: true });
+    } catch (error) {
+      logError("BOOKING", "Leads export audit error", error);
       res.status(500).json({ message: "Server error" });
     }
   });

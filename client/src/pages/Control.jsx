@@ -1751,7 +1751,9 @@ const Control = () => {
               const isCreate = actionUpper.includes('CREATE') || actionUpper.includes('ADD');
               const isDelete = actionUpper.includes('DELETE') || actionUpper.includes('REMOVE');
               const isCancelOrder = actionUpper === 'CANCEL_ORDER';
+              const isDeleteLead = actionUpper === 'DELETE_LEAD';
               const isOrderExport = actionUpper === 'ORDER_EXPORT';
+              const isLeadExport = actionUpper === 'LEAD_EXPORT';
 
               return (
                 <div>
@@ -1777,7 +1779,7 @@ const Control = () => {
                           </thead>
                           <tbody>
                             {Object.keys({ ...(oldValues || {}), ...(newValues || {}) })
-                              .filter((key) => key !== 'order_id')
+                              .filter((key) => key !== 'order_id' && key !== 'lead_id')
                               .map(key => {
                                 const oldVal = oldValues && oldValues[key];
                                 const newVal = newValues && newValues[key];
@@ -1854,6 +1856,36 @@ const Control = () => {
                     </div>
                   )}
 
+                  {isDeleteLead && newValues && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#333' }}>
+                        Deleted lead details
+                      </h3>
+                      <div style={{ background: '#FFF5F5', borderRadius: '8px', padding: '16px', maxHeight: '400px', overflow: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
+                              <th style={{ textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' }}>Field</th>
+                              <th style={{ textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' }}>Value</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(newValues).map(([key, value]) => (
+                              <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
+                                <td style={{ padding: '8px', fontSize: '12px', fontWeight: '500', color: '#333' }}>
+                                  {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                </td>
+                                <td style={{ padding: '8px', fontSize: '12px', color: '#333' }}>
+                                  {value !== null && value !== undefined ? String(value) : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
                   {isOrderExport && newValues && (
                     <div style={{ marginBottom: '20px' }}>
                       <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#333' }}>
@@ -1867,6 +1899,38 @@ const Control = () => {
                               <strong>Selected order IDs:</strong>
                               <div style={{ marginTop: '4px', fontFamily: 'monospace', fontSize: '12px', wordBreak: 'break-all' }}>
                                 {newValues.order_ids.join(', ')}
+                              </div>
+                            </div>
+                          ) : newValues.filters && Object.keys(newValues.filters).length > 0 ? (
+                            <div style={{ marginTop: '8px' }}>
+                              <strong>Filters applied:</strong>
+                              <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                                {Object.entries(newValues.filters).map(([k, v]) => (
+                                  <li key={k}>{k.replace(/_/g, ' ')}: {String(v)}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : (
+                            <div style={{ marginTop: '8px', color: '#2E7D32' }}>All data exported (no filters, no selection)</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {isLeadExport && newValues && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#333' }}>
+                        Export summary
+                      </h3>
+                      <div style={{ background: '#F0F7FF', borderRadius: '8px', padding: '16px' }}>
+                        <div style={{ fontSize: '13px', color: '#333', lineHeight: '1.7' }}>
+                          <div><strong>Rows exported:</strong> {newValues.count ?? 0}</div>
+                          {newValues.lead_ids && newValues.lead_ids.length > 0 ? (
+                            <div style={{ marginTop: '8px' }}>
+                              <strong>Selected lead IDs:</strong>
+                              <div style={{ marginTop: '4px', fontFamily: 'monospace', fontSize: '12px', wordBreak: 'break-all' }}>
+                                {newValues.lead_ids.join(', ')}
                               </div>
                             </div>
                           ) : newValues.filters && Object.keys(newValues.filters).length > 0 ? (

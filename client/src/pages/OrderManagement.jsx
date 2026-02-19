@@ -144,6 +144,7 @@ export default function OrderManagement() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [editOpen, setEditOpen] = useState(false);
   const [editRow, setEditRow] = useState(defaultEditRow);
+  const [editPreviousRow, setEditPreviousRow] = useState(null);
   const [editErrors, setEditErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(null);
@@ -218,7 +219,7 @@ export default function OrderManagement() {
   };
 
   const handleEdit = (row) => {
-    setEditRow({
+    const initial = {
       order_id: row.order_id,
       customer_id: row.customer_id ?? '',
       cow: row.cow ?? '',
@@ -239,7 +240,9 @@ export default function OrderManagement() {
       source: row.source ?? '',
       reference: row.reference ?? '',
       description: row.description ?? '',
-    });
+    };
+    setEditPreviousRow(initial);
+    setEditRow({ ...initial });
     setEditErrors({});
     setEditOpen(true);
   };
@@ -269,6 +272,7 @@ export default function OrderManagement() {
       });
       if (res.ok) {
         setEditOpen(false);
+        setEditPreviousRow(null);
         fetchOrders();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -634,14 +638,34 @@ export default function OrderManagement() {
       )}
 
       {editOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !saving && (setEditErrors({}), setEditOpen(false))}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !saving && (setEditErrors({}), setEditOpen(false), setEditPreviousRow(null))}>
           <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(680px, 95vw)', maxHeight: '85vh', overflowY: 'auto', overflowX: 'hidden', boxSizing: 'border-box' }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Edit Order</h3>
+            {editPreviousRow && (
+              <div style={{ marginBottom: '14px', padding: '10px 12px', background: '#f5f5f5', borderRadius: '8px', border: '1px solid #e8e8e8' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>Previous values</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 14px', fontSize: '12px' }}>
+                  {['order_id', 'customer_id', 'cow', 'hissa', 'slot', 'booking_name', 'shareholder_name', 'phone_number', 'alt_phone', 'address', 'area', 'day', 'type', 'booking_date', 'total_amount', 'received', 'pending', 'source', 'reference'].map((key) => (
+                    <div key={key}>
+                      <span style={{ color: '#888' }}>{key.replace(/_/g, ' ')}: </span>
+                      <span style={{ color: '#333' }}>{editPreviousRow[key] != null && editPreviousRow[key] !== '' ? String(editPreviousRow[key]) : '—'}</span>
+                    </div>
+                  ))}
+                  {editPreviousRow.description != null && editPreviousRow.description !== '' && (
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <span style={{ color: '#888' }}>description: </span>
+                      <span style={{ color: '#333' }}>{String(editPreviousRow.description)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             {Object.keys(editErrors).length > 0 && (
               <div style={{ marginBottom: '10px', padding: '8px 10px', background: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '12px' }}>
                 Please fix the errors below before saving.
               </div>
             )}
+            <div style={{ fontSize: '11px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>Update to</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
               {['order_id', 'customer_id', 'cow', 'hissa', 'slot', 'booking_name', 'shareholder_name', 'phone_number', 'alt_phone', 'address', 'area', 'day', 'type', 'booking_date', 'total_amount', 'received', 'pending', 'source', 'reference'].map((key) => {
                 const isReadOnly = key === 'order_id' || key === 'received' || key === 'pending';
