@@ -1783,15 +1783,27 @@ const Control = () => {
                                 const newVal = newValues && newValues[key];
                                 const toDatePart = (v) => {
                                   if (v == null || v === '') return v;
+                                  if (v instanceof Date) {
+                                    const y = v.getFullYear(), m = String(v.getMonth() + 1).padStart(2, '0'), d = String(v.getDate()).padStart(2, '0');
+                                    return `${y}-${m}-${d}`;
+                                  }
                                   const s = String(v);
                                   const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
-                                  return m ? m[1] : s;
+                                  if (m) return m[1];
+                                  const parsed = new Date(v);
+                                  if (!Number.isNaN(parsed.getTime())) {
+                                    const y = parsed.getFullYear(), mo = String(parsed.getMonth() + 1).padStart(2, '0'), d = String(parsed.getDate()).padStart(2, '0');
+                                    return `${y}-${mo}-${d}`;
+                                  }
+                                  return s;
                                 };
                                 const oldNorm = key === 'booking_date' ? toDatePart(oldVal) : oldVal;
                                 const newNorm = key === 'booking_date' ? toDatePart(newVal) : newVal;
-                                const changed = oldNorm !== newNorm;
-                                const displayOld = oldVal !== null && oldVal !== undefined ? String(key === 'booking_date' ? (toDatePart(oldVal) || oldVal) : oldVal) : '—';
-                                const displayNew = newVal !== null && newVal !== undefined ? String(key === 'booking_date' ? (toDatePart(newVal) || newVal) : newVal) : '—';
+                                const changed = key === 'booking_date'
+                                  ? (oldNorm != null && newNorm != null && String(oldNorm) !== String(newNorm))
+                                  : (oldNorm !== newNorm);
+                                const displayOld = oldVal !== null && oldVal !== undefined ? String(key === 'booking_date' ? (toDatePart(oldVal) ?? '—') : oldVal) : '—';
+                                const displayNew = newVal !== null && newVal !== undefined ? String(key === 'booking_date' ? (toDatePart(newVal) ?? '—') : newVal) : '—';
                                 return (
                                   <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
                                     <td style={{ padding: '8px', fontSize: '12px', fontWeight: '500', color: '#333' }}>

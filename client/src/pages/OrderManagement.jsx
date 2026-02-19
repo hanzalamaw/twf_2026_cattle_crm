@@ -177,7 +177,7 @@ export default function OrderManagement() {
       if (day) params.set('day', day);
       if (reference) params.set('reference', reference);
       if (cowNumber.trim()) params.set('cow_number', cowNumber.trim());
-      if (yearFilter) params.set('year', yearFilter);
+      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
       const res = await fetch(`${API}/api/booking/orders?${params.toString()}`, {
@@ -385,10 +385,12 @@ export default function OrderManagement() {
 
   const filterRowStyle = {
     display: 'flex',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     gap: '12px',
     marginBottom: '20px',
     alignItems: 'flex-end',
+    overflowX: 'auto',
+    minWidth: 0,
   };
   const filterFieldStyle = (width) => ({
     width: width || 120,
@@ -420,16 +422,16 @@ export default function OrderManagement() {
             onChange={(e) => setYearFilter(e.target.value)}
             style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px', minWidth: '140px' }}
           >
+            <option value="all">All</option>
             <option value="2026">Year 2026</option>
             <option value="2025">Year 2025</option>
             <option value="2024">Year 2024</option>
-            <option value="other">2024 &amp; earlier</option>
           </select>
         </div>
       </div>
 
       <div style={{ ...filterRowStyle, flexShrink: 0 }}>
-        <div style={{ flex: 1, minWidth: '180px' }}>
+        <div style={{ flex: '1 1 180px', minWidth: 0 }}>
           <label style={labelStyle}>Search (name, phone, area, address)</label>
           <input
             type="text"
@@ -479,15 +481,17 @@ export default function OrderManagement() {
             {filters.references.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
-        <button type="button" onClick={fetchOrders} style={{ padding: '8px 16px', height: '36px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>
-          Apply
-        </button>
-        <button type="button" onClick={handleResetFilters} style={{ padding: '8px 16px', height: '36px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>
-          Reset
-        </button>
-        <button type="button" onClick={handleExport} style={{ padding: '8px 16px', height: '36px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>
-          Export
-        </button>
+        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+          <button type="button" onClick={fetchOrders} style={{ padding: '8px 16px', height: '36px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            Apply
+          </button>
+          <button type="button" onClick={handleResetFilters} style={{ padding: '8px 16px', height: '36px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            Reset
+          </button>
+          <button type="button" onClick={handleExport} style={{ padding: '8px 16px', height: '36px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            Export
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -496,7 +500,7 @@ export default function OrderManagement() {
 
       <div style={{
         flex: 1,
-        minHeight: 0,
+        minHeight: '380px',
         overflow: 'auto',
         border: '1px solid #e0e0e0',
         borderRadius: '8px',
@@ -639,28 +643,42 @@ export default function OrderManagement() {
               </div>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
-              {['order_id', 'customer_id', 'cow', 'hissa', 'slot', 'booking_name', 'shareholder_name', 'phone_number', 'alt_phone', 'address', 'area', 'day', 'type', 'booking_date', 'total_amount', 'received', 'pending', 'source', 'reference'].map((key) => (
-                <div key={key} style={{ minWidth: 0 }}>
-                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>{key.replace(/_/g, ' ')}</label>
-                  <input
-                    disabled={key === 'order_id'}
-                    value={editRow[key] ?? ''}
-                    onChange={(e) => {
-                      setEditRow((p) => ({ ...p, [key]: e.target.value }));
-                      if (editErrors[key]) setEditErrors((p) => { const n = { ...p }; delete n[key]; return n; });
-                    }}
-                    style={{
-                      width: '100%',
-                      boxSizing: 'border-box',
-                      padding: '6px 10px',
-                      borderRadius: '6px',
-                      border: editErrors[key] ? '1px solid #dc2626' : '1px solid #e0e0e0',
-                      fontSize: '13px',
-                    }}
-                  />
-                  {editErrors[key] && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{editErrors[key]}</div>}
-                </div>
-              ))}
+              {['order_id', 'customer_id', 'cow', 'hissa', 'slot', 'booking_name', 'shareholder_name', 'phone_number', 'alt_phone', 'address', 'area', 'day', 'type', 'booking_date', 'total_amount', 'received', 'pending', 'source', 'reference'].map((key) => {
+                const isReadOnly = key === 'order_id' || key === 'received' || key === 'pending';
+                return (
+                  <div key={key} style={{ minWidth: 0 }}>
+                    <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>{key.replace(/_/g, ' ')}</label>
+                    <input
+                      disabled={isReadOnly}
+                      readOnly={isReadOnly}
+                      value={editRow[key] ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditRow((p) => {
+                          const next = { ...p, [key]: val };
+                          if (key === 'total_amount') {
+                            const total = parseFloat(val) || 0;
+                            const received = parseFloat(p.received) || 0;
+                            next.pending = Math.max(0, total - received).toFixed(2);
+                          }
+                          return next;
+                        });
+                        if (editErrors[key]) setEditErrors((p) => { const n = { ...p }; delete n[key]; return n; });
+                      }}
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        border: editErrors[key] ? '1px solid #dc2626' : '1px solid #e0e0e0',
+                        fontSize: '13px',
+                        ...(isReadOnly && { backgroundColor: '#f5f5f5', cursor: 'not-allowed' }),
+                      }}
+                    />
+                    {editErrors[key] && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{editErrors[key]}</div>}
+                  </div>
+                );
+              })}
               <div style={{ minWidth: 0, gridColumn: '1 / -1' }}>
                 <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>description</label>
                 <textarea

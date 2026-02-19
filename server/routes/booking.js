@@ -2,6 +2,18 @@ import PDFDocument from "pdfkit";
 import { log, logError } from "../utils/logger.js";
 import { writeAuditLog } from "../utils/auditLog.js";
 
+/** Normalize to date-only YYYY-MM-DD for consistent display and audit (avoids timezone shift). */
+function toDateOnly(v) {
+  if (v == null || v === "") return v;
+  if (v instanceof Date) {
+    const y = v.getFullYear(), m = String(v.getMonth() + 1).padStart(2, "0"), d = String(v.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(v);
+  const match = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : s;
+}
+
 /**
  * Booking management API: orders list with search and filters.
  * @param {object} app - Express app
@@ -15,12 +27,13 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const conditions = [];
       const params = [];
 
-      if (year === "2026" || year === "2025" || year === "2024") {
+      if (year === "2026" || year === "2025") {
         conditions.push("YEAR(o.booking_date) = ?");
         params.push(year);
-      } else if (year === "other") {
-        conditions.push("(o.booking_date IS NULL OR YEAR(o.booking_date) NOT IN (2025, 2026))");
+      } else if (year === "2024") {
+        conditions.push("(o.booking_date IS NULL OR YEAR(o.booking_date) < 2025)");
       }
+      // year === "all" or empty: no year filter
       if (search && search.trim()) {
         const term = `%${search.trim()}%`;
         conditions.push(`(
@@ -103,8 +116,9 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       `;
 
       const [rows] = await db.execute(query, [...params, limitNum, offset]);
+      const normalized = rows.map((r) => ({ ...r, booking_date: toDateOnly(r.booking_date) ?? r.booking_date }));
       log("BOOKING", "Orders list fetched", { user_id: req.userId, count: rows.length, total, page: pageNum });
-      res.json({ data: rows, total });
+      res.json({ data: normalized, total });
     } catch (error) {
       logError("BOOKING", "Orders list error", error);
       await writeAuditLog(db, { user_id: req.userId, action: "ORDER_LIST_ERROR", entity_type: "orders", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
@@ -127,6 +141,323 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     } catch (error) {
       logError("BOOKING", "Orders filters error", error);
       await writeAuditLog(db, { user_id: req.userId, action: "ORDER_FILTERS_ERROR", entity_type: "orders", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // --- Leads (Query Management) ---
+  app.get("/api/booking/leads", verifyToken, async (req, res) => {
+    try {
+      const { search, order_type, day, reference, area, year, page, limit } = req.query;
+      const conditions = [];
+      const params = [];
+
+      if (year === "2026" || year === "2025") {
+        conditions.push("YEAR(l.booking_date) = ?");
+        params.push(year);
+      } else if (year === "2024") {
+        conditions.push("(l.booking_date IS NULL OR YEAR(l.booking_date) < 2025)");
+      }
+      if (search && search.trim()) {
+        const term = `%${search.trim()}%`;
+        conditions.push(`(
+          l.booking_name LIKE ? OR l.shareholder_name LIKE ? OR
+          l.contact LIKE ? OR l.alt_contact LIKE ? OR
+          l.area LIKE ? OR l.address LIKE ? OR l.customer_id LIKE ?
+        )`);
+        params.push(term, term, term, term, term, term, term);
+      }
+      if (order_type) {
+        conditions.push("l.order_type = ?");
+        params.push(order_type);
+      }
+      if (day) {
+        conditions.push("l.day = ?");
+        params.push(day);
+      }
+      if (reference) {
+        conditions.push("l.reference = ?");
+        params.push(reference);
+      }
+      if (area && area.trim()) {
+        conditions.push("l.area = ?");
+        params.push(area.trim());
+      }
+
+      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+      const limitNum = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
+      const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+      const offset = (pageNum - 1) * limitNum;
+
+      const [countRows] = await db.execute(
+        `SELECT COUNT(*) AS total FROM leads l ${whereClause}`,
+        params
+      );
+      const total = countRows[0]?.total ?? 0;
+
+      const query = `
+        SELECT
+          l.lead_id AS lead_id,
+          l.customer_id AS customer_id,
+          l.booking_name AS booking_name,
+          l.shareholder_name AS shareholder_name,
+          l.contact AS phone_number,
+          l.alt_contact AS alt_phone,
+          l.address AS address,
+          l.area AS area,
+          l.day AS day,
+          l.order_type AS type,
+          l.booking_date AS booking_date,
+          l.total_amount AS total_amount,
+          l.order_source AS source,
+          l.reference AS reference,
+          l.description AS description,
+          l.created_at AS created_at
+        FROM leads l
+        ${whereClause}
+        ORDER BY l.created_at DESC
+        LIMIT ? OFFSET ?
+      `;
+      const [rows] = await db.execute(query, [...params, limitNum, offset]);
+      const normalized = rows.map((r) => ({ ...r, booking_date: toDateOnly(r.booking_date) ?? r.booking_date }));
+      log("BOOKING", "Leads list fetched", { user_id: req.userId, count: rows.length, total, page: pageNum });
+      res.json({ data: normalized, total });
+    } catch (error) {
+      logError("BOOKING", "Leads list error", error);
+      await writeAuditLog(db, { user_id: req.userId, action: "LEADS_LIST_ERROR", entity_type: "leads", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.get("/api/booking/leads/filters", verifyToken, async (req, res) => {
+    try {
+      const [types] = await db.execute("SELECT DISTINCT order_type AS value FROM leads WHERE order_type IS NOT NULL ORDER BY order_type");
+      const [days] = await db.execute("SELECT DISTINCT day AS value FROM leads WHERE day IS NOT NULL ORDER BY day");
+      const [refs] = await db.execute("SELECT DISTINCT reference AS value FROM leads WHERE reference IS NOT NULL AND reference != '' ORDER BY reference");
+      const [areas] = await db.execute("SELECT DISTINCT area AS value FROM leads WHERE area IS NOT NULL AND area != '' ORDER BY area");
+      res.json({
+        order_types: types.map((r) => r.value),
+        days: days.map((r) => r.value),
+        references: refs.map((r) => r.value),
+        areas: areas.map((r) => r.value),
+      });
+    } catch (error) {
+      logError("BOOKING", "Leads filters error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Update lead
+  app.put("/api/booking/leads/:leadId", verifyToken, async (req, res) => {
+    try {
+      const { leadId } = req.params;
+      const body = req.body;
+      const [existing] = await db.execute("SELECT lead_id FROM leads WHERE lead_id = ?", [leadId]);
+      if (existing.length === 0) return res.status(404).json({ message: "Lead not found" });
+
+      const fields = [];
+      const params = [];
+      const normalized = {
+        customer_id: body.customer_id,
+        contact: body.contact ?? body.phone_number,
+        order_type: body.order_type ?? body.type,
+        booking_name: body.booking_name,
+        shareholder_name: body.shareholder_name,
+        alt_contact: body.alt_contact,
+        address: body.address,
+        area: body.area,
+        day: body.day,
+        booking_date: body.booking_date,
+        total_amount: body.total_amount,
+        order_source: body.order_source ?? body.source,
+        reference: body.reference,
+        description: body.description,
+      };
+      for (const [key, val] of Object.entries(normalized)) {
+        if (val !== undefined) {
+          fields.push(`\`${key}\` = ?`);
+          params.push(key === "booking_date" ? toDateOnly(val) : val);
+        }
+      }
+      if (fields.length === 0) return res.status(400).json({ message: "No fields to update" });
+      params.push(leadId);
+      await db.execute(`UPDATE leads SET ${fields.join(", ")} WHERE lead_id = ?`, params);
+      await writeAuditLog(db, { user_id: req.userId, action: "UPDATE_LEAD", entity_type: "leads", entity_id: leadId, new_values: body, ip_address: req.ip, user_agent: req.get("user-agent") });
+      log("BOOKING", "Lead updated", { user_id: req.userId, leadId });
+      res.json({ message: "Lead updated", lead_id: leadId });
+    } catch (error) {
+      logError("BOOKING", "Update lead error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Delete lead (permanent)
+  app.delete("/api/booking/leads/:leadId", verifyToken, async (req, res) => {
+    try {
+      const { leadId } = req.params;
+      const [existing] = await db.execute("SELECT lead_id, booking_name, shareholder_name FROM leads WHERE lead_id = ?", [leadId]);
+      if (existing.length === 0) return res.status(404).json({ message: "Lead not found" });
+      await db.execute("DELETE FROM leads WHERE lead_id = ?", [leadId]);
+      await writeAuditLog(db, { user_id: req.userId, action: "DELETE_LEAD", entity_type: "leads", entity_id: leadId, new_values: { deleted: existing[0] }, ip_address: req.ip, user_agent: req.get("user-agent") });
+      log("BOOKING", "Lead deleted", { user_id: req.userId, leadId });
+      res.json({ message: "Lead deleted" });
+    } catch (error) {
+      logError("BOOKING", "Delete lead error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Confirm lead → create order and remove lead (audit logged)
+  app.post("/api/booking/leads/:leadId/confirm-order", verifyToken, async (req, res) => {
+    try {
+      const { leadId } = req.params;
+      const [leadRows] = await db.execute(
+        "SELECT lead_id, customer_id, contact, order_type AS order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, reference, description FROM leads WHERE lead_id = ?",
+        [leadId]
+      );
+      if (leadRows.length === 0) {
+        await writeAuditLog(db, { user_id: req.userId, action: "CONFIRM_LEAD_ORDER_ERROR", entity_type: "leads", entity_id: leadId, new_values: { reason: "lead_not_found" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+        return res.status(404).json({ message: "Lead not found" });
+      }
+      const lead = leadRows[0];
+      const totalAmount = Number(lead.total_amount) || 0;
+
+      const [idRows] = await db.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(order_id, 4, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM orders WHERE order_id LIKE '#O-%'"
+      );
+      const year = new Date().getFullYear();
+      const nextNum = idRows[0]?.nextId ?? 1;
+      const orderId = `#O-${String(nextNum).padStart(4, "0")}-${year}`;
+
+      await db.execute(
+        `INSERT INTO orders (order_id, customer_id, contact, order_type, booking_name, shareholder_name, cow_number, hissa_number, alt_contact, address, area, day, booking_date, total_amount, received_amount, pending_amount, order_source, reference, description, rider_id, slot)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, NULL)`,
+        [
+          orderId,
+          lead.customer_id ?? null,
+          lead.contact ?? null,
+          lead.order_type ?? null,
+          lead.booking_name ?? null,
+          lead.shareholder_name ?? null,
+          lead.alt_contact ?? null,
+          lead.address ?? null,
+          lead.area ?? null,
+          lead.day ?? null,
+          toDateOnly(lead.booking_date) ?? null,
+          totalAmount,
+          totalAmount, // pending_amount
+          lead.order_source ?? null,
+          lead.reference ?? null,
+          lead.description ?? null,
+        ]
+      );
+
+      await db.execute("DELETE FROM leads WHERE lead_id = ?", [leadId]);
+
+      const auditDetail = { lead_id: leadId, order_id: orderId, customer_id: lead.customer_id, booking_name: lead.booking_name, shareholder_name: lead.shareholder_name, total_amount: totalAmount };
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "CONFIRM_LEAD_ORDER",
+        entity_type: "leads",
+        entity_id: leadId,
+        new_values: auditDetail,
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      log("BOOKING", "Lead confirmed as order", { user_id: req.userId, leadId, orderId });
+      res.json({ message: "Order created from lead", order_id: orderId });
+    } catch (error) {
+      logError("BOOKING", "Confirm lead order error", error);
+      await writeAuditLog(db, { user_id: req.userId, action: "CONFIRM_LEAD_ORDER_ERROR", entity_type: "leads", entity_id: req.params.leadId, new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // --- Transactions (payments + expenses summary and lists) ---
+  app.get("/api/booking/transactions", verifyToken, async (req, res) => {
+    try {
+      const [paySum] = await db.execute(
+        "SELECT COALESCE(SUM(bank), 0) AS total_bank, COALESCE(SUM(cash), 0) AS total_cash, COALESCE(SUM(total_received), 0) AS total_received FROM payments"
+      );
+      const [expSum] = await db.execute(
+        "SELECT COALESCE(SUM(bank), 0) AS expenses_bank, COALESCE(SUM(cash), 0) AS expenses_cash FROM booking_expenses"
+      );
+      const totalBank = Number(paySum[0]?.total_bank ?? 0);
+      const totalCash = Number(paySum[0]?.total_cash ?? 0);
+      const totalExpensesBank = Number(expSum[0]?.expenses_bank ?? 0);
+      const totalExpensesCash = Number(expSum[0]?.expenses_cash ?? 0);
+      const onHand = totalBank - totalExpensesBank;
+      const actual = totalCash - totalExpensesCash;
+      const totalAmount = totalBank + totalCash;
+
+      const [payments] = await db.execute(
+        "SELECT p.payment_id, p.bank, p.cash, p.total_received, p.date, p.order_id FROM payments p ORDER BY p.date DESC, p.payment_id DESC"
+      );
+      const [expenses] = await db.execute(
+        "SELECT expense_id, bank, cash, total, done_at, description FROM booking_expenses ORDER BY done_at DESC"
+      );
+
+      res.json({
+        summary: {
+          totalBank,
+          totalCash,
+          totalExpensesBank,
+          totalExpensesCash,
+          onHand,
+          actual,
+          totalAmount,
+        },
+        payments: payments.map((r) => ({ ...r, date: toDateOnly(r.date) ?? r.date })),
+        expenses,
+      });
+    } catch (error) {
+      logError("BOOKING", "Transactions error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Add payment to an order (for Update Transaction modal)
+  app.post("/api/booking/orders/:orderId/payments", verifyToken, async (req, res) => {
+    try {
+      const { orderId } = req.params;
+      const { bank = 0, cash = 0 } = req.body || {};
+      const addBank = Math.max(0, Number(bank) || 0);
+      const addCash = Math.max(0, Number(cash) || 0);
+      if (addBank === 0 && addCash === 0) return res.status(400).json({ message: "Add at least one of bank or cash amount" });
+
+      const [orders] = await db.execute(
+        "SELECT order_id, total_amount, received_amount, pending_amount FROM orders WHERE order_id = ?",
+        [orderId]
+      );
+      if (orders.length === 0) return res.status(404).json({ message: "Order not found" });
+      const order = orders[0];
+      const totalAmount = Number(order.total_amount) || 0;
+      const currentReceived = Number(order.received_amount) || 0;
+      const newReceived = currentReceived + addBank + addCash;
+      if (newReceived > totalAmount) return res.status(400).json({ message: "Total received cannot exceed order total amount" });
+
+      const [idRows] = await db.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(payment_id, 4, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM payments WHERE payment_id LIKE '#P-%'"
+      );
+      const year = new Date().getFullYear();
+      const paymentId = `#P-${String(idRows[0]?.nextId ?? 1).padStart(4, "0")}-${year}`;
+      const totalReceived = addBank + addCash;
+      const today = toDateOnly(new Date());
+
+      await db.execute(
+        "INSERT INTO payments (payment_id, bank, cash, total_received, date, order_id) VALUES (?, ?, ?, ?, ?, ?)",
+        [paymentId, addBank, addCash, totalReceived, today, orderId]
+      );
+      await db.execute(
+        "UPDATE orders SET received_amount = ?, pending_amount = ? WHERE order_id = ?",
+        [newReceived, Math.max(0, totalAmount - newReceived), orderId]
+      );
+
+      await writeAuditLog(db, { user_id: req.userId, action: "ADD_PAYMENT", entity_type: "orders", entity_id: orderId, new_values: { payment_id: paymentId, bank: addBank, cash: addCash }, ip_address: req.ip, user_agent: req.get("user-agent") });
+      log("BOOKING", "Payment added", { user_id: req.userId, orderId, paymentId });
+      res.json({ message: "Payment added", payment_id: paymentId, received: newReceived, pending: Math.max(0, totalAmount - newReceived) });
+    } catch (error) {
+      logError("BOOKING", "Add payment error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -171,12 +502,6 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const rawOld = oldRows.length > 0 ? oldRows[0] : null;
       const rawNew = { ...body };
 
-      const toDateOnly = (v) => {
-        if (v == null || v === "") return v;
-        const s = String(v);
-        const match = s.match(/^(\d{4}-\d{2}-\d{2})/);
-        return match ? match[1] : s;
-      };
       const omitOrderId = (obj) => {
         if (!obj || typeof obj !== "object") return obj;
         const out = { ...obj };
@@ -289,8 +614,8 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         user_agent: req.get("user-agent"),
       });
       const invoiceNumber = `#I-${String(orders.length).padStart(4, "0")}-2026`;
-      const bookingDateStr = customer.booking_date ? (typeof customer.booking_date === "string" ? customer.booking_date.split("T")[0] : customer.booking_date.toISOString().split("T")[0]) : "";
-      const issuedDate = new Date().toISOString().split("T")[0];
+      const bookingDateStr = toDateOnly(customer.booking_date) || "";
+      const issuedDate = toDateOnly(new Date()) || new Date().toISOString().split("T")[0];
       let grandTotal = 0;
       let grandReceived = 0;
       let grandPending = 0;

@@ -17,6 +17,8 @@ import Dashboard from './pages/Dashboard';
 import BookingPlaceholder from './pages/BookingPlaceholder';
 import AcceptTerms from './pages/AcceptTerms';
 import OrderManagement from './pages/OrderManagement';
+import QueryManagement from './pages/QueryManagement';
+import Transactions from './pages/Transactions';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -97,9 +99,9 @@ function App() {
             <Route path="dashboard" element={<RequireBookingDashboard><Dashboard /></RequireBookingDashboard>} />
             <Route path="new-query" element={<BookingPlaceholder title="New Query" />} />
             <Route path="new-order" element={<BookingPlaceholder title="New Order" />} />
-            <Route path="queries" element={<BookingPlaceholder title="Query Management" />} />
+            <Route path="queries" element={<QueryManagement />} />
             <Route path="orders" element={<OrderManagement />} />
-            <Route path="transactions" element={<BookingPlaceholder title="Transactions" />} />
+            <Route path="transactions" element={<Transactions />} />
             <Route path="expenses" element={<BookingPlaceholder title="Expenses" />} />
           </Route>
 

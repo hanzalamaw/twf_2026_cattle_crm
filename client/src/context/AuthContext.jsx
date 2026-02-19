@@ -8,6 +8,13 @@ export const AuthProvider = ({ children }) => {
 
   const API_BASE = 'http://localhost:5000';
 
+  const clearSessionAndLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
+    setUser(null);
+  };
+
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
     const token = localStorage.getItem('token');
@@ -21,26 +28,36 @@ export const AuthProvider = ({ children }) => {
           .then((res) => {
             if (res.status === 401) {
               const refreshToken = localStorage.getItem('refreshToken');
-              if (refreshToken) {
-                return fetch(`${API_BASE}/api/refresh`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ refreshToken })
-                })
-                  .then((r) => (r.ok ? r.json() : null))
-                  .then((data) => {
-                    if (data && data.token) {
-                      localStorage.setItem('token', data.token);
-                      return tryMe(data.token);
-                    }
-                    return res;
-                  });
+              if (!refreshToken) {
+                clearSessionAndLogout();
+                return null;
               }
+              return fetch(`${API_BASE}/api/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken })
+              })
+                .then((r) => {
+                  if (!r.ok) {
+                    clearSessionAndLogout();
+                    return null;
+                  }
+                  return r.json();
+                })
+                .then((data) => {
+                  if (!data || !data.token) {
+                    clearSessionAndLogout();
+                    return null;
+                  }
+                  localStorage.setItem('token', data.token);
+                  return tryMe(data.token);
+                });
             }
             return res;
           })
           .then((res) => {
-            if (res && res.ok) return res.json();
+            if (!res) return null;
+            if (res.ok) return res.json();
             return null;
           })
           .then((data) => {
@@ -49,7 +66,7 @@ export const AuthProvider = ({ children }) => {
               localStorage.setItem('user', JSON.stringify(data.user));
             }
           })
-          .catch(() => {})
+          .catch(() => clearSessionAndLogout())
           .finally(() => setLoading(false));
         return;
       }
