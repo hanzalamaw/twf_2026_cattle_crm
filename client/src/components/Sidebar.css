@@ -22,7 +22,7 @@
 }
 
 .sidebar.expanded {
-  width: 176px;
+  width: 200px;
 }
 
 .sidebar.collapsed {
@@ -269,9 +269,10 @@
   transition: color 0.25s ease;
 }
 
-.sidebar-nav .nav-icon-main {
-  width: 24px;
-  height: 24px;
+.sidebar-nav .nav-icon-main,
+.sidebar-bottom .nav-icon-main {
+  width: 20px;
+  height: 20px;
 }
 
 .nav-link:hover .nav-icon,
@@ -280,7 +281,7 @@
 }
 
 .nav-label {
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 500;
   color: #4b5563;
   white-space: nowrap;
@@ -291,17 +292,12 @@
   transition: color 0.25s ease;
 }
 
-.sidebar-back-btn .nav-label-back,
-.nav-label-back {
-  font-size: 8px;
-}
-
 .nav-link:hover .nav-label,
 .nav-link.active .nav-label {
   color: #1f2937;
 }
 
-/* Bottom: Back to Select Management */
+/* Bottom: Back to Select Management - same alignment as nav items */
 .sidebar-bottom {
   margin-top: auto;
   padding: 10px 8px;
@@ -311,6 +307,11 @@
 
 .sidebar-back-btn {
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+  border-radius: 10px;
 }
 
 .sidebar.collapsed .sidebar-back-btn {
