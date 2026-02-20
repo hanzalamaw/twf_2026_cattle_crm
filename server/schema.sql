@@ -67,18 +67,19 @@ CREATE TABLE `booking_expenses` (
   `total` decimal(10,2) DEFAULT 0.00,
   `done_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `description` text DEFAULT NULL,
-  `done_by` int(11) DEFAULT NULL
+  `done_by` varchar(255) DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `booking_expenses`
 --
 
-INSERT INTO `booking_expenses` (`expense_id`, `bank`, `cash`, `total`, `done_at`, `description`, `done_by`) VALUES
-('#E-0001-2026', 0.00, 500.00, 500.00, '2026-02-10 13:50:25', 'Fuel for field visit', 1),
-('#E-0002-2026', 2000.00, 0.00, 2000.00, '2026-02-10 13:50:25', 'Marketing flyers printing', 1),
-('#E-0003-2026', 0.00, 1200.00, 1200.00, '2026-02-10 13:50:25', 'Refreshments for customers', 1),
-('#E-0004-2026', 5000.00, 0.00, 5000.00, '2026-02-10 13:50:25', 'Social media ad campaign', 1);
+INSERT INTO `booking_expenses` (`expense_id`, `bank`, `cash`, `total`, `done_at`, `description`, `done_by`, `created_by`) VALUES
+('#E-0001-2026', 0.00, 500.00, 500.00, '2026-02-10 13:50:25', 'Fuel for field visit', 'admin', 1),
+('#E-0002-2026', 2000.00, 0.00, 2000.00, '2026-02-10 13:50:25', 'Marketing flyers printing', 'admin', 1),
+('#E-0003-2026', 0.00, 1200.00, 1200.00, '2026-02-10 13:50:25', 'Refreshments for customers', 'admin', 1),
+('#E-0004-2026', 5000.00, 0.00, 5000.00, '2026-02-10 13:50:25', 'Social media ad campaign', 'admin', 1);
 
 -- --------------------------------------------------------
 
@@ -336,7 +337,7 @@ ALTER TABLE `audit_logs`
 --
 ALTER TABLE `booking_expenses`
   ADD PRIMARY KEY (`expense_id`),
-  ADD KEY `done_by` (`done_by`);
+  ADD KEY `created_by` (`created_by`);
 
 --
 -- Indexes for table `cancelled_orders`
@@ -429,7 +430,7 @@ ALTER TABLE `audit_logs`
 -- Constraints for table `booking_expenses`
 --
 ALTER TABLE `booking_expenses`
-  ADD CONSTRAINT `booking_expenses_ibfk_1` FOREIGN KEY (`done_by`) REFERENCES `users` (`user_id`);
+  ADD CONSTRAINT `booking_expenses_ibfk_1` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`);
 
 --
 -- Constraints for table `payments`

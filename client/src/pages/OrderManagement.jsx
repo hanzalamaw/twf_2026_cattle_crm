@@ -52,18 +52,23 @@ function StatusPill({ status }) {
     <span
       style={{
         display: 'inline-block',
-        padding: '4px 10px',
-        borderRadius: '999px',
+        minWidth: '72px',
+        height: '22px',
+        padding: '0 10px',
+        borderRadius: '4px',
         fontSize: '10px',
         fontWeight: '600',
         whiteSpace: 'nowrap',
         border: '1px solid',
+        textAlign: 'center',
+        lineHeight: '20px',
+        boxSizing: 'border-box',
         ...(isPending
-          ? { color: '#b91c1c', background: '#fef2f2', borderColor: '#b91c1c' }
-          : { color: '#166534', background: '#f0fdf4', borderColor: '#166534' }),
+          ? { color: '#C30730', background: '#FBEDF0', borderColor: '#C30730' }
+          : { color: '#07C339', background: '#E6F9EB', borderColor: '#07C339' }),
       }}
     >
-      {status || '—'}
+      {isPending ? 'Pending' : (status ? 'Received' : '—')}
     </span>
   );
 }
@@ -550,9 +555,9 @@ export default function OrderManagement() {
                       </td>
                     ))}
                     <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
-                      <button type="button" onClick={() => handleEdit(row)} style={{ marginRight: '6px', padding: '3px 6px', fontSize: '10px', cursor: 'pointer' }}>Edit</button>
-                      <button type="button" onClick={() => handleInvoice(row.customer_id)} style={{ marginRight: '6px', padding: '3px 6px', fontSize: '10px', cursor: 'pointer' }}>Invoice</button>
-                      <button type="button" onClick={() => handleCancelClick(row)} style={{ padding: '3px 6px', fontSize: '10px', cursor: 'pointer', color: '#c62828' }}>Cancel</button>
+                      <button type="button" onClick={() => handleEdit(row)} title="Edit" style={{ marginRight: '6px', padding: '4px', fontSize: '10px', cursor: 'pointer', background: 'none', border: 'none', verticalAlign: 'middle' }}><img src="/icons/edit.png" alt="Edit" style={{ width: '15px', height: '15px', display: 'block' }} /></button>
+                      <button type="button" onClick={() => handleInvoice(row.customer_id)} title="Invoice" style={{ marginRight: '6px', padding: '4px', fontSize: '10px', cursor: 'pointer', background: 'none', border: 'none', verticalAlign: 'middle' }}><img src="/icons/invoice.png" alt="Invoice" style={{ width: '21px', height: '21px', display: 'block' }} /></button>
+                      <button type="button" onClick={() => handleCancelClick(row)} title="Cancel" style={{ padding: '4px', fontSize: '10px', cursor: 'pointer', color: '#c62828', background: 'none', border: 'none', verticalAlign: 'middle' }}><img src="/icons/delete.png" alt="Cancel" style={{ width: '18px', height: '18px', display: 'block' }} /></button>
                     </td>
                   </tr>
                 ))
@@ -641,25 +646,6 @@ export default function OrderManagement() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !saving && (setEditErrors({}), setEditOpen(false), setEditPreviousRow(null))}>
           <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(680px, 95vw)', maxHeight: '85vh', overflowY: 'auto', overflowX: 'hidden', boxSizing: 'border-box' }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Edit Order</h3>
-            {editPreviousRow && (
-              <div style={{ marginBottom: '14px', padding: '10px 12px', background: '#f5f5f5', borderRadius: '8px', border: '1px solid #e8e8e8' }}>
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>Previous values</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 14px', fontSize: '12px' }}>
-                  {['order_id', 'customer_id', 'cow', 'hissa', 'slot', 'booking_name', 'shareholder_name', 'phone_number', 'alt_phone', 'address', 'area', 'day', 'type', 'booking_date', 'total_amount', 'received', 'pending', 'source', 'reference'].map((key) => (
-                    <div key={key}>
-                      <span style={{ color: '#888' }}>{key.replace(/_/g, ' ')}: </span>
-                      <span style={{ color: '#333' }}>{editPreviousRow[key] != null && editPreviousRow[key] !== '' ? String(editPreviousRow[key]) : '—'}</span>
-                    </div>
-                  ))}
-                  {editPreviousRow.description != null && editPreviousRow.description !== '' && (
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <span style={{ color: '#888' }}>description: </span>
-                      <span style={{ color: '#333' }}>{String(editPreviousRow.description)}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
             {Object.keys(editErrors).length > 0 && (
               <div style={{ marginBottom: '10px', padding: '8px 10px', background: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '12px' }}>
                 Please fix the errors below before saving.

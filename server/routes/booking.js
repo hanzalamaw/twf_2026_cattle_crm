@@ -47,9 +47,10 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         conditions.push("o.slot = ?");
         params.push(slot);
       }
-      if (order_type) {
-        conditions.push("o.order_type = ?");
-        params.push(order_type);
+      const orderTypes = Array.isArray(order_type) ? order_type : order_type ? [order_type] : [];
+      if (orderTypes.length > 0) {
+        conditions.push(`o.order_type IN (${orderTypes.map(() => "?").join(",")})`);
+        params.push(...orderTypes);
       }
       if (day) {
         conditions.push("o.day = ?");
@@ -122,6 +123,41 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     } catch (error) {
       logError("BOOKING", "Orders list error", error);
       await writeAuditLog(db, { user_id: req.userId, action: "ORDER_LIST_ERROR", entity_type: "orders", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Orders summary (totals over all orders matching filters - for amount divs on Transactions)
+  app.get("/api/booking/orders/summary", verifyToken, async (req, res) => {
+    try {
+      const { year, order_type } = req.query;
+      const conditions = [];
+      const params = [];
+      if (year === "2026" || year === "2025") {
+        conditions.push("YEAR(o.booking_date) = ?");
+        params.push(year);
+      } else if (year === "2024") {
+        conditions.push("(o.booking_date IS NULL OR YEAR(o.booking_date) < 2025)");
+      }
+      const types = Array.isArray(order_type) ? order_type : order_type ? [order_type] : [];
+      if (types.length > 0) {
+        conditions.push(`o.order_type IN (${types.map(() => "?").join(",")})`);
+        params.push(...types);
+      }
+      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+      const [rows] = await db.execute(
+        `SELECT COALESCE(SUM(p.bank), 0) AS total_bank, COALESCE(SUM(p.cash), 0) AS total_cash
+         FROM orders o
+         LEFT JOIN (SELECT order_id, SUM(bank) AS bank, SUM(cash) AS cash FROM payments GROUP BY order_id) p ON o.order_id = p.order_id
+         ${whereClause}`,
+        params
+      );
+      res.json({
+        totalBank: Number(rows[0]?.total_bank ?? 0),
+        totalCash: Number(rows[0]?.total_cash ?? 0),
+      });
+    } catch (error) {
+      logError("BOOKING", "Orders summary error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -438,14 +474,37 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     }
   });
 
-  // List booking expenses (for Expenses page)
-  app.get("/api/booking/expenses", verifyToken, async (req, res) => {
+  // Expenses summary (totals over all expenses - for amount divs)
+  app.get("/api/booking/expenses/summary", verifyToken, async (req, res) => {
     try {
       const [rows] = await db.execute(
-        "SELECT expense_id, bank, cash, total, done_at, description FROM booking_expenses ORDER BY done_at DESC"
+        "SELECT COALESCE(SUM(bank), 0) AS total_bank, COALESCE(SUM(cash), 0) AS total_cash FROM booking_expenses"
+      );
+      res.json({
+        totalBank: Number(rows[0]?.total_bank ?? 0),
+        totalCash: Number(rows[0]?.total_cash ?? 0),
+      });
+    } catch (error) {
+      logError("BOOKING", "Expenses summary error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // List booking expenses (for Expenses page, paginated)
+  app.get("/api/booking/expenses", verifyToken, async (req, res) => {
+    try {
+      const { page = 1, limit = 50 } = req.query;
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+      const offset = (pageNum - 1) * limitNum;
+      const [countRows] = await db.execute("SELECT COUNT(*) AS total FROM booking_expenses");
+      const total = Number(countRows[0]?.total ?? 0);
+      const [rows] = await db.execute(
+        "SELECT expense_id, bank, cash, total, done_at, description, done_by, created_by FROM booking_expenses ORDER BY done_at DESC LIMIT ? OFFSET ?",
+        [limitNum, offset]
       );
       const expenses = rows.map((r) => ({ ...r, done_at: toDateOnly(r.done_at) ?? r.done_at }));
-      res.json({ data: expenses });
+      res.json({ data: expenses, total });
     } catch (error) {
       logError("BOOKING", "Expenses list error", error);
       res.status(500).json({ message: "Server error" });
@@ -461,13 +520,15 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       if (addBank === 0 && addCash === 0) return res.status(400).json({ message: "Add at least one of bank or cash amount" });
       const total = addBank + addCash;
       const year = new Date().getFullYear();
+      const [userRows] = await db.execute("SELECT username FROM users WHERE user_id = ?", [req.userId]);
+      const username = userRows[0]?.username ?? String(req.userId);
       const [idRows] = await db.execute(
         "SELECT COALESCE(MAX(CAST(SUBSTRING(expense_id, 4, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM booking_expenses WHERE expense_id LIKE '#E-%'"
       );
       const expenseId = `#E-${String(idRows[0]?.nextId ?? 1).padStart(4, "0")}-${year}`;
       await db.execute(
-        "INSERT INTO booking_expenses (expense_id, bank, cash, total, description, done_by) VALUES (?, ?, ?, ?, ?, ?)",
-        [expenseId, addBank, addCash, total, String(description).trim() || null, req.userId]
+        "INSERT INTO booking_expenses (expense_id, bank, cash, total, description, done_by, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [expenseId, addBank, addCash, total, String(description).trim() || null, username, req.userId]
       );
       await writeAuditLog(db, { user_id: req.userId, action: "ADD_EXPENSE", entity_type: "booking_expenses", entity_id: expenseId, new_values: { bank: addBank, cash: addCash, total, description: String(description).trim() || null }, ip_address: req.ip, user_agent: req.get("user-agent") });
       log("BOOKING", "Expense added", { user_id: req.userId, expenseId });
@@ -517,7 +578,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
   app.delete("/api/booking/expenses/:expenseId", verifyToken, async (req, res) => {
     try {
       const { expenseId } = req.params;
-      const [existing] = await db.execute("SELECT expense_id, bank, cash, total, done_at, description, done_by FROM booking_expenses WHERE expense_id = ?", [expenseId]);
+      const [existing] = await db.execute("SELECT expense_id, bank, cash, total, done_at, description, done_by, created_by FROM booking_expenses WHERE expense_id = ?", [expenseId]);
       if (existing.length === 0) return res.status(404).json({ message: "Expense not found" });
       const row = existing[0];
       const previousState = { expense_id: row.expense_id, bank: row.bank, cash: row.cash, total: row.total, done_at: toDateOnly(row.done_at) ?? row.done_at, description: row.description, done_by: row.done_by };

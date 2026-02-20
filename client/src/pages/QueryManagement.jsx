@@ -55,7 +55,7 @@ export default function QueryManagement() {
   const [orderType, setOrderType] = useState('');
   const [day, setDay] = useState('');
   const [reference, setReference] = useState('');
-  const [yearFilter, setYearFilter] = useState('all');
+  const [yearFilter, setYearFilter] = useState('2026');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -143,7 +143,7 @@ export default function QueryManagement() {
     setDay('');
     setReference('');
     setArea('');
-    setYearFilter('all');
+    setYearFilter('2026');
     setSelectedIds(new Set());
     setError('');
   };
@@ -481,8 +481,8 @@ export default function QueryManagement() {
                       </td>
                     ))}
                     <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
-                      <button type="button" onClick={() => handleEditLead(row)} style={{ marginRight: '8px', padding: '4px 8px', fontSize: '12px', cursor: 'pointer' }}>Edit</button>
-                      <button type="button" onClick={() => setDeleteConfirm(row)} style={{ padding: '4px 8px', fontSize: '12px', cursor: 'pointer', color: '#c62828' }}>Delete</button>
+                      <button type="button" onClick={() => handleEditLead(row)} title="Edit" style={{ marginRight: '8px', padding: '4px', cursor: 'pointer', background: 'none', border: 'none', verticalAlign: 'middle' }}><img src="/icons/edit.png" alt="Edit" style={{ width: '15px', height: '15px', display: 'block' }} /></button>
+                      <button type="button" onClick={() => setDeleteConfirm(row)} title="Delete" style={{ padding: '4px', cursor: 'pointer', background: 'none', border: 'none', verticalAlign: 'middle' }}><img src="/icons/delete.png" alt="Delete" style={{ width: '18px', height: '18px', display: 'block' }} /></button>
                     </td>
                   </tr>
                 ))

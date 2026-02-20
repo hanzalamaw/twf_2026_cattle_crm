@@ -11,6 +11,8 @@ const EXPENSE_COLUMNS = [
   { key: 'bank', label: 'Bank' },
   { key: 'cash', label: 'Cash' },
   { key: 'total', label: 'Total' },
+  { key: 'done_by', label: 'Done By' },
+  { key: 'created_by', label: 'Created By' },
 ];
 
 function formatAmount(val) {
@@ -46,7 +48,10 @@ export default function Expenses() {
   const [editDescription, setEditDescription] = useState('');
   const [editErrors, setEditErrors] = useState({});
   const [deleteConfirmExpense, setDeleteConfirmExpense] = useState(null);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
+  const PAGE_SIZE = 50;
   const { authFetch } = useAuth();
   const token = localStorage.getItem('token');
 
@@ -66,10 +71,10 @@ export default function Expenses() {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const res = await authFetch(`${API}/api/booking/transactions`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${API}/api/booking/expenses/summary`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
-        setSummary(data.summary || null);
+        setSummary(data);
       }
     } catch (e) {
       console.error(e);
@@ -80,19 +85,27 @@ export default function Expenses() {
     setLoading(true);
     setError('');
     try {
-      const res = await authFetch(`${API}/api/booking/expenses`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${API}/api/booking/expenses?page=${page}&limit=${PAGE_SIZE}`, { headers: { Authorization: `Bearer ${token}` } });
+      let data;
+      try {
+        data = await res.json();
+      } catch (_) {
+        data = {};
+      }
       if (res.ok) {
-        const data = await res.json();
         setExpenses(Array.isArray(data.data) ? data.data : []);
+        setTotalCount(typeof data.total === 'number' ? data.total : (Array.isArray(data.data) ? data.data.length : 0));
       } else {
-        setError('Failed to load expenses');
+        setExpenses([]);
+        setError(data.message || 'Failed to load expenses');
       }
     } catch (e) {
+      setExpenses([]);
       setError('Failed to load expenses');
     } finally {
       setLoading(false);
     }
-  }, [authFetch, token]);
+  }, [authFetch, token, page]);
 
   useEffect(() => {
     fetchSummary();
@@ -219,9 +232,18 @@ export default function Expenses() {
   };
 
   const handleExport = async () => {
-    const toExport = selectedIds.size > 0
-      ? expenses.filter((e) => selectedIds.has(e.expense_id))
-      : expenses;
+    let toExport;
+    if (selectedIds.size > 0) {
+      toExport = expenses.filter((e) => selectedIds.has(e.expense_id));
+    } else {
+      const res = await authFetch(`${API}/api/booking/expenses?page=1&limit=100000`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        setError('Failed to load expenses for export');
+        return;
+      }
+      const data = await res.json();
+      toExport = Array.isArray(data.data) ? data.data : [];
+    }
     if (toExport.length === 0) {
       alert(selectedIds.size > 0 ? 'No selected expenses to export.' : 'No expenses to export.');
       return;
@@ -251,8 +273,8 @@ export default function Expenses() {
     }
   };
 
-  const tableTotalBank = expenses.reduce((sum, row) => sum + (Number(row.bank) || 0), 0);
-  const tableTotalCash = expenses.reduce((sum, row) => sum + (Number(row.cash) || 0), 0);
+  const fullDataTotalBank = summary?.totalBank ?? 0;
+  const fullDataTotalCash = summary?.totalCash ?? 0;
 
   if (loading && expenses.length === 0) {
     return (
@@ -268,13 +290,7 @@ export default function Expenses() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0, flexWrap: 'wrap', gap: '10px' }}>
         <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#333', flexShrink: 0 }}>Expenses</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
-          <button type="button" onClick={() => setAmountVisible((v) => !v)} style={{ padding: '6px 11px', fontSize: '10px', fontWeight: '500', background: amountVisible ? '#f0f0f0' : '#FF5722', color: amountVisible ? '#333' : '#fff', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            {amountVisible ? 'Hide' : 'Show'}
-          </button>
-          <button type="button" onClick={openAddModal} style={{ padding: '6px 13px', fontSize: '11px', fontWeight: '600', background: '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            Add Expense
-          </button>
-          <button type="button" onClick={handleExport} style={{ padding: '6px 13px', fontSize: '11px', fontWeight: '600', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          <button type="button" onClick={handleExport} style={{ padding: '6px 13px', fontSize: '11px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             Export
           </button>
         </div>
@@ -284,18 +300,29 @@ export default function Expenses() {
         <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', flexShrink: 0, fontSize: '10px' }}>{error}</div>
       )}
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '13px', marginBottom: '16px', flexShrink: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', flexShrink: 0 }}>
+        <button type="button" onClick={() => setAmountVisible((v) => !v)} title={amountVisible ? 'Hide' : 'Show'} style={{ padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '13px', marginBottom: '16px', flexShrink: 0, alignItems: 'flex-start' }}>
         <div style={{ flex: '1 1 200px', minWidth: '180px', padding: '13px 16px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
           <div style={{ fontSize: '10px', color: '#666', marginBottom: '3px' }}>Bank</div>
           <div style={{ fontSize: '14px', fontWeight: '700', color: '#166534', minHeight: '22px' }}>
-            {amountVisible ? <span>{formatAmount(tableTotalBank)}</span> : <span style={{ filter: 'blur(6px)', userSelect: 'none', color: '#999' }}>{formatAmount(tableTotalBank)}</span>}
+            {amountVisible ? <span>{formatAmount(fullDataTotalBank)}</span> : <span style={{ filter: 'blur(6px)', userSelect: 'none', color: '#999' }}>{formatAmount(fullDataTotalBank)}</span>}
           </div>
         </div>
         <div style={{ flex: '1 1 200px', minWidth: '180px', padding: '13px 16px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
           <div style={{ fontSize: '10px', color: '#666', marginBottom: '3px' }}>Cash</div>
           <div style={{ fontSize: '14px', fontWeight: '700', color: '#b91c1c', minHeight: '22px' }}>
-            {amountVisible ? <span>{formatAmount(tableTotalCash)}</span> : <span style={{ filter: 'blur(6px)', userSelect: 'none', color: '#999' }}>{formatAmount(tableTotalCash)}</span>}
+            {amountVisible ? <span>{formatAmount(fullDataTotalCash)}</span> : <span style={{ filter: 'blur(6px)', userSelect: 'none', color: '#999' }}>{formatAmount(fullDataTotalCash)}</span>}
           </div>
+        </div>
+        <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+          <button type="button" onClick={openAddModal} style={{ padding: '6px 13px', fontSize: '11px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            Add Expense
+          </button>
         </div>
       </div>
 
@@ -311,7 +338,7 @@ export default function Expenses() {
                   {EXPENSE_COLUMNS.map((col) => (
                     <th key={col.key} style={{ padding: '10px 8px', textAlign: ['bank', 'cash', 'total'].includes(col.key) ? 'right' : 'left', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap' }}>{col.label}</th>
                   ))}
-                  <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap', width: '70px' }}>Delete</th>
+                  <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap', width: '80px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -329,11 +356,11 @@ export default function Expenses() {
                       </td>
                       {EXPENSE_COLUMNS.map((col) => (
                         <td key={col.key} style={{ padding: '8px', textAlign: ['bank', 'cash', 'total'].includes(col.key) ? 'right' : 'left', whiteSpace: 'nowrap' }}>
-                          {['bank', 'cash', 'total'].includes(col.key) ? formatAmount(row[col.key]) : (row[col.key] != null ? String(row[col.key]) : '—')}
+                          {['bank', 'cash', 'total'].includes(col.key) ? formatAmount(row[col.key]) : col.key === 'done_at' ? formatDate(row[col.key]) : (row[col.key] != null ? String(row[col.key]) : '—')}
                         </td>
                       ))}
                       <td style={{ padding: '8px', textAlign: 'center', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                        <button type="button" onClick={() => setDeleteConfirmExpense(row)} disabled={submitting} style={{ padding: '3px 8px', fontSize: '10px', cursor: submitting ? 'not-allowed' : 'pointer', color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px' }}>Delete</button>
+                        <button type="button" onClick={() => setDeleteConfirmExpense(row)} disabled={submitting} title="Delete" style={{ padding: '4px', cursor: submitting ? 'not-allowed' : 'pointer', background: 'none', border: 'none', verticalAlign: 'middle', opacity: submitting ? 0.6 : 1 }}><img src="/icons/delete.png" alt="Delete" style={{ width: '18px', height: '18px', display: 'block' }} /></button>
                       </td>
                     </tr>
                   ))
@@ -343,6 +370,55 @@ export default function Expenses() {
           </div>
         </div>
       </div>
+
+      {!loading && totalCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px' }}>
+          <span style={{ fontSize: '13px', color: '#666' }}>
+            Showing {expenses.length} of {totalCount} expenses
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              style={{ padding: '6px 12px', fontSize: '10px', background: page <= 1 ? '#f0f0f0' : '#fff', color: page <= 1 ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page <= 1 ? 'not-allowed' : 'pointer' }}
+            >
+              Previous
+            </button>
+            {(() => {
+              const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
+              const showPages = 5;
+              let start = Math.max(1, page - Math.floor(showPages / 2));
+              let end = Math.min(totalPages, start + showPages - 1);
+              if (end - start + 1 < showPages) start = Math.max(1, end - showPages + 1);
+              const pages = [];
+              for (let i = start; i <= end; i++) pages.push(i);
+              return (
+                <>
+                  {pages.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPage(p)}
+                      style={{ minWidth: '32px', padding: '6px 10px', fontSize: '10px', background: p === page ? '#2563eb' : '#fff', color: p === page ? '#fff' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', fontWeight: p === page ? 600 : 400 }}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </>
+              );
+            })()}
+            <button
+              type="button"
+              disabled={page >= Math.ceil(totalCount / PAGE_SIZE)}
+              onClick={() => setPage((p) => Math.min(Math.ceil(totalCount / PAGE_SIZE) || 1, p + 1))}
+              style={{ padding: '6px 12px', fontSize: '10px', background: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#f0f0f0' : '#fff', color: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page >= Math.ceil(totalCount / PAGE_SIZE) ? 'not-allowed' : 'pointer' }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {deleteConfirmExpense && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !submitting && setDeleteConfirmExpense(null)}>
