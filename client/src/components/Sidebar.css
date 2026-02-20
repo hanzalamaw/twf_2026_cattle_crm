@@ -291,6 +291,23 @@
   color: #1f2937;
 }
 
+/* Bottom: Back to Select Management */
+.sidebar-bottom {
+  margin-top: auto;
+  padding: 10px 8px;
+  border-top: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.sidebar-back-btn {
+  width: 100%;
+}
+
+.sidebar.collapsed .sidebar-back-btn {
+  justify-content: center;
+  padding: 8px;
+}
+
 /* Scrollbar Styling */
 .sidebar-nav::-webkit-scrollbar {
   width: 4px;

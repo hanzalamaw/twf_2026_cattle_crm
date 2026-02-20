@@ -438,6 +438,132 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     }
   });
 
+  // List booking expenses (for Expenses page)
+  app.get("/api/booking/expenses", verifyToken, async (req, res) => {
+    try {
+      const [rows] = await db.execute(
+        "SELECT expense_id, bank, cash, total, done_at, description FROM booking_expenses ORDER BY done_at DESC"
+      );
+      const expenses = rows.map((r) => ({ ...r, done_at: toDateOnly(r.done_at) ?? r.done_at }));
+      res.json({ data: expenses });
+    } catch (error) {
+      logError("BOOKING", "Expenses list error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Create booking expense
+  app.post("/api/booking/expenses", verifyToken, async (req, res) => {
+    try {
+      const { bank = 0, cash = 0, description = "" } = req.body || {};
+      const addBank = Math.max(0, Number(bank) || 0);
+      const addCash = Math.max(0, Number(cash) || 0);
+      if (addBank === 0 && addCash === 0) return res.status(400).json({ message: "Add at least one of bank or cash amount" });
+      const total = addBank + addCash;
+      const year = new Date().getFullYear();
+      const [idRows] = await db.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(expense_id, 4, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM booking_expenses WHERE expense_id LIKE '#E-%'"
+      );
+      const expenseId = `#E-${String(idRows[0]?.nextId ?? 1).padStart(4, "0")}-${year}`;
+      await db.execute(
+        "INSERT INTO booking_expenses (expense_id, bank, cash, total, description, done_by) VALUES (?, ?, ?, ?, ?, ?)",
+        [expenseId, addBank, addCash, total, String(description).trim() || null, req.userId]
+      );
+      await writeAuditLog(db, { user_id: req.userId, action: "ADD_EXPENSE", entity_type: "booking_expenses", entity_id: expenseId, new_values: { bank: addBank, cash: addCash, total, description: String(description).trim() || null }, ip_address: req.ip, user_agent: req.get("user-agent") });
+      log("BOOKING", "Expense added", { user_id: req.userId, expenseId });
+      res.json({ message: "Expense added", expense_id: expenseId });
+    } catch (error) {
+      logError("BOOKING", "Add expense error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Update booking expense
+  app.put("/api/booking/expenses/:expenseId", verifyToken, async (req, res) => {
+    try {
+      const { expenseId } = req.params;
+      const { bank, cash, description } = req.body || {};
+      const newBank = Math.max(0, Number(bank) ?? 0);
+      const newCash = Math.max(0, Number(cash) ?? 0);
+      if (newBank === 0 && newCash === 0) return res.status(400).json({ message: "At least one of bank or cash must be greater than 0" });
+      const total = newBank + newCash;
+      const [existing] = await db.execute("SELECT expense_id, bank, cash, total, description FROM booking_expenses WHERE expense_id = ?", [expenseId]);
+      if (existing.length === 0) return res.status(404).json({ message: "Expense not found" });
+      const oldRow = existing[0];
+      const previousState = { expense_id: oldRow.expense_id, bank: oldRow.bank, cash: oldRow.cash, total: oldRow.total, description: oldRow.description };
+      await db.execute(
+        "UPDATE booking_expenses SET bank = ?, cash = ?, total = ?, description = ? WHERE expense_id = ?",
+        [newBank, newCash, total, String(description ?? oldRow.description ?? "").trim() || null, expenseId]
+      );
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "UPDATE_EXPENSE",
+        entity_type: "booking_expenses",
+        entity_id: expenseId,
+        old_values: previousState,
+        new_values: { expense_id: expenseId, bank: newBank, cash: newCash, total, description: String(description ?? "").trim() || null },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      log("BOOKING", "Expense updated", { user_id: req.userId, expenseId });
+      res.json({ message: "Expense updated", expense_id: expenseId });
+    } catch (error) {
+      logError("BOOKING", "Update expense error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Delete booking expense
+  app.delete("/api/booking/expenses/:expenseId", verifyToken, async (req, res) => {
+    try {
+      const { expenseId } = req.params;
+      const [existing] = await db.execute("SELECT expense_id, bank, cash, total, done_at, description, done_by FROM booking_expenses WHERE expense_id = ?", [expenseId]);
+      if (existing.length === 0) return res.status(404).json({ message: "Expense not found" });
+      const row = existing[0];
+      const previousState = { expense_id: row.expense_id, bank: row.bank, cash: row.cash, total: row.total, done_at: toDateOnly(row.done_at) ?? row.done_at, description: row.description, done_by: row.done_by };
+      await db.execute("DELETE FROM booking_expenses WHERE expense_id = ?", [expenseId]);
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "DELETE_EXPENSE",
+        entity_type: "booking_expenses",
+        entity_id: expenseId,
+        old_values: previousState,
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      log("BOOKING", "Expense deleted", { user_id: req.userId, expenseId });
+      res.json({ message: "Expense deleted", expense_id: expenseId });
+    } catch (error) {
+      logError("BOOKING", "Delete expense error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Log expenses export (client calls after generating Excel)
+  app.post("/api/booking/expenses/export-audit", verifyToken, async (req, res) => {
+    try {
+      const { count, expense_ids } = req.body || {};
+      const exportCount = typeof count === "number" && count >= 0 ? count : 0;
+      const newValues = { count: exportCount };
+      if (expense_ids && Array.isArray(expense_ids) && expense_ids.length > 0) {
+        newValues.expense_ids = expense_ids;
+      }
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "EXPENSES_EXPORT",
+        entity_type: "booking_expenses",
+        new_values: newValues,
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      log("BOOKING", "Expenses export", { user_id: req.userId, count: exportCount });
+      res.json({ ok: true });
+    } catch (error) {
+      logError("BOOKING", "Expenses export audit error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
   // Add payment to an order (for Update Transaction modal)
   app.post("/api/booking/orders/:orderId/payments", verifyToken, async (req, res) => {
     try {

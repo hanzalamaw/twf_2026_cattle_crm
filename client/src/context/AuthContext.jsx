@@ -13,6 +13,38 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     setUser(null);
+    window.location.href = '/login';
+  };
+
+  /** Fetch with auth: on 401 tries refresh once; if refresh fails, redirects to login. */
+  const authFetch = async (url, options = {}) => {
+    const token = localStorage.getItem('token');
+    const headers = { ...options.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    let res = await fetch(url, { ...options, headers });
+    if (res.status === 401) {
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (!refreshToken) {
+        clearSessionAndLogout();
+        return res;
+      }
+      const refreshRes = await fetch(`${API_BASE}/api/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (!refreshRes.ok) {
+        clearSessionAndLogout();
+        return res;
+      }
+      const data = await refreshRes.json().catch(() => ({}));
+      if (!data?.token) {
+        clearSessionAndLogout();
+        return res;
+      }
+      localStorage.setItem('token', data.token);
+      res = await fetch(url, { ...options, headers: { ...options.headers, Authorization: `Bearer ${data.token}` } });
+    }
+    return res;
   };
 
   useEffect(() => {
@@ -105,7 +137,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, authFetch }}>
       {children}
     </AuthContext.Provider>
   );

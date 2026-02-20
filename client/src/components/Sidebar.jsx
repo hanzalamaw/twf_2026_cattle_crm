@@ -106,6 +106,15 @@ const LogoutIcon = () => (
   </svg>
 );
 
+const BackToSelectionIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="7" height="7" rx="1"/>
+    <rect x="14" y="3" width="7" height="7" rx="1"/>
+    <rect x="3" y="14" width="7" height="7" rx="1"/>
+    <rect x="14" y="14" width="7" height="7" rx="1"/>
+  </svg>
+);
+
 const MENU_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', managersOnly: true },
   { id: 'control', label: 'Control Management', icon: <ControlIcon />, path: '/control', permission: 'control_management' },
@@ -198,6 +207,18 @@ function Sidebar() {
           ))}
         </ul>
       </nav>
+
+      <div className="sidebar-bottom">
+        <button
+          type="button"
+          className="nav-link sidebar-back-btn"
+          onClick={() => navigate('/')}
+          title="Back to Select Management"
+        >
+          <span className="nav-icon"><BackToSelectionIcon /></span>
+          {isExpanded && <span className="nav-label">Select Management</span>}
+        </button>
+      </div>
     </aside>
   );
 }
