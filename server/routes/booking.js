@@ -165,9 +165,17 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       }
 
       // Find first available combination
-      // Cows: S1, S2, S3, ... (Standard/Premium/Waqf) or G1, G2, ... (Goat Hissa)
+      // Cows: S1, S2, S3, ... (Standard)
+      // Premium: P1, P2, P3, ... (Premium)
+      // Waqf: W1, W2, W3, ... (Waqf)
       // Hissas: 1-7 per cow
-      const cowPrefix = orderType === "Goat (Hissa)" ? "G" : "S";
+      const prefixMap = {
+        "Hissa - Premium": "P",
+        "Hissa - Standard": "S",
+        "Hissa - Waqf": "W",
+      };
+      
+      const cowPrefix = prefixMap[orderType] || "";
       const maxCows = 50; // Reasonable limit
       const maxHissas = 7;
 
@@ -197,6 +205,60 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       res.json({ cow_number: foundCow, hissa_number: foundHissa });
     } catch (error) {
       logError("BOOKING", "Get available cow/hissa error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Check if cow/hissa combination already exists
+  app.post("/api/booking/check-cow-hissa", verifyToken, async (req, res) => {
+    try {
+      const { cow_number, hissa_number, order_type, day, order_id } = req.body || {};
+      
+      if (!cow_number || !hissa_number || !order_type) {
+        return res.json({ exists: false });
+      }
+
+      const cowNum = String(cow_number).trim();
+      const hissaNum = String(hissa_number).trim();
+      const orderType = String(order_type).trim();
+      const dayValue = day ? String(day).trim() : null;
+      const year = 2026;
+
+      let query = `
+        SELECT order_id, booking_name, shareholder_name, contact 
+        FROM orders 
+        WHERE cow_number = ? AND hissa_number = ? AND order_type = ?
+        AND (YEAR(booking_date) = ? OR booking_date IS NULL)
+      `;
+      const params = [cowNum, hissaNum, orderType, year];
+
+      if (dayValue) {
+        query += " AND day = ?";
+        params.push(dayValue);
+      }
+
+      // Exclude current order_id if editing
+      if (order_id) {
+        query += " AND order_id != ?";
+        params.push(order_id);
+      }
+
+      const [rows] = await db.execute(query, params);
+      
+      if (rows.length > 0) {
+        const existing = rows[0];
+        return res.json({
+          exists: true,
+          order_id: existing.order_id,
+          booking_name: existing.booking_name,
+          shareholder_name: existing.shareholder_name,
+          contact: existing.contact,
+        });
+      }
+
+      res.json({ exists: false });
+    } catch (error) {
+      logError("BOOKING", "Check cow/hissa error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
