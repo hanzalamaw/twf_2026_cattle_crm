@@ -871,4 +871,270 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       res.status(500).json({ message: "Server error" });
     }
   });
+
+  // Generate customer ID based on contact lookup
+  app.post("/api/booking/generate-customer-id", verifyToken, async (req, res) => {
+    try {
+      const { contact } = req.body;
+      if (!contact || typeof contact !== "string") {
+        return res.status(400).json({ message: "Contact number is required" });
+      }
+
+      // Check in orders and cancelled_orders tables
+      const [orderRows] = await db.execute(
+        "SELECT customer_id FROM orders WHERE contact = ? LIMIT 1",
+        [contact]
+      );
+      if (orderRows.length > 0 && orderRows[0].customer_id) {
+        return res.json({ customer_id: orderRows[0].customer_id });
+      }
+
+      const [cancelledRows] = await db.execute(
+        "SELECT customer_id FROM cancelled_orders WHERE contact = ? LIMIT 1",
+        [contact]
+      );
+      if (cancelledRows.length > 0 && cancelledRows[0].customer_id) {
+        return res.json({ customer_id: cancelledRows[0].customer_id });
+      }
+
+      // Generate new customer ID: find max from both tables
+      const [maxOrderRows] = await db.execute(
+        "SELECT customer_id FROM orders WHERE customer_id LIKE 'TWF-%' ORDER BY CAST(SUBSTRING(customer_id, 5, 4) AS UNSIGNED) DESC LIMIT 1"
+      );
+      const [maxCancelledRows] = await db.execute(
+        "SELECT customer_id FROM cancelled_orders WHERE customer_id LIKE 'TWF-%' ORDER BY CAST(SUBSTRING(customer_id, 5, 4) AS UNSIGNED) DESC LIMIT 1"
+      );
+
+      let maxNum = 0;
+      if (maxOrderRows.length > 0) {
+        const match = maxOrderRows[0].customer_id.match(/^TWF-(\d+)-/);
+        if (match) {
+          maxNum = Math.max(maxNum, parseInt(match[1], 10));
+        }
+      }
+      if (maxCancelledRows.length > 0) {
+        const match = maxCancelledRows[0].customer_id.match(/^TWF-(\d+)-/);
+        if (match) {
+          maxNum = Math.max(maxNum, parseInt(match[1], 10));
+        }
+      }
+
+      const nextNum = maxNum + 1;
+      const customerId = `TWF-${String(nextNum).padStart(4, "0")}-Q`;
+      res.json({ customer_id: customerId });
+    } catch (error) {
+      logError("BOOKING", "Generate customer ID error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Generate order ID based on order_type
+  app.post("/api/booking/generate-order-id", verifyToken, async (req, res) => {
+    try {
+      const { order_type } = req.body;
+      if (!order_type) {
+        return res.status(400).json({ message: "Order type is required" });
+      }
+
+      const prefixMap = {
+        "Cow": "C",
+        "Goat (Hissa)": "G",
+        "Hissa - Standard": "S",
+        "Hissa - Premium": "P",
+        "Hissa - Waqf": "W",
+        "Goat": "J",
+      };
+
+      const prefix = prefixMap[order_type];
+      if (!prefix) {
+        return res.status(400).json({ message: "Invalid order type" });
+      }
+
+      const year = 2026;
+      const pattern = `${prefix}-%`;
+      
+      // Get max order ID for this type in 2026 (only consider orders with booking_date = 2026)
+      const [rows] = await db.execute(
+        `SELECT order_id FROM orders 
+         WHERE order_id LIKE ? AND booking_date IS NOT NULL AND YEAR(booking_date) = ? 
+         ORDER BY CAST(SUBSTRING(order_id, 3, 4) AS UNSIGNED) DESC LIMIT 1`,
+        [pattern, year]
+      );
+
+      let nextNum = 1;
+      if (rows.length > 0) {
+        const match = rows[0].order_id.match(/^[A-Z]-(\d+)-/);
+        if (match) {
+          nextNum = parseInt(match[1], 10) + 1;
+        }
+      }
+
+      const orderId = `${prefix}-${String(nextNum).padStart(4, "0")}-${year}`;
+      res.json({ order_id: orderId });
+    } catch (error) {
+      logError("BOOKING", "Generate order ID error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Get available cow and hissa numbers
+  app.post("/api/booking/get-available-cow-hissa", verifyToken, async (req, res) => {
+    try {
+      const { order_type, day } = req.body;
+      if (!order_type) {
+        return res.json({ cow_number: "0", hissa_number: "0" });
+      }
+
+      // Only for Hissa types
+      const hissaTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf"];
+      if (!hissaTypes.includes(order_type)) {
+        return res.json({ cow_number: "0", hissa_number: "0" });
+      }
+
+      const cowPrefixMap = {
+        "Hissa - Standard": "S",
+        "Hissa - Premium": "P",
+        "Hissa - Waqf": "W",
+      };
+
+      const prefix = cowPrefixMap[order_type];
+      const year = 2026;
+
+      // Get all used cow/hissa combinations for this type and day in 2026
+      // Each day has its own independent cow numbering
+      let query = `SELECT cow_number, hissa_number FROM orders 
+                   WHERE order_type = ? AND booking_date IS NOT NULL AND YEAR(booking_date) = ? 
+                   AND cow_number IS NOT NULL AND cow_number != '' 
+                   AND hissa_number IS NOT NULL AND hissa_number != ''`;
+      const params = [order_type, year];
+
+      if (day) {
+        query += ` AND day = ?`;
+        params.push(day);
+      }
+
+      const [rows] = await db.execute(query, params);
+
+      // Build a set of used combinations for this specific day
+      const used = new Set();
+      rows.forEach((row) => {
+        used.add(`${row.cow_number}-${row.hissa_number}`);
+      });
+
+      // Find first available combination
+      // Cows: S1, S2, S3 (or P1, P2, P3 or W1, W2, W3)
+      // Hissas: 1-7
+      // Each day resets the numbering, so Day 1, Day 2, Day 3 each have their own S1-S3
+      for (let cowNum = 1; cowNum <= 3; cowNum++) {
+        for (let hissaNum = 1; hissaNum <= 7; hissaNum++) {
+          const cow = `${prefix}${cowNum}`;
+          const hissa = String(hissaNum);
+          if (!used.has(`${cow}-${hissa}`)) {
+            return res.json({ cow_number: cow, hissa_number: hissa });
+          }
+        }
+      }
+
+      // If all combinations are used, return the first one anyway
+      res.json({ cow_number: `${prefix}1`, hissa_number: "1" });
+    } catch (error) {
+      logError("BOOKING", "Get available cow/hissa error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Create new order
+  app.post("/api/booking/orders", verifyToken, async (req, res) => {
+    try {
+      const {
+        order_id,
+        customer_id,
+        contact,
+        order_type,
+        booking_name,
+        shareholder_name,
+        cow_number,
+        hissa_number,
+        alt_contact,
+        address,
+        area,
+        day,
+        booking_date,
+        total_amount,
+        order_source,
+        reference,
+        description,
+        slot,
+      } = req.body;
+
+      if (!order_id || !customer_id || !contact || !order_type) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+
+      const receivedAmount = 0;
+      const pendingAmount = Number(total_amount) || 0;
+
+      await db.execute(
+        `INSERT INTO orders (
+          order_id, customer_id, contact, order_type, booking_name, shareholder_name,
+          cow_number, hissa_number, alt_contact, address, area, day, booking_date,
+          total_amount, received_amount, pending_amount, order_source, reference,
+          description, slot, rider_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        [
+          order_id,
+          customer_id,
+          contact,
+          order_type,
+          booking_name || null,
+          shareholder_name || null,
+          cow_number || null,
+          hissa_number || null,
+          alt_contact || null,
+          address || null,
+          area || null,
+          day || null,
+          toDateOnly(booking_date) || null,
+          total_amount || null,
+          receivedAmount,
+          pendingAmount,
+          order_source || null,
+          reference || null,
+          description || null,
+          slot || null,
+        ]
+      );
+
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "CREATE_ORDER",
+        entity_type: "orders",
+        entity_id: order_id,
+        new_values: {
+          order_id,
+          customer_id,
+          booking_name,
+          shareholder_name,
+          order_type,
+          total_amount,
+        },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+
+      log("BOOKING", "Order created", { user_id: req.userId, order_id });
+      res.json({ message: "Order created successfully", order_id });
+    } catch (error) {
+      logError("BOOKING", "Create order error", error);
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "CREATE_ORDER_ERROR",
+        entity_type: "orders",
+        new_values: { reason: "server_error" },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
 };

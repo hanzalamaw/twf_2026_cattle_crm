@@ -20,6 +20,7 @@ import OrderManagement from './pages/OrderManagement';
 import QueryManagement from './pages/QueryManagement';
 import Transactions from './pages/Transactions';
 import Expenses from './pages/Expenses';
+import NewOrder from './pages/NewOrder';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -99,7 +100,7 @@ function App() {
             <Route index element={<Navigate to="/bookings/dashboard" replace />} />
             <Route path="dashboard" element={<RequireBookingDashboard><Dashboard /></RequireBookingDashboard>} />
             <Route path="new-query" element={<BookingPlaceholder title="New Query" />} />
-            <Route path="new-order" element={<BookingPlaceholder title="New Order" />} />
+            <Route path="new-order" element={<NewOrder />} />
             <Route path="queries" element={<QueryManagement />} />
             <Route path="orders" element={<OrderManagement />} />
             <Route path="transactions" element={<Transactions />} />
