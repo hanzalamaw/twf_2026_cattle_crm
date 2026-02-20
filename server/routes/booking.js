@@ -21,6 +21,302 @@ function toDateOnly(v) {
  * @param {Function} verifyToken - auth middleware
  */
 export const registerBookingRoutes = (app, db, verifyToken) => {
+  // Generate customer ID based on contact lookup
+  app.post("/api/booking/generate-customer-id", verifyToken, async (req, res) => {
+    try {
+      const { contact } = req.body || {};
+      if (!contact || String(contact).trim().length < 3) {
+        return res.status(400).json({ message: "Contact number is required (minimum 3 characters)" });
+      }
+      const contactStr = String(contact).trim();
+
+      // Check existing orders for this contact
+      const [orderRows] = await db.execute(
+        "SELECT customer_id FROM orders WHERE contact = ? LIMIT 1",
+        [contactStr]
+      );
+
+      if (orderRows.length > 0 && orderRows[0].customer_id) {
+        log("BOOKING", "Customer ID found in orders", { user_id: req.userId, contact: contactStr, customer_id: orderRows[0].customer_id });
+        return res.json({ customer_id: orderRows[0].customer_id });
+      }
+
+      // Check cancelled orders for this contact
+      const [cancelledRows] = await db.execute(
+        "SELECT customer_id FROM cancelled_orders WHERE contact = ? LIMIT 1",
+        [contactStr]
+      );
+
+      if (cancelledRows.length > 0 && cancelledRows[0].customer_id) {
+        log("BOOKING", "Customer ID found in cancelled orders", { user_id: req.userId, contact: contactStr, customer_id: cancelledRows[0].customer_id });
+        return res.json({ customer_id: cancelledRows[0].customer_id });
+      }
+
+      // Generate new customer ID: TWF-XXXX-Q format
+      // Find max numeric part from both orders and cancelled_orders
+      const [maxOrderRows] = await db.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(customer_id, '-', 2), '-', -1) AS UNSIGNED)), 0) AS maxNum FROM orders WHERE customer_id LIKE 'TWF-%'"
+      );
+      const [maxCancelledRows] = await db.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(customer_id, '-', 2), '-', -1) AS UNSIGNED)), 0) AS maxNum FROM cancelled_orders WHERE customer_id LIKE 'TWF-%'"
+      );
+
+      const maxOrderNum = Number(maxOrderRows[0]?.maxNum || 0);
+      const maxCancelledNum = Number(maxCancelledRows[0]?.maxNum || 0);
+      const nextNum = Math.max(maxOrderNum, maxCancelledNum) + 1;
+      const customerId = `TWF-${String(nextNum).padStart(4, "0")}-Q`;
+
+      log("BOOKING", "Customer ID generated", { user_id: req.userId, contact: contactStr, customer_id: customerId });
+      res.json({ customer_id: customerId });
+    } catch (error) {
+      logError("BOOKING", "Generate customer ID error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Generate order ID based on order_type
+  app.post("/api/booking/generate-order-id", verifyToken, async (req, res) => {
+    try {
+      const { order_type } = req.body || {};
+      if (!order_type || !String(order_type).trim()) {
+        return res.status(400).json({ message: "Order type is required" });
+      }
+
+      const orderType = String(order_type).trim();
+      const year = 2026;
+
+      // Map order types to prefixes
+      const prefixMap = {
+        "Cow": "C",
+        "Goat (Hissa)": "G",
+        "Hissa - Standard": "S",
+        "Hissa - Premium": "P",
+        "Hissa - Waqf": "W",
+        "Goat": "G",
+      };
+
+      const prefix = prefixMap[orderType] || "O"; // Default to "O" if not found
+
+      // Find next available number for this prefix and year
+      // Check orders with booking_date in the year OR orders with null booking_date (new orders)
+      // Handle both old format (#O-0001-2026) and new format (C-0001-2026)
+      const pattern1 = `${prefix}-%`; // New format: C-0001-2026
+      
+      // Try to find max from new format first
+      const [idRows1] = await db.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(order_id, '-', 2), '-', -1) AS UNSIGNED)), 0) AS nextId FROM orders WHERE order_id LIKE ? AND (YEAR(booking_date) = ? OR booking_date IS NULL)",
+        [pattern1, year]
+      );
+      
+      // Also check old format if prefix is O (for backward compatibility)
+      let maxFromOld = 0;
+      if (prefix === "O") {
+        const [idRows2] = await db.execute(
+          "SELECT COALESCE(MAX(CAST(SUBSTRING(order_id, 4, 4) AS UNSIGNED)), 0) AS nextId FROM orders WHERE order_id LIKE '#O-%' AND (YEAR(booking_date) = ? OR booking_date IS NULL)",
+          [year]
+        );
+        maxFromOld = Number(idRows2[0]?.nextId || 0);
+      }
+      
+      const maxFromNew = Number(idRows1[0]?.nextId || 0);
+      const nextNum = Math.max(maxFromNew, maxFromOld, 0) + 1;
+      const orderId = `${prefix}-${String(nextNum).padStart(4, "0")}-${year}`;
+
+      log("BOOKING", "Order ID generated", { user_id: req.userId, order_type: orderType, order_id: orderId });
+      res.json({ order_id: orderId });
+    } catch (error) {
+      logError("BOOKING", "Generate order ID error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Get available cow/hissa number (day-based independent numbering)
+  app.post("/api/booking/get-available-cow-hissa", verifyToken, async (req, res) => {
+    try {
+      const { order_type, day } = req.body || {};
+      if (!order_type || !String(order_type).trim()) {
+        return res.json({ cow_number: "", hissa_number: "" });
+      }
+
+      const orderType = String(order_type).trim();
+      const dayValue = day ? String(day).trim() : null;
+      const year = 2026;
+
+      // Only for Hissa types
+      const hissaTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf", "Goat (Hissa)"];
+      if (!hissaTypes.includes(orderType)) {
+        return res.json({ cow_number: "", hissa_number: "" });
+      }
+
+      // Get all used cow/hissa combinations for this order_type, day, and year
+      let usedCombinations = [];
+      if (dayValue) {
+        const [usedRows] = await db.execute(
+          "SELECT cow_number, hissa_number FROM orders WHERE order_type = ? AND day = ? AND (YEAR(booking_date) = ? OR booking_date IS NULL) AND cow_number IS NOT NULL AND hissa_number IS NOT NULL",
+          [orderType, dayValue, year]
+        );
+        usedCombinations = usedRows.map((r) => ({ cow: r.cow_number, hissa: r.hissa_number }));
+      } else {
+        const [usedRows] = await db.execute(
+          "SELECT cow_number, hissa_number FROM orders WHERE order_type = ? AND (YEAR(booking_date) = ? OR booking_date IS NULL) AND cow_number IS NOT NULL AND hissa_number IS NOT NULL",
+          [orderType, year]
+        );
+        usedCombinations = usedRows.map((r) => ({ cow: r.cow_number, hissa: r.hissa_number }));
+      }
+
+      // Find first available combination
+      // Cows: S1, S2, S3, ... (Standard/Premium/Waqf) or G1, G2, ... (Goat Hissa)
+      // Hissas: 1-7 per cow
+      const cowPrefix = orderType === "Goat (Hissa)" ? "G" : "S";
+      const maxCows = 50; // Reasonable limit
+      const maxHissas = 7;
+
+      let foundCow = "";
+      let foundHissa = "";
+
+      for (let cowNum = 1; cowNum <= maxCows; cowNum++) {
+        const cowId = `${cowPrefix}${cowNum}`;
+        for (let hissaNum = 1; hissaNum <= maxHissas; hissaNum++) {
+          const isUsed = usedCombinations.some((uc) => uc.cow === cowId && uc.hissa === String(hissaNum));
+          if (!isUsed) {
+            foundCow = cowId;
+            foundHissa = String(hissaNum);
+            break;
+          }
+        }
+        if (foundCow) break;
+      }
+
+      log("BOOKING", "Available cow/hissa retrieved", {
+        user_id: req.userId,
+        order_type: orderType,
+        day: dayValue,
+        cow_number: foundCow,
+        hissa_number: foundHissa,
+      });
+      res.json({ cow_number: foundCow, hissa_number: foundHissa });
+    } catch (error) {
+      logError("BOOKING", "Get available cow/hissa error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Create new order
+  app.post("/api/booking/orders", verifyToken, async (req, res) => {
+    try {
+      const body = req.body || {};
+      const {
+        order_id,
+        customer_id,
+        contact,
+        order_type,
+        booking_name,
+        shareholder_name,
+        cow_number,
+        hissa_number,
+        alt_contact,
+        address,
+        area,
+        day,
+        booking_date,
+        total_amount,
+        order_source,
+        reference,
+        description,
+        slot,
+      } = body;
+
+      // Validation
+      if (!order_id || !String(order_id).trim()) {
+        return res.status(400).json({ message: "Order ID is required" });
+      }
+      if (!customer_id || !String(customer_id).trim()) {
+        return res.status(400).json({ message: "Customer ID is required" });
+      }
+      if (!contact || !String(contact).trim()) {
+        return res.status(400).json({ message: "Contact is required" });
+      }
+      if (!order_type || !String(order_type).trim()) {
+        return res.status(400).json({ message: "Order type is required" });
+      }
+
+      // Check if order_id already exists
+      const [existing] = await db.execute("SELECT order_id FROM orders WHERE order_id = ?", [order_id]);
+      if (existing.length > 0) {
+        return res.status(400).json({ message: "Order ID already exists" });
+      }
+
+      const totalAmount = Math.max(0, Number(total_amount) || 0);
+      const receivedAmount = 0;
+      const pendingAmount = totalAmount;
+
+      await db.execute(
+        `INSERT INTO orders (
+          order_id, customer_id, contact, order_type, booking_name, shareholder_name,
+          cow_number, hissa_number, alt_contact, address, area, day, booking_date,
+          total_amount, received_amount, pending_amount, order_source, reference,
+          description, rider_id, slot
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+        [
+          order_id,
+          customer_id,
+          contact,
+          order_type,
+          booking_name || null,
+          shareholder_name || null,
+          cow_number || null,
+          hissa_number || null,
+          alt_contact || null,
+          address || null,
+          area || null,
+          day || null,
+          booking_date ? toDateOnly(booking_date) : null,
+          totalAmount,
+          receivedAmount,
+          pendingAmount,
+          order_source || null,
+          reference || null,
+          description || null,
+          slot || null,
+        ]
+      );
+
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "CREATE_ORDER",
+        entity_type: "orders",
+        entity_id: order_id,
+        new_values: {
+          order_id,
+          customer_id,
+          contact,
+          order_type,
+          booking_name,
+          shareholder_name,
+          cow_number,
+          hissa_number,
+          total_amount: totalAmount,
+        },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+
+      log("BOOKING", "Order created", { user_id: req.userId, order_id });
+      res.json({ message: "Order created successfully", order_id });
+    } catch (error) {
+      logError("BOOKING", "Create order error", error);
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "CREATE_ORDER_ERROR",
+        entity_type: "orders",
+        new_values: { reason: "server_error" },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
   app.get("/api/booking/orders", verifyToken, async (req, res) => {
     try {
       const { search, slot, order_type, day, reference, cow_number, year, page, limit } = req.query;
