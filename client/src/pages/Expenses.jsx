@@ -166,9 +166,9 @@ export default function Expenses() {
 
   if (loading && orders.length === 0) {
     return (
-      <div style={{ padding: '24px', fontFamily: "'Poppins', 'Inter', sans-serif" }}>
-        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', marginBottom: '20px' }}>Expenses</h2>
-        <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Loading...</div>
+      <div style={{ padding: '19px', fontFamily: "'Poppins', 'Inter', sans-serif" }}>
+        <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#333', marginBottom: '16px' }}>Expenses</h2>
+        <div style={{ padding: '32px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading...</div>
       </div>
     );
   }
@@ -196,12 +196,12 @@ export default function Expenses() {
   const newPending = Math.max(0, totalAmount - newReceived);
 
   return (
-    <div style={{ padding: '24px', fontFamily: "'Poppins', 'Inter', sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0, flexWrap: 'nowrap', gap: '12px' }}>
-        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', flexShrink: 0 }}>Expenses</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'nowrap', marginLeft: 'auto' }} ref={typeDropdownRef}>
-          <label style={{ fontSize: '12px', color: '#666', whiteSpace: 'nowrap' }}>Year</label>
-          <select value={yearFilter} onChange={(e) => { setYearFilter(e.target.value); setAppliedTypes([]); setSelectedTypes([]); }} style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', minWidth: '120px', cursor: 'pointer' }}>
+    <div style={{ padding: '19px', fontFamily: "'Poppins', 'Inter', sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0, flexWrap: 'nowrap', gap: '10px' }}>
+        <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#333', flexShrink: 0 }}>Expenses</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap', marginLeft: 'auto' }} ref={typeDropdownRef}>
+          <label style={{ fontSize: '10px', color: '#666', whiteSpace: 'nowrap' }}>Year</label>
+          <select value={yearFilter} onChange={(e) => { setYearFilter(e.target.value); setAppliedTypes([]); setSelectedTypes([]); }} style={{ padding: '6px 10px', fontSize: '10px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', minWidth: '96px', cursor: 'pointer' }}>
             <option value="all">All</option>
             <option value="2026">Year 2026</option>
             <option value="2025">Year 2025</option>
@@ -220,48 +220,48 @@ export default function Expenses() {
               <span style={{ flexShrink: 0 }}>{typeDropdownOpen ? '▲' : '▼'}</span>
             </button>
             {typeDropdownOpen && (
-              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px', background: '#fff', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', padding: '8px', minWidth: '180px', zIndex: 100 }}>
+              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '3px', background: '#fff', border: '1px solid #e0e0e0', borderRadius: '6px', boxShadow: '0 3px 10px rgba(0,0,0,0.12)', padding: '6px', minWidth: '144px', zIndex: 100 }}>
                 {typeOptions.length === 0 ? (
-                  <div style={{ padding: '8px', color: '#666', fontSize: '13px' }}>No types in this year</div>
+                  <div style={{ padding: '6px', color: '#666', fontSize: '10px' }}>No types in this year</div>
                 ) : (
                   typeOptions.map((t) => (
-                    <label key={t} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', cursor: 'pointer', borderRadius: '4px', fontSize: '13px' }}>
+                    <label key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 6px', cursor: 'pointer', borderRadius: '3px', fontSize: '10px' }}>
                       <input type="checkbox" checked={selectedTypes.includes(t)} onChange={() => setSelectedTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])} />
                       <span>{t}</span>
                     </label>
                   ))
                 )}
-                <div style={{ borderTop: '1px solid #eee', marginTop: '8px', paddingTop: '8px' }}>
-                  <button type="button" onClick={() => { setAppliedTypes([...selectedTypes]); setFilterMode('actual'); setTypeDropdownOpen(false); }} style={{ width: '100%', padding: '6px 12px', fontSize: '13px', fontWeight: '500', background: '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Apply</button>
+                <div style={{ borderTop: '1px solid #eee', marginTop: '6px', paddingTop: '6px' }}>
+                  <button type="button" onClick={() => { setAppliedTypes([...selectedTypes]); setFilterMode('actual'); setTypeDropdownOpen(false); }} style={{ width: '100%', padding: '5px 10px', fontSize: '10px', fontWeight: '500', background: '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Apply</button>
                 </div>
               </div>
             )}
           </div>
-          <label style={{ fontSize: '12px', color: '#666', whiteSpace: 'nowrap' }}>Amount</label>
-          <select value={effectiveFilterMode} onChange={(e) => setFilterMode(e.target.value)} disabled={typeFilterActive} style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '6px', border: '1px solid #e0e0e0', background: typeFilterActive ? '#f5f5f5' : '#fff', minWidth: '100px', cursor: typeFilterActive ? 'not-allowed' : 'pointer', color: typeFilterActive ? '#888' : undefined }}>
+          <label style={{ fontSize: '10px', color: '#666', whiteSpace: 'nowrap' }}>Amount</label>
+          <select value={effectiveFilterMode} onChange={(e) => setFilterMode(e.target.value)} disabled={typeFilterActive} style={{ padding: '6px 10px', fontSize: '10px', borderRadius: '6px', border: '1px solid #e0e0e0', background: typeFilterActive ? '#f5f5f5' : '#fff', minWidth: '80px', cursor: typeFilterActive ? 'not-allowed' : 'pointer', color: typeFilterActive ? '#888' : undefined }}>
             <option value="onHand" disabled={typeFilterActive}>On Hand</option>
             <option value="actual">Actual</option>
           </select>
-          <button type="button" onClick={() => setAmountVisible((v) => !v)} style={{ padding: '6px 14px', fontSize: '13px', fontWeight: '500', background: amountVisible ? '#f0f0f0' : '#FF5722', color: amountVisible ? '#333' : '#fff', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          <button type="button" onClick={() => setAmountVisible((v) => !v)} style={{ padding: '6px 11px', fontSize: '10px', fontWeight: '500', background: amountVisible ? '#f0f0f0' : '#FF5722', color: amountVisible ? '#333' : '#fff', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             {amountVisible ? 'Hide' : 'Show'}
           </button>
         </div>
       </div>
 
       {error && (
-        <div style={{ padding: '12px', background: '#FFF5F2', color: '#C62828', borderRadius: '8px', marginBottom: '16px', flexShrink: 0 }}>{error}</div>
+        <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', flexShrink: 0, fontSize: '10px' }}>{error}</div>
       )}
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', flexShrink: 0 }}>
-        <div style={{ flex: '1 1 200px', minWidth: '180px', padding: '16px 20px', borderRadius: '8px', border: '1px solid #e0e0e0', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-          <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Bank only</div>
-          <div style={{ fontSize: '18px', fontWeight: '700', color: '#166534', minHeight: '28px' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '13px', marginBottom: '16px', flexShrink: 0 }}>
+        <div style={{ flex: '1 1 200px', minWidth: '180px', padding: '13px 16px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+          <div style={{ fontSize: '10px', color: '#666', marginBottom: '3px' }}>Bank only</div>
+          <div style={{ fontSize: '14px', fontWeight: '700', color: '#166534', minHeight: '22px' }}>
             {amountVisible ? <span>{formatAmount(bankOnlyAmount)}</span> : <span style={{ filter: 'blur(6px)', userSelect: 'none', color: '#999' }}>{formatAmount(bankOnlyAmount)}</span>}
           </div>
         </div>
-        <div style={{ flex: '1 1 200px', minWidth: '180px', padding: '16px 20px', borderRadius: '8px', border: '1px solid #e0e0e0', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-          <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Cash</div>
-          <div style={{ fontSize: '18px', fontWeight: '700', color: '#b91c1c', minHeight: '28px' }}>
+        <div style={{ flex: '1 1 200px', minWidth: '180px', padding: '13px 16px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+          <div style={{ fontSize: '10px', color: '#666', marginBottom: '3px' }}>Cash</div>
+          <div style={{ fontSize: '14px', fontWeight: '700', color: '#b91c1c', minHeight: '22px' }}>
             {amountVisible ? <span>{formatAmount(cashAmount)}</span> : <span style={{ filter: 'blur(6px)', userSelect: 'none', color: '#999' }}>{formatAmount(cashAmount)}</span>}
           </div>
         </div>
@@ -270,7 +270,7 @@ export default function Expenses() {
       <div style={{ flex: 1, minHeight: '400px', overflow: 'auto' }}>
         <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', background: '#fff', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', whiteSpace: 'nowrap' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', whiteSpace: 'nowrap' }}>
               <thead>
                 <tr style={{ background: '#fafafa' }}>
                   {ORDER_COLUMNS.map((col) => (
@@ -280,7 +280,7 @@ export default function Expenses() {
               </thead>
               <tbody>
                 {displayedOrders.length === 0 ? (
-                  <tr><td colSpan={ORDER_COLUMNS.length} style={{ padding: '24px', textAlign: 'center', color: '#666' }}>No orders.</td></tr>
+                  <tr><td colSpan={ORDER_COLUMNS.length} style={{ padding: '19px', textAlign: 'center', color: '#666', fontSize: '11px' }}>No orders.</td></tr>
                 ) : (
                   displayedOrders.map((row) => (
                     <tr
@@ -311,10 +311,10 @@ export default function Expenses() {
       {modalOrder && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !submitting && setModalOrder(null)}>
           <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(520px, 95vw)', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: '600' }}>Update Transaction</h3>
+            <h3 style={{ margin: '0 0 13px 0', fontSize: '13px', fontWeight: '600' }}>Update Transaction</h3>
 
-            <div style={{ fontSize: '11px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>Previous (current state)</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 20px', marginBottom: '16px', fontSize: '13px', padding: '10px 12px', background: '#f5f5f5', borderRadius: '8px', border: '1px solid #e8e8e8' }}>
+            <div style={{ fontSize: '9px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>Previous (current state)</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px', marginBottom: '13px', fontSize: '10px', padding: '8px 10px', background: '#f5f5f5', borderRadius: '6px', border: '1px solid #e8e8e8' }}>
               <div><span style={{ color: '#666' }}>Customer ID</span><div style={{ fontWeight: '600' }}>{modalOrder.customer_id ?? '—'}</div></div>
               <div><span style={{ color: '#666' }}>Order ID</span><div style={{ fontWeight: '600' }}>{modalOrder.order_id ?? '—'}</div></div>
               <div><span style={{ color: '#666' }}>Name</span><div style={{ fontWeight: '600' }}>{modalOrder.shareholder_name ?? modalOrder.booking_name ?? '—'}</div></div>
@@ -328,34 +328,34 @@ export default function Expenses() {
             </div>
 
             {(getPaymentRealtimeError() || paymentErrors.add || paymentErrors.addBank || paymentErrors.addCash) && (
-              <div style={{ marginBottom: '12px', padding: '8px', background: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '12px' }}>
+              <div style={{ marginBottom: '10px', padding: '6px', background: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '10px' }}>
                 {getPaymentRealtimeError()}
                 {!getPaymentRealtimeError() && paymentErrors.add}
                 {paymentErrors.addBank && <div>Add Bank: {paymentErrors.addBank}</div>}
                 {paymentErrors.addCash && <div>Add Cash: {paymentErrors.addCash}</div>}
               </div>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>Add Cash</label>
-                <input type="number" min="0" step="0.01" value={addCash} onChange={(e) => { setAddCash(e.target.value); setPaymentErrors((p) => ({ ...p, addCash: undefined, addBank: undefined, add: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: '8px', border: (getPaymentRealtimeError() || paymentErrors.addCash) ? '1px solid #dc2626' : '1px solid #e0e0e0' }} />
+                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Add Cash</label>
+                <input type="number" min="0" step="0.01" value={addCash} onChange={(e) => { setAddCash(e.target.value); setPaymentErrors((p) => ({ ...p, addCash: undefined, addBank: undefined, add: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: (getPaymentRealtimeError() || paymentErrors.addCash) ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px' }} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>Add Bank</label>
-                <input type="number" min="0" step="0.01" value={addBank} onChange={(e) => { setAddBank(e.target.value); setPaymentErrors((p) => ({ ...p, addBank: undefined, addCash: undefined, add: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: '8px', border: (getPaymentRealtimeError() || paymentErrors.addBank) ? '1px solid #dc2626' : '1px solid #e0e0e0' }} />
+                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Add Bank</label>
+                <input type="number" min="0" step="0.01" value={addBank} onChange={(e) => { setAddBank(e.target.value); setPaymentErrors((p) => ({ ...p, addBank: undefined, addCash: undefined, add: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: (getPaymentRealtimeError() || paymentErrors.addBank) ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px' }} />
               </div>
             </div>
 
-            <div style={{ padding: '12px', background: '#f9fafb', borderRadius: '8px', marginBottom: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
+            <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', marginBottom: '13px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '10px' }}>
               <div><span style={{ color: '#666' }}>New Bank Total</span><div style={{ fontWeight: '600' }}>{formatAmount(newBank)}</div></div>
               <div><span style={{ color: '#666' }}>New Cash Total</span><div style={{ fontWeight: '600' }}>{formatAmount(newCash)}</div></div>
               <div><span style={{ color: '#666' }}>New Received Total</span><div style={{ fontWeight: '600' }}>{formatAmount(newReceived)}</div></div>
               <div><span style={{ color: '#666' }}>New Pending</span><div style={{ fontWeight: '600' }}>{formatAmount(newPending)}</div></div>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => !submitting && setModalOrder(null)} disabled={submitting} style={{ padding: '8px 16px', background: '#e0e0e0', color: '#333', border: 'none', borderRadius: '8px', cursor: submitting ? 'not-allowed' : 'pointer' }}>Close</button>
-              <button type="button" onClick={handleSubmitPayment} disabled={submitting || getPaymentRealtimeError() || ((parseFloat(addBank) || 0) === 0 && (parseFloat(addCash) || 0) === 0)} style={{ padding: '8px 16px', background: '#166534', color: '#fff', border: 'none', borderRadius: '8px', cursor: submitting ? 'not-allowed' : 'pointer' }}>{submitting ? 'Submitting...' : 'Submit'}</button>
+            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => !submitting && setModalOrder(null)} disabled={submitting} style={{ padding: '6px 13px', background: '#e0e0e0', color: '#333', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>Close</button>
+              <button type="button" onClick={handleSubmitPayment} disabled={submitting || getPaymentRealtimeError() || ((parseFloat(addBank) || 0) === 0 && (parseFloat(addCash) || 0) === 0)} style={{ padding: '6px 13px', background: '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>{submitting ? 'Submitting...' : 'Submit'}</button>
             </div>
           </div>
         </div>
