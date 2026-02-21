@@ -388,47 +388,84 @@ export default function OrderManagement() {
   };
 
   const handleExport = async () => {
-    const ids = Array.from(selectedIds);
-    const toExport = ids.length ? orders.filter((r) => ids.includes(r.order_id)) : orders;
-    if (toExport.length === 0) {
-      alert('Select at least one row to export, or leave none selected to export all.');
-      return;
-    }
-    const headers = COLUMNS.map((c) => c.label);
-    const rows = toExport.map((row) =>
-      COLUMNS.map((col) => {
-        const val = row[col.key];
-        if (AMOUNT_KEYS.includes(col.key)) return formatAmount(val);
-        if (col.key === 'booking_date') return formatDate(val);
-        if (col.key === 'payment_status') return val || '—';
-        return val != null ? String(val) : '—';
-      })
-    );
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Orders');
-    XLSX.writeFile(wb, `orders-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
     try {
-      const filters = {};
-      if (search?.trim()) filters.search = search.trim();
-      if (slot) filters.slot = slot;
-      if (orderType) filters.order_type = orderType;
-      if (day) filters.day = day;
-      if (reference) filters.reference = reference;
-      if (cowNumber?.trim()) filters.cow_number = cowNumber.trim();
-      if (yearFilter) filters.year = yearFilter;
-      const payload = {
-        count: toExport.length,
-        ...(Object.keys(filters).length > 0 && { filters }),
-        ...(ids.length > 0 && { order_ids: ids }),
-      };
-      await fetch(`${API}/api/booking/orders/export-audit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      });
+      let toExport = [];
+  
+      const ids = Array.from(selectedIds);
+  
+      // ✅ If checkbox selected → export selected rows only
+      if (ids.length > 0) {
+        toExport = orders.filter(r => ids.includes(r.order_id));
+      }
+  
+      // ✅ If nothing selected → export filtered dataset (year + filters follow UI)
+      else {
+        const params = new URLSearchParams();
+  
+        if (search?.trim()) params.set('search', search.trim());
+        if (slot) params.set('slot', slot);
+        if (orderType) params.set('order_type', orderType);
+        if (day) params.set('day', day);
+        if (reference) params.set('reference', reference);
+        if (cowNumber?.trim()) params.set('cow_number', cowNumber.trim());
+  
+        if (yearFilter && yearFilter !== 'all') {
+          params.set('year', yearFilter);
+        }
+  
+        const res = await fetch(
+          `${API}/api/booking/orders?page=1&limit=100000&${params.toString()}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+  
+        if (!res.ok) {
+          alert('Failed to load data for export');
+          return;
+        }
+  
+        const json = await res.json();
+        const data = Array.isArray(json) ? json : json.data;
+  
+        toExport = Array.isArray(data) ? data : [];
+      }
+  
+      if (!toExport.length) {
+        alert('No data to export');
+        return;
+      }
+  
+      // ✅ Excel Export
+      const headers = COLUMNS.map(c => c.label);
+  
+      const rows = toExport.map(row =>
+        COLUMNS.map(col => {
+          const val = row[col.key];
+  
+          if (AMOUNT_KEYS.includes(col.key)) return formatAmount(val);
+  
+          if (col.key === 'booking_date') return formatDate(val);
+  
+          if (col.key === 'payment_status') return val || '—';
+  
+          return val != null ? String(val) : '—';
+        })
+      );
+  
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const wb = XLSX.utils.book_new();
+  
+      XLSX.utils.book_append_sheet(wb, ws, 'Orders');
+  
+      XLSX.writeFile(
+        wb,
+        `orders-export-${new Date().toISOString().slice(0, 10)}.xlsx`
+      );
+  
     } catch (e) {
-      console.error('Export audit failed', e);
+      console.error(e);
+      alert('Export failed');
     }
   };
 
