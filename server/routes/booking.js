@@ -743,7 +743,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       );
       const year = new Date().getFullYear();
       const nextNum = idRows[0]?.nextId ?? 1;
-      const orderId = `#O-${String(nextNum).padStart(4, "0")}-${year}`;
+      const orderId = `O-${String(nextNum).padStart(4, "0")}-${year}`;
 
       await db.execute(
         `INSERT INTO orders (order_id, customer_id, contact, order_type, booking_name, shareholder_name, cow_number, hissa_number, alt_contact, address, area, day, booking_date, total_amount, received_amount, pending_amount, order_source, reference, description, rider_id, slot)
@@ -872,25 +872,88 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
   // Create booking expense
   app.post("/api/booking/expenses", verifyToken, async (req, res) => {
     try {
-      const { bank = 0, cash = 0, description = "" } = req.body || {};
+      let { bank = 0, cash = 0, description = "", done_by = null, done_at = null } = req.body || {};
+  
       const addBank = Math.max(0, Number(bank) || 0);
       const addCash = Math.max(0, Number(cash) || 0);
-      if (addBank === 0 && addCash === 0) return res.status(400).json({ message: "Add at least one of bank or cash amount" });
+  
+      if (addBank === 0 && addCash === 0) {
+        return res.status(400).json({ message: "Add at least one of bank or cash amount" });
+      }
+  
       const total = addBank + addCash;
+  
+      // Normalize optional fields
+      description = String(description || "").trim() || null;
+      done_by = done_by ? String(done_by).trim() || null : null;
+  
+      // Validate date format (YYYY-MM-DD or null)
+      if (done_at) {
+        const d = new Date(done_at);
+        if (isNaN(d.getTime())) done_at = null;
+        else done_at = d.toISOString().split("T")[0];
+      } else {
+        done_at = null;
+      }
+  
       const year = new Date().getFullYear();
-      const [userRows] = await db.execute("SELECT username FROM users WHERE user_id = ?", [req.userId]);
+  
+      // Get username
+      const [userRows] = await db.execute(
+        "SELECT username FROM users WHERE user_id = ?",
+        [req.userId]
+      );
+  
       const username = userRows[0]?.username ?? String(req.userId);
+  
+      // Generate expense ID
       const [idRows] = await db.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(expense_id, 4, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM booking_expenses WHERE expense_id LIKE '#E-%'"
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(expense_id, 3, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM booking_expenses WHERE expense_id LIKE 'E-%'"
       );
-      const expenseId = `#E-${String(idRows[0]?.nextId ?? 1).padStart(4, "0")}-${year}`;
+  
+      const expenseId = `E-${String(idRows[0]?.nextId ?? 1).padStart(4, "0")}-${year}`;
+  
+      // Insert expense
       await db.execute(
-        "INSERT INTO booking_expenses (expense_id, bank, cash, total, description, done_by, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [expenseId, addBank, addCash, total, String(description).trim() || null, username, req.userId]
+        `INSERT INTO booking_expenses 
+          (expense_id, bank, cash, total, description, done_by, done_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          expenseId,
+          addBank,
+          addCash,
+          total,
+          description,
+          done_by,
+          done_at,
+          req.userId
+        ]
       );
-      await writeAuditLog(db, { user_id: req.userId, action: "ADD_EXPENSE", entity_type: "booking_expenses", entity_id: expenseId, new_values: { bank: addBank, cash: addCash, total, description: String(description).trim() || null }, ip_address: req.ip, user_agent: req.get("user-agent") });
+  
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "ADD_EXPENSE",
+        entity_type: "booking_expenses",
+        entity_id: expenseId,
+        new_values: {
+          bank: addBank,
+          cash: addCash,
+          total,
+          description,
+          done_by,
+          done_at
+        },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent")
+      });
+  
       log("BOOKING", "Expense added", { user_id: req.userId, expenseId });
-      res.json({ message: "Expense added", expense_id: expenseId });
+  
+      res.json({
+        message: "Expense added",
+        expense_id: expenseId
+      });
+  
     } catch (error) {
       logError("BOOKING", "Add expense error", error);
       res.status(500).json({ message: "Server error" });
@@ -901,31 +964,100 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
   app.put("/api/booking/expenses/:expenseId", verifyToken, async (req, res) => {
     try {
       const { expenseId } = req.params;
-      const { bank, cash, description } = req.body || {};
-      const newBank = Math.max(0, Number(bank) ?? 0);
-      const newCash = Math.max(0, Number(cash) ?? 0);
-      if (newBank === 0 && newCash === 0) return res.status(400).json({ message: "At least one of bank or cash must be greater than 0" });
+  
+      let {
+        bank,
+        cash,
+        description,
+        done_by = null,
+        done_at = null
+      } = req.body || {};
+  
+      const newBank = Math.max(0, Number(bank) || 0);
+      const newCash = Math.max(0, Number(cash) || 0);
+  
+      if (newBank === 0 && newCash === 0) {
+        return res.status(400).json({
+          message: "At least one of bank or cash must be greater than 0"
+        });
+      }
+  
       const total = newBank + newCash;
-      const [existing] = await db.execute("SELECT expense_id, bank, cash, total, description FROM booking_expenses WHERE expense_id = ?", [expenseId]);
-      if (existing.length === 0) return res.status(404).json({ message: "Expense not found" });
-      const oldRow = existing[0];
-      const previousState = { expense_id: oldRow.expense_id, bank: oldRow.bank, cash: oldRow.cash, total: oldRow.total, description: oldRow.description };
-      await db.execute(
-        "UPDATE booking_expenses SET bank = ?, cash = ?, total = ?, description = ? WHERE expense_id = ?",
-        [newBank, newCash, total, String(description ?? oldRow.description ?? "").trim() || null, expenseId]
+  
+      // Normalize text fields
+      description = String(description ?? "").trim() || null;
+      done_by = done_by ? String(done_by).trim() || null : null;
+  
+      // Validate date format
+      if (done_at) {
+        const d = new Date(done_at);
+        done_at = isNaN(d.getTime()) ? null : d.toISOString().split("T")[0];
+      } else {
+        done_at = null;
+      }
+  
+      const [existing] = await db.execute(
+        "SELECT expense_id, bank, cash, total, description, done_by, done_at FROM booking_expenses WHERE expense_id = ?",
+        [expenseId]
       );
+  
+      if (!existing.length) {
+        return res.status(404).json({ message: "Expense not found" });
+      }
+  
+      const oldRow = existing[0];
+  
+      const previousState = {
+        expense_id: oldRow.expense_id,
+        bank: oldRow.bank,
+        cash: oldRow.cash,
+        total: oldRow.total,
+        description: oldRow.description,
+        done_by: oldRow.done_by,
+        done_at: oldRow.done_at
+      };
+  
+      await db.execute(
+        `UPDATE booking_expenses 
+         SET bank = ?, cash = ?, total = ?, description = ?, done_by = ?, done_at = ?
+         WHERE expense_id = ?`,
+        [
+          newBank,
+          newCash,
+          total,
+          description,
+          done_by,
+          done_at,
+          expenseId
+        ]
+      );
+  
       await writeAuditLog(db, {
         user_id: req.userId,
         action: "UPDATE_EXPENSE",
         entity_type: "booking_expenses",
         entity_id: expenseId,
         old_values: previousState,
-        new_values: { expense_id: expenseId, bank: newBank, cash: newCash, total, description: String(description ?? "").trim() || null },
+        new_values: {
+          expense_id: expenseId,
+          bank: newBank,
+          cash: newCash,
+          total,
+          description,
+          done_by,
+          done_at
+        },
         ip_address: req.ip,
-        user_agent: req.get("user-agent"),
+        user_agent: req.get("user-agent")
       });
+  
       log("BOOKING", "Expense updated", { user_id: req.userId, expenseId });
-      res.json({ message: "Expense updated", expense_id: expenseId });
+  
+      res.json({
+        message: "Expense updated",
+        expense_id: expenseId
+      });
+  
     } catch (error) {
       logError("BOOKING", "Update expense error", error);
       res.status(500).json({ message: "Server error" });
@@ -987,42 +1119,130 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
   app.post("/api/booking/orders/:orderId/payments", verifyToken, async (req, res) => {
     try {
       const { orderId } = req.params;
+  
       const { bank = 0, cash = 0 } = req.body || {};
+  
       const addBank = Math.max(0, Number(bank) || 0);
       const addCash = Math.max(0, Number(cash) || 0);
-      if (addBank === 0 && addCash === 0) return res.status(400).json({ message: "Add at least one of bank or cash amount" });
-
+  
+      if (addBank === 0 && addCash === 0) {
+        return res.status(400).json({
+          message: "Add at least one of bank or cash amount"
+        });
+      }
+  
+      // ⭐ Fetch Order
       const [orders] = await db.execute(
-        "SELECT order_id, total_amount, received_amount, pending_amount FROM orders WHERE order_id = ?",
+        "SELECT * FROM orders WHERE order_id = ?",
         [orderId]
       );
-      if (orders.length === 0) return res.status(404).json({ message: "Order not found" });
+  
+      if (!orders.length) {
+        return res.status(404).json({ message: "Order not found" });
+      }
+  
       const order = orders[0];
+  
       const totalAmount = Number(order.total_amount) || 0;
       const currentReceived = Number(order.received_amount) || 0;
-      const newReceived = currentReceived + addBank + addCash;
-      if (newReceived > totalAmount) return res.status(400).json({ message: "Total received cannot exceed order total amount" });
-
+  
+      const paymentAmount = addBank + addCash;
+      const newReceived = currentReceived + paymentAmount;
+  
+      // ⭐ Prevent Overpayment
+      if (newReceived > totalAmount) {
+        return res.status(400).json({
+          message: "Total received cannot exceed order total amount"
+        });
+      }
+  
+      // ⭐ Generate Payment ID
       const [idRows] = await db.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(payment_id, 4, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM payments WHERE payment_id LIKE '#P-%'"
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(payment_id, 3, 4) AS UNSIGNED)),0)+1 AS nextId FROM payments WHERE payment_id LIKE 'P-%'"
       );
+  
       const year = new Date().getFullYear();
-      const paymentId = `#P-${String(idRows[0]?.nextId ?? 1).padStart(4, "0")}-${year}`;
-      const totalReceived = addBank + addCash;
+  
+      const paymentId = `P-${String(idRows[0]?.nextId ?? 1).padStart(4, "0")}-${year}`;
+  
       const today = toDateOnly(new Date());
-
+  
+      const paymentTotal = addBank + addCash;
+  
+      // ⭐ Insert Payment (No new schema fields)
       await db.execute(
-        "INSERT INTO payments (payment_id, bank, cash, total_received, date, order_id) VALUES (?, ?, ?, ?, ?, ?)",
-        [paymentId, addBank, addCash, totalReceived, today, orderId]
+        `INSERT INTO payments (
+          payment_id,
+          order_id,
+          bank,
+          cash,
+          total_received,
+          date
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          paymentId,
+          orderId,
+          addBank,
+          addCash,
+          paymentTotal,
+          today
+        ]
       );
+  
+      // ⭐ Update Order Financial State
       await db.execute(
-        "UPDATE orders SET received_amount = ?, pending_amount = ? WHERE order_id = ?",
-        [newReceived, Math.max(0, totalAmount - newReceived), orderId]
+        `UPDATE orders 
+         SET received_amount = ?, pending_amount = ?
+         WHERE order_id = ?`,
+        [
+          newReceived,
+          Math.max(0, totalAmount - newReceived),
+          orderId
+        ]
       );
-
-      await writeAuditLog(db, { user_id: req.userId, action: "ADD_PAYMENT", entity_type: "orders", entity_id: orderId, new_values: { payment_id: paymentId, bank: addBank, cash: addCash }, ip_address: req.ip, user_agent: req.get("user-agent") });
-      log("BOOKING", "Payment added", { user_id: req.userId, orderId, paymentId });
-      res.json({ message: "Payment added", payment_id: paymentId, received: newReceived, pending: Math.max(0, totalAmount - newReceived) });
+  
+      // ⭐ Audit Log With Order Snapshot
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "ADD_PAYMENT",
+        entity_type: "orders",
+        entity_id: orderId,
+  
+        new_values: {
+          payment_id: paymentId,
+          bank: addBank,
+          cash: addCash,
+          total_received: newReceived,
+          pending_amount: Math.max(0, totalAmount - newReceived),
+  
+          order_id: order.order_id,
+          customer_id: order.customer_id,
+          contact: order.contact,
+          order_type: order.order_type,
+          booking_name: order.booking_name,
+          shareholder_name: order.shareholder_name,
+          cow_number: order.cow_number,
+          hissa_number: order.hissa_number,
+          total_amount: totalAmount
+        },
+  
+        ip_address: req.ip,
+        user_agent: req.get("user-agent")
+      });
+  
+      log("BOOKING", "Payment added", {
+        user_id: req.userId,
+        orderId,
+        paymentId
+      });
+  
+      res.json({
+        message: "Payment added",
+        payment_id: paymentId,
+        received: newReceived,
+        pending: Math.max(0, totalAmount - newReceived)
+      });
+  
     } catch (error) {
       logError("BOOKING", "Add payment error", error);
       res.status(500).json({ message: "Server error" });
@@ -1167,7 +1387,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       );
       const year = new Date().getFullYear();
       const nextNum = idRows[0]?.nextId ?? 1;
-      const cancelId = `#C-${String(nextNum).padStart(4, "0")}-${year}`;
+      const cancelId = `C-${String(nextNum).padStart(4, "0")}-${year}`;
       await db.execute(
         `INSERT INTO cancelled_orders (id, customer_id, contact, order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, description, reference) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [cancelId, o.customer_id, o.contact, o.order_type, o.booking_name, o.shareholder_name, o.alt_contact, o.address, o.area, o.day, o.booking_date, o.total_amount, o.order_source, o.description, o.reference]

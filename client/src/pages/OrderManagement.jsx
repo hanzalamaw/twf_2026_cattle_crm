@@ -96,6 +96,34 @@ const defaultEditRow = () => ({
   description: '',
 });
 
+function validateAmountsRealtime(row) {
+  const errors = {};
+
+  const total = Number(row.total_amount);
+  const received = Number(row.received);
+
+  if (row.total_amount !== '' && (Number.isNaN(total) || total < 0)) {
+    errors.total_amount = 'Total must be ≥ 0';
+  }
+
+  if (row.received !== '' && (Number.isNaN(received) || received < 0)) {
+    errors.received = 'Received must be ≥ 0';
+  }
+
+  // 🚨 Main rule
+  if (
+    row.total_amount !== '' &&
+    row.received !== '' &&
+    !Number.isNaN(total) &&
+    !Number.isNaN(received) &&
+    total < received
+  ) {
+    errors.total_amount = 'Total cannot be less than received';
+  }
+
+  return errors;
+}
+
 function validateOrderEdit(row) {
   const errors = {};
   const trim = (v) => (v == null ? '' : String(v).trim());
@@ -106,7 +134,8 @@ function validateOrderEdit(row) {
 
   const phone = trim(row.phone_number);
   if (!phone) errors.phone_number = 'Phone number is required';
-  else if (!/^[\d\s\-+()]{7,20}$/.test(phone)) errors.phone_number = 'Enter a valid phone number (7–20 digits/symbols)';
+  else if (!/^[\d\s\-+()]{7,20}$/.test(phone))
+    errors.phone_number = 'Enter a valid phone number (7–20 digits/symbols)';
 
   const dateStr = trim(row.booking_date);
   if (dateStr) {
@@ -118,18 +147,29 @@ function validateOrderEdit(row) {
     }
   }
 
-  const numFields = ['total_amount', 'received', 'pending'];
-  for (const key of numFields) {
-    const val = trim(row[key]);
-    if (val === '') continue;
-    const n = Number(val);
-    if (Number.isNaN(n) || n < 0) errors[key] = 'Must be a number ≥ 0';
+  // -------- AMOUNT VALIDATION --------
+  const total = Number(trim(row.total_amount));
+  const received = Number(trim(row.received));
+  const pending = Number(trim(row.pending));
+
+  if (trim(row.total_amount) !== '' && (Number.isNaN(total) || total < 0)) {
+    errors.total_amount = 'Total must be a number ≥ 0';
   }
 
-  if (!errors.phone_number && trim(row.phone_number).length > 20) errors.phone_number = 'Phone number too long';
-  if (!errors.customer_id && trim(row.customer_id).length > 50) errors.customer_id = 'Customer ID too long';
-  if (!errors.booking_name && trim(row.booking_name).length > 100) errors.booking_name = 'Booking name too long';
-  if (!errors.shareholder_name && trim(row.shareholder_name).length > 100) errors.shareholder_name = 'Shareholder name too long';
+  if (trim(row.received) !== '' && (Number.isNaN(received) || received < 0)) {
+    errors.received = 'Received must be a number ≥ 0';
+  }
+
+  if (trim(row.pending) !== '' && (Number.isNaN(pending) || pending < 0)) {
+    errors.pending = 'Pending must be a number ≥ 0';
+  }
+
+  // 🚨 IMPORTANT RULE
+  if (!Number.isNaN(total) && !Number.isNaN(received)) {
+    if (total < received) {
+      errors.total_amount = 'Total amount cannot be less than received amount';
+    }
+  }
 
   return errors;
 }
@@ -664,16 +704,34 @@ export default function OrderManagement() {
                       value={editRow[key] ?? ''}
                       onChange={(e) => {
                         const val = e.target.value;
-                        setEditRow((p) => {
-                          const next = { ...p, [key]: val };
+                      
+                        setEditRow((prev) => {
+                          const next = { ...prev, [key]: val };
+                      
+                          // Auto-calc pending
                           if (key === 'total_amount') {
                             const total = parseFloat(val) || 0;
-                            const received = parseFloat(p.received) || 0;
+                            const received = parseFloat(prev.received) || 0;
                             next.pending = Math.max(0, total - received).toFixed(2);
                           }
+                      
+                          // 🔥 REAL-TIME VALIDATION
+                          const realtimeErrors = validateAmountsRealtime(next);
+
+                          // 🔥 Replace only amount-related errors
+                          setEditErrors((prev) => {
+                            const updated = { ...prev };
+                          
+                            // Remove old amount errors
+                            delete updated.total_amount;
+                            delete updated.received;
+                          
+                            // Add new ones (if any)
+                            return { ...updated, ...realtimeErrors };
+                          });
+                      
                           return next;
                         });
-                        if (editErrors[key]) setEditErrors((p) => { const n = { ...p }; delete n[key]; return n; });
                       }}
                       style={{
                         width: '100%',

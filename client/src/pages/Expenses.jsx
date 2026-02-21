@@ -50,7 +50,12 @@ export default function Expenses() {
   const [deleteConfirmExpense, setDeleteConfirmExpense] = useState(null);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [addDate, setAddDate] = useState('');
+  const [addDoneBy, setAddDoneBy] = useState('');
 
+  const [editDate, setEditDate] = useState('');
+  const [editDoneBy, setEditDoneBy] = useState('');
+  
   const PAGE_SIZE = 50;
   const { authFetch } = useAuth();
   const token = localStorage.getItem('token');
@@ -118,6 +123,10 @@ export default function Expenses() {
     setAddBank('');
     setAddCash('');
     setAddDescription('');
+  
+    setAddDate('');
+    setAddDoneBy('');
+  
     setAddErrors({});
     setAddModalOpen(true);
   };
@@ -127,6 +136,10 @@ export default function Expenses() {
     setEditBank(String(row.bank ?? ''));
     setEditCash(String(row.cash ?? ''));
     setEditDescription(String(row.description ?? ''));
+  
+    setEditDate(row.done_at ? row.done_at.split('T')[0] : '');
+    setEditDoneBy(String(row.done_by ?? ''));
+  
     setEditErrors({});
   };
 
@@ -153,7 +166,13 @@ export default function Expenses() {
       const res = await authFetch(`${API}/api/booking/expenses/${encodeURIComponent(editExpense.expense_id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ bank, cash, description: editDescription.trim() }),
+        body: JSON.stringify({
+          bank,
+          cash,
+          description: editDescription.trim(),
+          done_at: editDate || null,
+          done_by: editDoneBy.trim() || null
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -214,7 +233,13 @@ export default function Expenses() {
       const res = await authFetch(`${API}/api/booking/expenses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ bank, cash, description: addDescription.trim() }),
+        body: JSON.stringify({
+          bank,
+          cash,
+          description: addDescription.trim(),
+          done_at: addDate || null,
+          done_by: addDoneBy.trim() || null
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -447,10 +472,6 @@ export default function Expenses() {
                 {editErrors.editCash && <div>Cash: {editErrors.editCash}</div>}
               </div>
             )}
-            <div style={{ marginBottom: '13px' }}>
-              <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Description (optional)</label>
-              <input type="text" value={editDescription} onChange={(e) => { setEditDescription(e.target.value); setEditErrors((p) => ({ ...p, edit: undefined })); }} placeholder="e.g. Fuel, stationery" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px' }} />
-            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Bank (Rs)</label>
@@ -461,6 +482,56 @@ export default function Expenses() {
                 <input type="number" min="0" step="0.01" value={editCash} onChange={(e) => { setEditCash(e.target.value); setEditErrors((p) => ({ ...p, editCash: undefined, editBank: undefined, edit: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: editErrors.editCash ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px' }} />
               </div>
             </div>
+            <div style={{ marginBottom: '13px' }}>
+              <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Description (optional)</label>
+              <input type="text" value={editDescription} onChange={(e) => { setEditDescription(e.target.value); setEditErrors((p) => ({ ...p, edit: undefined })); }} placeholder="e.g. Fuel, stationery" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px' }} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
+
+  {/* Date Field */}
+  <div>
+    <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>
+      Date
+    </label>
+    <input
+      type="date"
+      value={editDate}
+      onChange={(e) => setEditDate(e.target.value)}
+      style={{
+        width: '100%',
+        boxSizing: 'border-box',
+        padding: '6px 10px',
+        borderRadius: '6px',
+        border: '1px solid #e0e0e0',
+        fontSize: '10px',
+        height: '30px'
+      }}
+    />
+  </div>
+
+  {/* Done By Field */}
+  <div>
+    <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>
+      Done By
+    </label>
+    <input
+      type="text"
+      value={editDoneBy}
+      onChange={(e) => setEditDoneBy(e.target.value)}
+      placeholder="Staff name"
+      style={{
+        width: '100%',
+        boxSizing: 'border-box',
+        padding: '6px 10px',
+        borderRadius: '6px',
+        border: '1px solid #e0e0e0',
+        fontSize: '10px',
+        height: '30px'
+      }}
+    />
+  </div>
+
+</div>
             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => !submitting && setEditExpense(null)} disabled={submitting} style={{ padding: '6px 13px', background: '#e0e0e0', color: '#333', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>Close</button>
               <button type="button" onClick={handleSaveEdit} disabled={submitting || ((parseFloat(editBank) || 0) === 0 && (parseFloat(editCash) || 0) === 0)} style={{ padding: '6px 13px', background: '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>{submitting ? 'Saving...' : 'Save'}</button>
@@ -480,10 +551,6 @@ export default function Expenses() {
                 {addErrors.addCash && <div>Cash: {addErrors.addCash}</div>}
               </div>
             )}
-            <div style={{ marginBottom: '13px' }}>
-              <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Description (optional)</label>
-              <input type="text" value={addDescription} onChange={(e) => setAddDescription(e.target.value)} placeholder="e.g. Fuel, stationery" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px' }} />
-            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Bank (Rs)</label>
@@ -494,6 +561,65 @@ export default function Expenses() {
                 <input type="number" min="0" step="0.01" value={addCash} onChange={(e) => { setAddCash(e.target.value); setAddErrors((p) => ({ ...p, addCash: undefined, addBank: undefined, add: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: addErrors.addCash ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px' }} />
               </div>
             </div>
+            <div style={{ marginBottom: '13px' }}>
+  <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>
+    Description (optional)
+  </label>
+  <input
+    type="text"
+    value={addDescription}
+    onChange={(e) => setAddDescription(e.target.value)}
+    placeholder="e.g. Fuel, stationery"
+    style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px' }}
+  />
+</div>
+
+<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
+
+  {/* Date Field */}
+  <div>
+    <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>
+      Date
+    </label>
+    <input
+      type="date"
+      value={addDate}
+      onChange={(e) => setAddDate(e.target.value)}
+      style={{
+        width: '100%',
+        boxSizing: 'border-box',
+        padding: '6px 10px',
+        borderRadius: '6px',
+        border: '1px solid #e0e0e0',
+        fontSize: '10px',
+        height: '30px'
+      }}
+    />
+  </div>
+
+  {/* Done By Field */}
+  <div>
+    <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>
+      Done By
+    </label>
+    <input
+      type="text"
+      value={addDoneBy}
+      onChange={(e) => setAddDoneBy(e.target.value)}
+      placeholder="Staff name"
+      style={{
+        width: '100%',
+        boxSizing: 'border-box',
+        padding: '6px 10px',
+        borderRadius: '6px',
+        border: '1px solid #e0e0e0',
+        fontSize: '10px',
+        height: '30px'
+      }}
+    />
+  </div>
+
+</div>
             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => !submitting && setAddModalOpen(false)} disabled={submitting} style={{ padding: '6px 13px', background: '#e0e0e0', color: '#333', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>Close</button>
               <button type="button" onClick={handleAddExpense} disabled={submitting || ((parseFloat(addBank) || 0) === 0 && (parseFloat(addCash) || 0) === 0)} style={{ padding: '6px 13px', background: '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>{submitting ? 'Submitting...' : 'Add'}</button>

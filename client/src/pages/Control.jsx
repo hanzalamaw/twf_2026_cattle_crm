@@ -1766,7 +1766,7 @@ const Control = () => {
                         background: '#F9F9F9',
                         borderRadius: '8px',
                         padding: '16px',
-                        maxHeight: '400px',
+                        minHeight: '400px',
                         overflow: 'auto'
                       }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1950,41 +1950,82 @@ const Control = () => {
                     </div>
                   )}
 
-                  {isCreate && newValues && (
-                    <div style={{ marginBottom: '20px' }}>
-                      <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#333' }}>
-                        Created Data
-                      </h3>
-                      <div style={{
-                        background: '#F9F9F9',
-                        borderRadius: '8px',
-                        padding: '16px',
-                        maxHeight: '400px',
-                        overflow: 'auto'
-                      }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                          <thead>
-                            <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
-                              <th style={{ textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' }}>Field</th>
-                              <th style={{ textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' }}>Value</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(newValues).map(([key, value]) => (
-                              <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
-                                <td style={{ padding: '8px', fontSize: '12px', fontWeight: '500', color: '#333' }}>
-                                  {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                                </td>
-                                <td style={{ padding: '8px', fontSize: '12px', color: '#333' }}>
-                                  {value !== null && value !== undefined ? String(value) : 'N/A'}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
+{isCreate && newValues && Object.keys(newValues).length > 0 && (
+  <div style={{ marginBottom: '20px' }}>
+    <h3 style={{
+      fontSize: '14px',
+      fontWeight: '600',
+      marginBottom: '12px',
+      color: '#333'
+    }}>
+      Created Data
+    </h3>
+
+    <div style={{
+      background: '#F9F9F9',
+      borderRadius: '8px',
+      padding: '16px',
+      minHeight: '400px',
+      overflow: 'auto'
+    }}>
+      <table style={{
+        width: '100%',
+        borderCollapse: 'collapse'
+      }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
+            <th style={{
+              textAlign: 'left',
+              padding: '8px',
+              fontSize: '11px',
+              fontWeight: '600',
+              color: '#666'
+            }}>
+              Field
+            </th>
+
+            <th style={{
+              textAlign: 'left',
+              padding: '8px',
+              fontSize: '11px',
+              fontWeight: '600',
+              color: '#666'
+            }}>
+              Value
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {Object.entries(newValues).map(([key, value]) => (
+            <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
+              <td style={{
+                padding: '8px',
+                fontSize: '12px',
+                fontWeight: '500',
+                color: '#333'
+              }}>
+                {key
+                  .replace(/_/g, ' ')
+                  .replace(/\b\w/g, l => l.toUpperCase())}
+              </td>
+
+              <td style={{
+                padding: '8px',
+                fontSize: '12px',
+                color: '#333'
+              }}>
+                {value === null || value === undefined
+                  ? 'N/A'
+                  : String(value)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+)}
 
                   {isDelete && oldValues && (
                     <div style={{ marginBottom: '20px' }}>
