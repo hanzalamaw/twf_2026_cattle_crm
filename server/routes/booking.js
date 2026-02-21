@@ -885,9 +885,9 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
   
       // Normalize optional fields
       description = String(description || "").trim() || null;
-      done_by = done_by ? String(done_by).trim() || null : null;
+      done_by = done_by ? String(done_by).trim() : null;
   
-      // Validate date format (YYYY-MM-DD or null)
+      // Validate date
       if (done_at) {
         const d = new Date(done_at);
         if (isNaN(d.getTime())) done_at = null;
@@ -906,12 +906,20 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
   
       const username = userRows[0]?.username ?? String(req.userId);
   
-      // Generate expense ID
+      /*
+        ⭐ Expense ID Generation
+        Format → E-0001-2025
+      */
       const [idRows] = await db.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(expense_id, 3, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM booking_expenses WHERE expense_id LIKE 'E-%'"
+        `SELECT COALESCE(
+          MAX(CAST(SUBSTRING(expense_id, 3, 4) AS UNSIGNED)), 0
+        ) + 1 AS nextId 
+        FROM booking_expenses 
+        WHERE expense_id LIKE 'E-%'`
       );
   
-      const expenseId = `E-${String(idRows[0]?.nextId ?? 1).padStart(4, "0")}-${year}`;
+      const nextId = idRows[0]?.nextId ?? 1;
+      const expenseId = `E-${String(nextId).padStart(4, "0")}-${year}`;
   
       // Insert expense
       await db.execute(
@@ -924,7 +932,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           addCash,
           total,
           description,
-          done_by,
+          done_by || username,
           done_at,
           req.userId
         ]
@@ -940,7 +948,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           cash: addCash,
           total,
           description,
-          done_by,
+          done_by: done_by || username,
           done_at
         },
         ip_address: req.ip,
@@ -1064,6 +1072,31 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     }
   });
 
+// Get next expense ID (for frontend modal display)
+app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
+  try {
+    const year = new Date().getFullYear();
+
+    const [rows] = await db.execute(`
+      SELECT COALESCE(
+        MAX(CAST(SUBSTRING(expense_id, 3, 4) AS UNSIGNED)), 0
+      ) + 1 AS nextId 
+      FROM booking_expenses 
+      WHERE expense_id LIKE 'E-%'
+    `);
+
+    const nextId = rows[0]?.nextId ?? 1;
+
+    const expenseId = `E-${String(nextId).padStart(4, "0")}-${year}`;
+
+    res.json({ expense_id: expenseId });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+  
   // Delete booking expense
   app.delete("/api/booking/expenses/:expenseId", verifyToken, async (req, res) => {
     try {

@@ -52,6 +52,7 @@ export default function Expenses() {
   const [totalCount, setTotalCount] = useState(0);
   const [addDate, setAddDate] = useState('');
   const [addDoneBy, setAddDoneBy] = useState('');
+  const [nextExpenseId, setNextExpenseId] = useState('');
 
   const [editDate, setEditDate] = useState('');
   const [editDoneBy, setEditDoneBy] = useState('');
@@ -119,18 +120,33 @@ export default function Expenses() {
     fetchExpenses();
   }, [fetchExpenses]);
 
-  const openAddModal = () => {
+  const openAddModal = async () => {
     setAddBank('');
     setAddCash('');
     setAddDescription('');
-  
     setAddDate('');
     setAddDoneBy('');
-  
     setAddErrors({});
+  
+    try {
+      const res = await authFetch(`${API}/api/booking/expenses/next-id`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+  
+      const data = await res.json().catch(() => ({}));
+  
+      if (res.ok) {
+        setNextExpenseId(data.expense_id);
+      } else {
+        setNextExpenseId('');
+      }
+    } catch (e) {
+      console.error(e);
+      setNextExpenseId('');
+    }
+  
     setAddModalOpen(true);
   };
-
   const openEditModal = (row) => {
     setEditExpense(row);
     setEditBank(String(row.bank ?? ''));
@@ -543,7 +559,13 @@ export default function Expenses() {
       {addModalOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !submitting && setAddModalOpen(false)}>
           <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(420px, 95vw)', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 13px 0', fontSize: '13px', fontWeight: '600' }}>Add Expense</h3>
+          <h3 style={{ margin: '0' , fontSize: '13px', fontWeight: '600' }}>
+  Add Expense
+</h3>
+
+<div style={{ fontSize: '10px', color: '#666', marginBottom: '13px' }}>
+  Expense ID: {nextExpenseId || 'Loading...'}
+</div>
             {(addErrors.add || addErrors.addBank || addErrors.addCash) && (
               <div style={{ marginBottom: '10px', padding: '6px', background: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '10px' }}>
                 {addErrors.add}
