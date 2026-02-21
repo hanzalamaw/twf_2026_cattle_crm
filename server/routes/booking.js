@@ -1670,3 +1670,4 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
     }
   });
 };
+
