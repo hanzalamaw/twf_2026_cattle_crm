@@ -8,15 +8,21 @@ const TYPES = {
   goat: "Goat (Hissa)",
 };
 
+/**
+ * ✅ FIX:
+ * Include orders with NULL booking_date for selected years
+ * (matches your Booking APIs behavior).
+ */
 function buildYearWhere(year, params) {
   const conditions = [];
 
   if (year === "2026" || year === "2025") {
-    conditions.push("YEAR(o.booking_date) = ?");
+    conditions.push("(o.booking_date IS NULL OR YEAR(o.booking_date) = ?)");
     params.push(year);
   } else if (year === "2024") {
     conditions.push("(o.booking_date IS NULL OR YEAR(o.booking_date) < 2025)");
   }
+
   // year === "all" => no filter
   return conditions;
 }
@@ -26,6 +32,7 @@ const TYPE_KEY_SQL = `
   CASE
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissapremium') THEN 'premium'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissastandard') THEN 'standard'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissawaqf') THEN 'waqf'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissawaqf') THEN 'waqf'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('goathissa','goat') THEN 'goat'
     ELSE NULL
@@ -45,7 +52,8 @@ const DAY_KEY_SQL = `
 export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
   // GET: /api/dashboard/kpis?year=2026|2025|2024|all
-  // ONLY counts 4 types
+  // ✅ Received Payments = SUM(orders.received_amount)
+  // ✅ Cleared = pending_amount <= 0
   // -----------------------
   app.get("/api/dashboard/kpis", verifyToken, async (req, res) => {
     try {
@@ -63,11 +71,18 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
         `
         SELECT
           COUNT(*) AS totalOrders,
+
+          -- ✅ cleared = pending_amount <= 0
           SUM(CASE WHEN COALESCE(o.pending_amount, 0) <= 0 THEN 1 ELSE 0 END) AS paymentClearedCount,
+
           SUM(CASE WHEN COALESCE(o.pending_amount, 0) > 0 THEN 1 ELSE 0 END) AS pendingPaymentsCount,
+
           COALESCE(SUM(o.total_amount), 0) AS totalSales,
-          COALESCE(SUM(o.received_amount), 0) AS receivedPayments,
-          COALESCE(SUM(o.pending_amount), 0) AS pendingAmount
+
+          -- ✅ received payments from orders table
+          COALESCE(SUM(COALESCE(o.received_amount, 0)), 0) AS receivedPayments,
+
+          COALESCE(SUM(COALESCE(o.pending_amount, 0)), 0) AS pendingAmount
         FROM orders o
         ${where}
         `,
@@ -158,8 +173,6 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
   // -----------------------
   // GET: /api/dashboard/day-wise?year=...
-  // Day 1/2/3 cards, columns: Premium Standard Waqf Goat Total
-  // rows: Total Orders, Payment Cleared, Pending (Completely), Pending (Partially)
   // -----------------------
   app.get("/api/dashboard/day-wise", verifyToken, async (req, res) => {
     try {
@@ -301,7 +314,6 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
   // -----------------------
   // GET: /api/dashboard/reference-wise?year=...
-  // Names dynamic from orders.reference
   // -----------------------
   app.get("/api/dashboard/reference-wise", verifyToken, async (req, res) => {
     try {
