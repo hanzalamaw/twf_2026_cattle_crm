@@ -1,10 +1,11 @@
+// src/pages/Dashboard.jsx (or wherever your dashboard is)
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 
 const fmt = (n) => Number(n || 0).toLocaleString("en-PK");
 
 // ✅ DEV ONLY: set a number here to preview donut (e.g. 1999 / 2089). Keep null to use real API value.
-const DEV_PREVIEW_TOTAL_ORDERS = null; // example: 2089
+const DEV_PREVIEW_TOTAL_ORDERS = null;
 
 // Fixed labels everywhere (must always render these 4)
 const FIXED_TYPES = [
@@ -135,8 +136,8 @@ const KPIBox = ({
 const TargetDonut = ({
   achieved = 0,
   target = 2000,
-  size = 170, // ✅ smaller
-  stroke = 14, // ✅ smaller
+  size = 170,
+  stroke = 14,
   color = "#0B8A6A",
   overflowColor = "#0A5B47",
   track = "#EAEAEA",
@@ -447,7 +448,6 @@ const Dashboard = () => {
       <style>{`
         *{ box-sizing:border-box; }
 
-        /* ✅ overall smaller */
         .page{
           padding: 16px;
           font-family: 'Poppins', sans-serif;
@@ -540,7 +540,7 @@ const Dashboard = () => {
         .kpiTitle{ font-size: 13px; color:#6b7280; }
         .kpiValue{ font-size: 22px; font-weight: 900; color:#111827; line-height: 1.1; }
 
-        /* ✅ Blur like "Bank" field: blur + dim + looks like a form blur */
+        /* Blur like "Bank" field */
         .kpiBlurField{
           filter: blur(6px);
           opacity: .35;
@@ -616,7 +616,7 @@ const Dashboard = () => {
           border-radius: 999px;
         }
 
-        /* ✅ Day Wise Layout: Day 1 & Day 2 in one row, Day 3 centered below */
+        /* Day Wise Layout: Day 1 & Day 2 in one row, Day 3 centered below */
         .dayGrid{
           display:grid;
           grid-template-columns: repeat(2, minmax(320px,1fr));
@@ -649,7 +649,7 @@ const Dashboard = () => {
           margin-bottom:10px;
         }
 
-        /* ✅ FIX: headings stay inside their own columns (no overflow) */
+        /* ✅ Table compact + fixed layout so headings never overflow */
         .tblCompact{
           width:100%;
           border-collapse:separate;
@@ -673,12 +673,11 @@ const Dashboard = () => {
           white-space:nowrap;
         }
 
-        /* ✅ Headings: allow wrap + keep centered + never “come out” */
         .tblCompact th{
           background:#f0f0f0;
           font-weight:900;
           letter-spacing:0.15px;
-          white-space:normal;     /* ✅ allow wrap */
+          white-space:normal;
           line-height:1.15;
           padding:10px 6px;
         }
@@ -687,18 +686,20 @@ const Dashboard = () => {
         .tblCompact th:last-child,
         .tblCompact td:last-child{ border-right:none; }
 
+        /* ✅ FIX: reduce first column width (label column) */
         .tblCompact th:first-child,
         .tblCompact td:first-child{
-          width:40%;
+          width:26%;
           text-align:left;
           font-weight:800;
           background:#fafafa;
-          white-space:nowrap;
+          white-space:normal;
+          line-height:1.2;
         }
 
         .tblCompact th:not(:first-child),
         .tblCompact td:not(:first-child){
-          width:12%;
+          width:14.8%;
         }
 
         /* Reference */
@@ -728,7 +729,7 @@ const Dashboard = () => {
         .tblRefOld th{
           background:#f0f0f0;
           font-weight:900;
-          white-space:normal;  /* ✅ allow wrap so headings don't overflow */
+          white-space:normal;
           line-height:1.15;
         }
         .tblRefOld tr:last-child td{ border-bottom:none; }
@@ -759,7 +760,7 @@ const Dashboard = () => {
             <option value="2024">2024</option>
           </select>
 
-          {/* ✅ Blur/unblur KPI values */}
+          {/* Blur/unblur KPI values */}
           <button
             type="button"
             onClick={() => setKpiValuesVisible((v) => !v)}
