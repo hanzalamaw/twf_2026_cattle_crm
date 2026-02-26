@@ -10,7 +10,7 @@ const TYPES = {
 
 /**
  * ✅ Matches your booking APIs behavior:
- * - For 2026/2025: include YEAR(booking_date)=year OR booking_date IS NULL
+ * - For 2026/2025: include YEAR(booking_date)=year
  * - For 2024: include booking_date IS NULL OR YEAR(booking_date) < 2025
  * - For all: no filter
  */
@@ -18,7 +18,7 @@ function buildYearWhere(year, params) {
   const conditions = [];
 
   if (year === "2026" || year === "2025") {
-    conditions.push("(o.booking_date IS NULL OR YEAR(o.booking_date) = ?)");
+    conditions.push("YEAR(o.booking_date) = ?");
     params.push(year);
   } else if (year === "2024") {
     conditions.push("(o.booking_date IS NULL OR YEAR(o.booking_date) < 2025)");
