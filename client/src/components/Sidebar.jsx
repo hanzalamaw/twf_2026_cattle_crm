@@ -118,13 +118,13 @@ const MENU_ITEMS = [
 ];
 
 const BOOKING_MENU_ITEMS = [
-  { id: 'bm-dashboard', label: 'Dashboard', icon: <DashboardIcon />, path: '/bookings/dashboard', managersOnly: true },
-  { id: 'bm-new-query', label: 'New Query', icon: <QueryIcon />, path: '/bookings/new-query', permission: 'booking_management' },
-  { id: 'bm-new-order', label: 'New Order', icon: <OrderIcon />, path: '/bookings/new-order', permission: 'booking_management' },
-  { id: 'bm-queries', label: 'Query Management', icon: <QueryIcon />, path: '/bookings/queries', permission: 'booking_management' },
-  { id: 'bm-orders', label: 'Order Management', icon: <OrderIcon />, path: '/bookings/orders', permission: 'booking_management' },
-  { id: 'bm-transactions', label: 'Transactions', icon: <TransactionsIcon />, path: '/bookings/transactions', permission: 'booking_management' },
-  { id: 'bm-expenses', label: 'Expenses', icon: <ExpensesIcon />, path: '/bookings/expenses', permission: 'booking_management' },
+  { id: 'bm-dashboard', label: 'Dashboard', iconDefault: '/icons/dashboard_default.png', iconActive: '/icons/dashboard_active.png', path: '/bookings/dashboard', managersOnly: true },
+  { id: 'bm-new-query', label: 'New Query', iconDefault: '/icons/new_query_default.png', iconActive: '/icons/new_query_active.png', path: '/bookings/new-query', permission: 'booking_management' },
+  { id: 'bm-new-order', label: 'New Order', iconDefault: '/icons/new_order_default.png', iconActive: '/icons/new_order_active.png', path: '/bookings/new-order', permission: 'booking_management' },
+  { id: 'bm-queries', label: 'Query Management', iconDefault: '/icons/query_management_default.png', iconActive: '/icons/query_management_active.png', path: '/bookings/queries', permission: 'booking_management' },
+  { id: 'bm-orders', label: 'Order Management', iconDefault: '/icons/order_management_default.png', iconActive: '/icons/order_management_active.png', path: '/bookings/orders', permission: 'booking_management' },
+  { id: 'bm-transactions', label: 'Transactions', iconDefault: '/icons/transactions_default.png', iconActive: '/icons/transactions_active.png', path: '/bookings/transactions', permission: 'booking_management' },
+  { id: 'bm-expenses', label: 'Expenses', iconDefault: '/icons/expenses_default.png', iconActive: '/icons/expenses_active.png', path: '/bookings/expenses', permission: 'booking_management' },
 ];
 
 function Sidebar() {
@@ -191,13 +191,33 @@ function Sidebar() {
                 className={`nav-link ${isActive(item.path) ? 'active' : ''}`}
                 onClick={() => navigate(item.path)}
               >
-                <span className="nav-icon">{item.icon}</span>
+                <span className="nav-icon nav-icon-main">
+                  {item.iconDefault ? (
+                    <img src={isActive(item.path) ? item.iconActive : item.iconDefault} alt="" style={{ width: '20px', height: '20px', display: 'block' }} />
+                  ) : (
+                    item.icon
+                  )}
+                </span>
                 {isExpanded && <span className="nav-label">{item.label}</span>}
               </button>
             </li>
           ))}
         </ul>
       </nav>
+
+      <div className="sidebar-bottom">
+        <button
+          type="button"
+          className="nav-link sidebar-back-btn"
+          onClick={() => navigate('/')}
+          title="Back to Select Management"
+        >
+          <span className="nav-icon nav-icon-main">
+            <img src="/icons/select_system.png" alt="" style={{ width: '20px', height: '20px', display: 'block' }} />
+          </span>
+          {isExpanded && <span className="nav-label">Select Management</span>}
+        </button>
+      </div>
     </aside>
   );
 }

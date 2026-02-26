@@ -13,7 +13,6 @@ export const createVerifyToken = (db, JWT_SECRET) => {
 
     if (!token) {
       log("AUTH", "Request rejected: no token", { path: req.path });
-      await writeAuditLog(db, { action: "AUTH_FAILED", entity_type: "auth", new_values: { reason: "no_token", path: req.path }, ip_address: req.ip, user_agent: req.get("user-agent") });
       return res.status(401).json({ message: 'No token provided' });
     }
 
@@ -28,14 +27,12 @@ export const createVerifyToken = (db, JWT_SECRET) => {
 
         if (sessions.length === 0 || !sessions[0].is_active) {
           log("AUTH", "Request rejected: session terminated", { user_id: decoded.id, path: req.path });
-          await writeAuditLog(db, { user_id: decoded.id, action: "AUTH_FAILED", entity_type: "auth", new_values: { reason: "session_terminated", path: req.path }, ip_address: req.ip, user_agent: req.get("user-agent") });
           return res.status(401).json({ message: 'Session has been terminated' });
         }
 
         if (new Date(sessions[0].expires_at) < new Date()) {
           await db.execute("UPDATE user_sessions SET is_active = FALSE WHERE session_id = ?", [decoded.sessionId]);
           log("AUTH", "Request rejected: session expired", { user_id: decoded.id, path: req.path });
-          await writeAuditLog(db, { user_id: decoded.id, action: "AUTH_FAILED", entity_type: "auth", new_values: { reason: "session_expired", path: req.path }, ip_address: req.ip, user_agent: req.get("user-agent") });
           return res.status(401).json({ message: 'Session has expired' });
         }
 
@@ -51,7 +48,6 @@ export const createVerifyToken = (db, JWT_SECRET) => {
       next();
     } catch (error) {
       log("AUTH", "Request rejected: invalid token", { path: req.path });
-      await writeAuditLog(db, { action: "AUTH_FAILED", entity_type: "auth", new_values: { reason: "invalid_token", path: req.path }, ip_address: req.ip, user_agent: req.get("user-agent") });
       return res.status(401).json({ message: 'Invalid token' });
     }
   };

@@ -32,9 +32,41 @@ function formatDate(val) {
   return s;
 }
 
+function StatusPill({ status }) {
+  const isPending = status === 'Pending';
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        minWidth: '72px',
+        height: '22px',
+        padding: '0 10px',
+        borderRadius: '4px',
+        fontSize: '10px',
+        fontWeight: '600',
+        whiteSpace: 'nowrap',
+        border: '1px solid',
+        textAlign: 'center',
+        lineHeight: '20px',
+        boxSizing: 'border-box',
+        ...(isPending
+          ? { color: '#C30730', background: '#FBEDF0', borderColor: '#C30730' }
+          : { color: '#07C339', background: '#E6F9EB', borderColor: '#07C339' }),
+      }}
+    >
+      {isPending ? 'Pending' : (status ? 'Received' : '—')}
+    </span>
+  );
+}
+
+const PAGE_SIZE = 50;
+
 export default function Transactions() {
   const [summary, setSummary] = useState(null);
+  const [ordersSummary, setOrdersSummary] = useState(null);
   const [orders, setOrders] = useState([]);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [amountVisible, setAmountVisible] = useState(false);
@@ -44,13 +76,26 @@ export default function Transactions() {
   const [addCash, setAddCash] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [paymentErrors, setPaymentErrors] = useState({});
-  const [yearFilter, setYearFilter] = useState('all');
+  const [yearFilter, setYearFilter] = useState('2026');
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [appliedTypes, setAppliedTypes] = useState([]);
   const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
+  const [filters, setFilters] = useState({ order_types: [] });
   const typeDropdownRef = useRef(null);
 
   const token = localStorage.getItem('token');
+
+  const fetchFilters = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/booking/orders/filters`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        setFilters(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [token]);
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -64,15 +109,36 @@ export default function Transactions() {
     }
   }, [token]);
 
+  const fetchOrdersSummary = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+      appliedTypes.forEach((t) => params.append('order_type', t));
+      const res = await fetch(`${API}/api/booking/orders/summary?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        setOrdersSummary(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [token, yearFilter, appliedTypes]);
+
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const year = yearFilter || 'all';
-      const res = await fetch(`${API}/api/booking/orders?year=${encodeURIComponent(year)}&page=1&limit=500`, { headers: { Authorization: `Bearer ${token}` } });
+      const params = new URLSearchParams();
+      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+      appliedTypes.forEach((t) => params.append('order_type', t));
+      params.set('page', String(page));
+      params.set('limit', String(PAGE_SIZE));
+      const res = await fetch(`${API}/api/booking/orders?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
-        setOrders(Array.isArray(data.data) ? data.data : []);
+        const list = Array.isArray(data.data) ? data.data : [];
+        setOrders(list);
+        setTotalCount(typeof data.total === 'number' ? data.total : list.length);
       } else {
         setError('Failed to load orders');
       }
@@ -81,14 +147,23 @@ export default function Transactions() {
     } finally {
       setLoading(false);
     }
-  }, [token, yearFilter]);
+  }, [token, yearFilter, appliedTypes, page]);
 
+  useEffect(() => {
+    fetchFilters();
+  }, [fetchFilters]);
   useEffect(() => {
     fetchSummary();
   }, [fetchSummary]);
   useEffect(() => {
+    fetchOrdersSummary();
+  }, [fetchOrdersSummary]);
+  useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
+  useEffect(() => {
+    setPage(1);
+  }, [yearFilter, appliedTypes]);
 
   useEffect(() => {
     if (!typeDropdownOpen) return;
@@ -108,9 +183,13 @@ export default function Transactions() {
 
   const getPaymentRealtimeError = useCallback(() => {
     if (!modalOrder) return null;
+    const bankVal = parseFloat(addBank);
+    const cashVal = parseFloat(addCash);
+    if (!Number.isNaN(bankVal) && bankVal < 0) return 'Amount cannot be negative.';
+    if (!Number.isNaN(cashVal) && cashVal < 0) return 'Amount cannot be negative.';
     const pendingAmount = Number(modalOrder.pending) || 0;
-    const addB = Math.max(0, parseFloat(addBank) || 0);
-    const addC = Math.max(0, parseFloat(addCash) || 0);
+    const addB = Math.max(0, Number.isNaN(bankVal) ? 0 : bankVal);
+    const addC = Math.max(0, Number.isNaN(cashVal) ? 0 : cashVal);
     if (addB + addC > pendingAmount) return `Total added (Bank + Cash) cannot exceed pending (${formatAmount(pendingAmount)}).`;
     return null;
   }, [modalOrder, addBank, addCash]);
@@ -121,8 +200,8 @@ export default function Transactions() {
     const cash = parseFloat(addCash);
     const addB = Math.max(0, Number.isNaN(bank) ? 0 : bank);
     const addC = Math.max(0, Number.isNaN(cash) ? 0 : cash);
-    if (!Number.isNaN(bank) && bank < 0) err.addBank = 'Must be ≥ 0';
-    if (!Number.isNaN(cash) && cash < 0) err.addCash = 'Must be ≥ 0';
+    if (!Number.isNaN(bank) && bank < 0) err.addBank = 'Amount cannot be negative.';
+    if (!Number.isNaN(cash) && cash < 0) err.addCash = 'Amount cannot be negative.';
     if (addB + addC === 0) err.add = 'Enter at least one amount (Add Bank or Add Cash ≥ 0).';
     const totalAmount = Number(modalOrder?.total_amount) || 0;
     const currentReceived = Number(modalOrder?.received) || 0;
@@ -173,17 +252,18 @@ export default function Transactions() {
     );
   }
 
-  const displayedOrders = appliedTypes.length > 0 ? orders.filter((o) => appliedTypes.includes(o.type)) : orders;
-  const typeOptions = [...new Set(orders.map((o) => o.type).filter(Boolean))].sort();
+  const displayedOrders = orders;
+  const typeOptions = filters.order_types && filters.order_types.length > 0 ? filters.order_types : [...new Set(orders.map((o) => o.type).filter(Boolean))].sort();
   const s = summary || {};
   const totalExpensesBank = Number(s.totalExpensesBank) ?? 0;
   const totalExpensesCash = Number(s.totalExpensesCash) ?? 0;
-  const totalBankFiltered = displayedOrders.reduce((sum, o) => sum + (Number(o.bank) || 0), 0);
-  const totalCashFiltered = displayedOrders.reduce((sum, o) => sum + (Number(o.cash) || 0), 0);
+  const os = ordersSummary || {};
+  const fullDataTotalBank = Number(os.totalBank) ?? 0;
+  const fullDataTotalCash = Number(os.totalCash) ?? 0;
   const typeFilterActive = appliedTypes.length > 0;
   const effectiveFilterMode = typeFilterActive ? 'actual' : filterMode;
-  const bankOnlyAmount = effectiveFilterMode === 'onHand' ? totalBankFiltered - totalExpensesBank : totalBankFiltered;
-  const cashAmount = effectiveFilterMode === 'onHand' ? totalCashFiltered - totalExpensesCash : totalCashFiltered;
+  const bankOnlyAmount = effectiveFilterMode === 'onHand' ? fullDataTotalBank - totalExpensesBank : fullDataTotalBank;
+  const cashAmount = effectiveFilterMode === 'onHand' ? fullDataTotalCash - totalExpensesCash : fullDataTotalCash;
 
   const currentBank = modalOrder ? Number(modalOrder.bank) || 0 : 0;
   const currentCash = modalOrder ? Number(modalOrder.cash) || 0 : 0;
@@ -214,7 +294,7 @@ export default function Transactions() {
               onClick={() => setTypeDropdownOpen((v) => !v)}
               style={{ padding: '6px 10px', fontSize: '10px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', minWidth: '112px', maxWidth: '160px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}
             >
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: selectedTypes.length === 0 ? '10px' : '13px' }}>
                 {selectedTypes.length === 0 ? 'Select types...' : selectedTypes.length === 1 ? selectedTypes[0] : `${selectedTypes.length} selected`}
               </span>
               <span style={{ flexShrink: 0 }}>{typeDropdownOpen ? '▲' : '▼'}</span>
@@ -242,8 +322,8 @@ export default function Transactions() {
             <option value="onHand" disabled={typeFilterActive}>On Hand</option>
             <option value="actual">Actual</option>
           </select>
-          <button type="button" onClick={() => setAmountVisible((v) => !v)} style={{ padding: '6px 11px', fontSize: '10px', fontWeight: '500', background: amountVisible ? '#f0f0f0' : '#FF5722', color: amountVisible ? '#333' : '#fff', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            {amountVisible ? 'Hide' : 'Show'}
+          <button type="button" onClick={() => setAmountVisible((v) => !v)} title={amountVisible ? 'Hide' : 'Show'} style={{ padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
           </button>
         </div>
       </div>
@@ -267,7 +347,7 @@ export default function Transactions() {
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: '400px', overflow: 'auto' }}>
+      <div style={{ flex: 1, minHeight: '260px', overflow: 'auto' }}>
         <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', background: '#fff', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', whiteSpace: 'nowrap' }}>
@@ -291,7 +371,7 @@ export default function Transactions() {
                       {ORDER_COLUMNS.map((col) => (
                         <td key={col.key} style={{ padding: '8px', textAlign: ['total_amount', 'bank', 'cash', 'received', 'pending'].includes(col.key) ? 'right' : 'left', whiteSpace: 'nowrap' }}>
                           {col.key === 'payment_status' ? (
-                            <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: '600', background: row[col.key] === 'Pending' ? '#fef2f2' : '#f0fdf4', color: row[col.key] === 'Pending' ? '#b91c1c' : '#166534' }}>{row[col.key] || '—'}</span>
+                            <StatusPill status={row[col.key]} />
                           ) : ['total_amount', 'bank', 'cash', 'received', 'pending'].includes(col.key) ? (
                             formatAmount(row[col.key])
                           ) : (
@@ -308,10 +388,59 @@ export default function Transactions() {
         </div>
       </div>
 
+      {!loading && totalCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px' }}>
+          <span style={{ fontSize: '13px', color: '#666' }}>
+            Showing {orders.length} of {totalCount} orders
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              style={{ padding: '6px 12px', fontSize: '10px', background: page <= 1 ? '#f0f0f0' : '#fff', color: page <= 1 ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page <= 1 ? 'not-allowed' : 'pointer' }}
+            >
+              Previous
+            </button>
+            {(() => {
+              const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
+              const showPages = 5;
+              let start = Math.max(1, page - Math.floor(showPages / 2));
+              let end = Math.min(totalPages, start + showPages - 1);
+              if (end - start + 1 < showPages) start = Math.max(1, end - showPages + 1);
+              const pages = [];
+              for (let i = start; i <= end; i++) pages.push(i);
+              return (
+                <>
+                  {pages.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPage(p)}
+                      style={{ minWidth: '32px', padding: '6px 10px', fontSize: '10px', background: p === page ? '#FF5722' : '#fff', color: p === page ? '#fff' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', fontWeight: p === page ? 600 : 400 }}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </>
+              );
+            })()}
+            <button
+              type="button"
+              disabled={page >= Math.ceil(totalCount / PAGE_SIZE)}
+              onClick={() => setPage((p) => Math.min(Math.ceil(totalCount / PAGE_SIZE) || 1, p + 1))}
+              style={{ padding: '6px 12px', fontSize: '10px', background: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#f0f0f0' : '#fff', color: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page >= Math.ceil(totalCount / PAGE_SIZE) ? 'not-allowed' : 'pointer' }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
       {modalOrder && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !submitting && setModalOrder(null)}>
           <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(520px, 95vw)', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 13px 0', fontSize: '11px', fontWeight: '600' }}>Update Transaction</h3>
+            <h3 style={{ margin: '0 0 13px 0', fontSize: '13px', fontWeight: '600' }}>Update Transaction</h3>
 
             <div style={{ fontSize: '11px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>Previous (current state)</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px', marginBottom: '13px', fontSize: '10px', padding: '8px 10px', background: '#f5f5f5', borderRadius: '6px', border: '1px solid #e8e8e8' }}>

@@ -22,11 +22,11 @@
 }
 
 .sidebar.expanded {
-  width: 220px;
+  width: 200px;
 }
 
 .sidebar.collapsed {
-  width: 56px;
+  width: 45px;
 }
 
 /* Profile Section */
@@ -42,7 +42,7 @@
 .sidebar.collapsed .sidebar-profile {
   flex-direction: column;
   padding: 10px 6px;
-  padding-bottom: 35px;
+  padding-bottom: 44px;
 }
 
 .profile-avatar {
@@ -93,7 +93,7 @@
 }
 
 .profile-name {
-  font-size: 10px;
+  font-size: 8px;
   font-weight: 600;
   color: #1f2937;
   white-space: nowrap;
@@ -199,8 +199,8 @@
   font-size: 8px;
   font-weight: 600;
   color: #9ca3af;
-  letter-spacing: 0.3px;
-  padding: 0 5px;
+  letter-spacing: 0.4px;
+  padding: 0 6px;
   margin-bottom: 6px;
   text-transform: uppercase;
   height: 11px;
@@ -234,7 +234,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 6px;
+  padding: 10px 8px;
   border: none;
   background: transparent;
   border-radius: 8px;
@@ -269,6 +269,12 @@
   transition: color 0.25s ease;
 }
 
+.sidebar-nav .nav-icon-main,
+.sidebar-bottom .nav-icon-main {
+  width: 20px;
+  height: 20px;
+}
+
 .nav-link:hover .nav-icon,
 .nav-link.active .nav-icon {
   color: #FF5722;
@@ -289,6 +295,28 @@
 .nav-link:hover .nav-label,
 .nav-link.active .nav-label {
   color: #1f2937;
+}
+
+/* Bottom: Back to Select Management - same alignment as nav items */
+.sidebar-bottom {
+  margin-top: auto;
+  padding: 10px 8px;
+  border-top: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.sidebar-back-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+  border-radius: 10px;
+}
+
+.sidebar.collapsed .sidebar-back-btn {
+  justify-content: center;
+  padding: 8px;
 }
 
 /* Scrollbar Styling */

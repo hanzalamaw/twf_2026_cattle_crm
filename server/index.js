@@ -12,6 +12,7 @@ import { registerPasswordResetRoutes } from "./routes/passwordReset.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerControlRoutes } from "./routes/control.js";
 import { registerBookingRoutes } from "./routes/booking.js";
+import { registerDashboardRoutes } from "./routes/dashboardRoutes.js";
 import { log, logError } from "./utils/logger.js";
 import { writeAuditLog } from "./utils/auditLog.js";
 import { sendLoginNotificationEmail } from "./utils/email.js";
@@ -369,6 +370,7 @@ const startServer = async () => {
     registerOAuthRoutes(app, db, JWT_SECRET);
     registerControlRoutes(app, db, verifyToken);
     registerBookingRoutes(app, db, verifyToken);
+    registerDashboardRoutes(app, db, verifyToken);
 
     // ---------- 404 ----------
     app.use((req, res) => {

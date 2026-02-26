@@ -52,18 +52,23 @@ function StatusPill({ status }) {
     <span
       style={{
         display: 'inline-block',
-        padding: '4px 10px',
-        borderRadius: '999px',
-        fontSize: '12px',
+        minWidth: '72px',
+        height: '22px',
+        padding: '0 10px',
+        borderRadius: '4px',
+        fontSize: '10px',
         fontWeight: '600',
         whiteSpace: 'nowrap',
         border: '1px solid',
+        textAlign: 'center',
+        lineHeight: '20px',
+        boxSizing: 'border-box',
         ...(isPending
-          ? { color: '#b91c1c', background: '#fef2f2', borderColor: '#b91c1c' }
-          : { color: '#166534', background: '#f0fdf4', borderColor: '#166534' }),
+          ? { color: '#C30730', background: '#FBEDF0', borderColor: '#C30730' }
+          : { color: '#07C339', background: '#E6F9EB', borderColor: '#07C339' }),
       }}
     >
-      {status || '—'}
+      {isPending ? 'Pending' : (status ? 'Received' : '—')}
     </span>
   );
 }
@@ -91,6 +96,34 @@ const defaultEditRow = () => ({
   description: '',
 });
 
+function validateAmountsRealtime(row) {
+  const errors = {};
+
+  const total = Number(row.total_amount);
+  const received = Number(row.received);
+
+  if (row.total_amount !== '' && (Number.isNaN(total) || total < 0)) {
+    errors.total_amount = 'Total must be ≥ 0';
+  }
+
+  if (row.received !== '' && (Number.isNaN(received) || received < 0)) {
+    errors.received = 'Received must be ≥ 0';
+  }
+
+  // 🚨 Main rule
+  if (
+    row.total_amount !== '' &&
+    row.received !== '' &&
+    !Number.isNaN(total) &&
+    !Number.isNaN(received) &&
+    total < received
+  ) {
+    errors.total_amount = 'Total cannot be less than received';
+  }
+
+  return errors;
+}
+
 function validateOrderEdit(row) {
   const errors = {};
   const trim = (v) => (v == null ? '' : String(v).trim());
@@ -101,7 +134,8 @@ function validateOrderEdit(row) {
 
   const phone = trim(row.phone_number);
   if (!phone) errors.phone_number = 'Phone number is required';
-  else if (!/^[\d\s\-+()]{7,20}$/.test(phone)) errors.phone_number = 'Enter a valid phone number (7–20 digits/symbols)';
+  else if (!/^[\d\s\-+()]{7,20}$/.test(phone))
+    errors.phone_number = 'Enter a valid phone number (7–20 digits/symbols)';
 
   const dateStr = trim(row.booking_date);
   if (dateStr) {
@@ -113,18 +147,29 @@ function validateOrderEdit(row) {
     }
   }
 
-  const numFields = ['total_amount', 'received', 'pending'];
-  for (const key of numFields) {
-    const val = trim(row[key]);
-    if (val === '') continue;
-    const n = Number(val);
-    if (Number.isNaN(n) || n < 0) errors[key] = 'Must be a number ≥ 0';
+  // -------- AMOUNT VALIDATION --------
+  const total = Number(trim(row.total_amount));
+  const received = Number(trim(row.received));
+  const pending = Number(trim(row.pending));
+
+  if (trim(row.total_amount) !== '' && (Number.isNaN(total) || total < 0)) {
+    errors.total_amount = 'Total must be a number ≥ 0';
   }
 
-  if (!errors.phone_number && trim(row.phone_number).length > 20) errors.phone_number = 'Phone number too long';
-  if (!errors.customer_id && trim(row.customer_id).length > 50) errors.customer_id = 'Customer ID too long';
-  if (!errors.booking_name && trim(row.booking_name).length > 100) errors.booking_name = 'Booking name too long';
-  if (!errors.shareholder_name && trim(row.shareholder_name).length > 100) errors.shareholder_name = 'Shareholder name too long';
+  if (trim(row.received) !== '' && (Number.isNaN(received) || received < 0)) {
+    errors.received = 'Received must be a number ≥ 0';
+  }
+
+  if (trim(row.pending) !== '' && (Number.isNaN(pending) || pending < 0)) {
+    errors.pending = 'Pending must be a number ≥ 0';
+  }
+
+  // 🚨 IMPORTANT RULE
+  if (!Number.isNaN(total) && !Number.isNaN(received)) {
+    if (total < received) {
+      errors.total_amount = 'Total amount cannot be less than received amount';
+    }
+  }
 
   return errors;
 }
@@ -343,47 +388,84 @@ export default function OrderManagement() {
   };
 
   const handleExport = async () => {
-    const ids = Array.from(selectedIds);
-    const toExport = ids.length ? orders.filter((r) => ids.includes(r.order_id)) : orders;
-    if (toExport.length === 0) {
-      alert('Select at least one row to export, or leave none selected to export all.');
-      return;
-    }
-    const headers = COLUMNS.map((c) => c.label);
-    const rows = toExport.map((row) =>
-      COLUMNS.map((col) => {
-        const val = row[col.key];
-        if (AMOUNT_KEYS.includes(col.key)) return formatAmount(val);
-        if (col.key === 'booking_date') return formatDate(val);
-        if (col.key === 'payment_status') return val || '—';
-        return val != null ? String(val) : '—';
-      })
-    );
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Orders');
-    XLSX.writeFile(wb, `orders-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
     try {
-      const filters = {};
-      if (search?.trim()) filters.search = search.trim();
-      if (slot) filters.slot = slot;
-      if (orderType) filters.order_type = orderType;
-      if (day) filters.day = day;
-      if (reference) filters.reference = reference;
-      if (cowNumber?.trim()) filters.cow_number = cowNumber.trim();
-      if (yearFilter) filters.year = yearFilter;
-      const payload = {
-        count: toExport.length,
-        ...(Object.keys(filters).length > 0 && { filters }),
-        ...(ids.length > 0 && { order_ids: ids }),
-      };
-      await fetch(`${API}/api/booking/orders/export-audit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      });
+      let toExport = [];
+  
+      const ids = Array.from(selectedIds);
+  
+      // ✅ If checkbox selected → export selected rows only
+      if (ids.length > 0) {
+        toExport = orders.filter(r => ids.includes(r.order_id));
+      }
+  
+      // ✅ If nothing selected → export filtered dataset (year + filters follow UI)
+      else {
+        const params = new URLSearchParams();
+  
+        if (search?.trim()) params.set('search', search.trim());
+        if (slot) params.set('slot', slot);
+        if (orderType) params.set('order_type', orderType);
+        if (day) params.set('day', day);
+        if (reference) params.set('reference', reference);
+        if (cowNumber?.trim()) params.set('cow_number', cowNumber.trim());
+  
+        if (yearFilter && yearFilter !== 'all') {
+          params.set('year', yearFilter);
+        }
+  
+        const res = await fetch(
+          `${API}/api/booking/orders?page=1&limit=100000&${params.toString()}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+  
+        if (!res.ok) {
+          alert('Failed to load data for export');
+          return;
+        }
+  
+        const json = await res.json();
+        const data = Array.isArray(json) ? json : json.data;
+  
+        toExport = Array.isArray(data) ? data : [];
+      }
+  
+      if (!toExport.length) {
+        alert('No data to export');
+        return;
+      }
+  
+      // ✅ Excel Export
+      const headers = COLUMNS.map(c => c.label);
+  
+      const rows = toExport.map(row =>
+        COLUMNS.map(col => {
+          const val = row[col.key];
+  
+          if (AMOUNT_KEYS.includes(col.key)) return formatAmount(val);
+  
+          if (col.key === 'booking_date') return formatDate(val);
+  
+          if (col.key === 'payment_status') return val || '—';
+  
+          return val != null ? String(val) : '—';
+        })
+      );
+  
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const wb = XLSX.utils.book_new();
+  
+      XLSX.utils.book_append_sheet(wb, ws, 'Orders');
+  
+      XLSX.writeFile(
+        wb,
+        `orders-export-${new Date().toISOString().slice(0, 10)}.xlsx`
+      );
+  
     } catch (e) {
-      console.error('Export audit failed', e);
+      console.error(e);
+      alert('Export failed');
     }
   };
 
@@ -446,7 +528,7 @@ export default function OrderManagement() {
             style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}
           />
         </div>
-        <div style={filterFieldStyle(110)}>
+        <div style={filterFieldStyle(88)}>
           <label style={labelStyle}>Cow number</label>
           <input
             type="text"
@@ -457,28 +539,28 @@ export default function OrderManagement() {
             style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}
           />
         </div>
-        <div style={filterFieldStyle(130)}>
+        <div style={filterFieldStyle(104)}>
           <label style={labelStyle}>Slot</label>
           <select value={slot} onChange={(e) => setSlot(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
             <option value="">All</option>
             {filters.slots.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-        <div style={filterFieldStyle(130)}>
+        <div style={filterFieldStyle(104)}>
           <label style={labelStyle}>Type</label>
           <select value={orderType} onChange={(e) => setOrderType(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
             <option value="">All</option>
             {filters.order_types.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
-        <div style={filterFieldStyle(100)}>
+        <div style={filterFieldStyle(80)}>
           <label style={labelStyle}>Day</label>
           <select value={day} onChange={(e) => setDay(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
             <option value="">All</option>
             {filters.days.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
         </div>
-        <div style={filterFieldStyle(110)}>
+        <div style={filterFieldStyle(88)}>
           <label style={labelStyle}>Reference</label>
           <select value={reference} onChange={(e) => setReference(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
             <option value="">All</option>
@@ -499,12 +581,12 @@ export default function OrderManagement() {
       </div>
 
       {error && (
-        <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', flexShrink: 0 }}>{error}</div>
+        <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', flexShrink: 0, fontSize: '10px' }}>{error}</div>
       )}
 
       <div style={{
         flex: 1,
-        minHeight: '380px',
+        minHeight: '304px',
         overflow: 'auto',
         border: '1px solid #e0e0e0',
         borderRadius: '6px',
@@ -549,10 +631,10 @@ export default function OrderManagement() {
                         )}
                       </td>
                     ))}
-                    <td style={{ padding: '6px', whiteSpace: 'nowrap', fontSize: '11px' }}>
-                      <button type="button" onClick={() => handleEdit(row)} style={{ marginRight: '8px', padding: '4px 8px', fontSize: '12px', cursor: 'pointer' }}>Edit</button>
-                      <button type="button" onClick={() => handleInvoice(row.customer_id)} style={{ marginRight: '8px', padding: '4px 8px', fontSize: '12px', cursor: 'pointer' }}>Invoice</button>
-                      <button type="button" onClick={() => handleCancelClick(row)} style={{ padding: '4px 8px', fontSize: '12px', cursor: 'pointer', color: '#c62828' }}>Cancel</button>
+                    <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                      <button type="button" onClick={() => handleEdit(row)} title="Edit" style={{ marginRight: '6px', padding: '4px', fontSize: '10px', cursor: 'pointer', background: 'none', border: 'none', verticalAlign: 'middle' }}><img src="/icons/edit.png" alt="Edit" style={{ width: '15px', height: '15px', display: 'block' }} /></button>
+                      <button type="button" onClick={() => handleInvoice(row.customer_id)} title="Invoice" style={{ marginRight: '6px', padding: '4px', fontSize: '10px', cursor: 'pointer', background: 'none', border: 'none', verticalAlign: 'middle' }}><img src="/icons/invoice.png" alt="Invoice" style={{ width: '21px', height: '21px', display: 'block' }} /></button>
+                      <button type="button" onClick={() => handleCancelClick(row)} title="Cancel" style={{ padding: '4px', fontSize: '10px', cursor: 'pointer', color: '#c62828', background: 'none', border: 'none', verticalAlign: 'middle' }}><img src="/icons/delete.png" alt="Cancel" style={{ width: '18px', height: '18px', display: 'block' }} /></button>
                     </td>
                   </tr>
                 ))
@@ -641,25 +723,6 @@ export default function OrderManagement() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !saving && (setEditErrors({}), setEditOpen(false), setEditPreviousRow(null))}>
           <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(680px, 95vw)', maxHeight: '85vh', overflowY: 'auto', overflowX: 'hidden', boxSizing: 'border-box' }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Edit Order</h3>
-            {editPreviousRow && (
-              <div style={{ marginBottom: '14px', padding: '10px 12px', background: '#f5f5f5', borderRadius: '8px', border: '1px solid #e8e8e8' }}>
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>Previous values</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 14px', fontSize: '12px' }}>
-                  {['order_id', 'customer_id', 'cow', 'hissa', 'slot', 'booking_name', 'shareholder_name', 'phone_number', 'alt_phone', 'address', 'area', 'day', 'type', 'booking_date', 'total_amount', 'received', 'pending', 'source', 'reference'].map((key) => (
-                    <div key={key}>
-                      <span style={{ color: '#888' }}>{key.replace(/_/g, ' ')}: </span>
-                      <span style={{ color: '#333' }}>{editPreviousRow[key] != null && editPreviousRow[key] !== '' ? String(editPreviousRow[key]) : '—'}</span>
-                    </div>
-                  ))}
-                  {editPreviousRow.description != null && editPreviousRow.description !== '' && (
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <span style={{ color: '#888' }}>description: </span>
-                      <span style={{ color: '#333' }}>{String(editPreviousRow.description)}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
             {Object.keys(editErrors).length > 0 && (
               <div style={{ marginBottom: '10px', padding: '8px 10px', background: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '12px' }}>
                 Please fix the errors below before saving.
@@ -678,16 +741,34 @@ export default function OrderManagement() {
                       value={editRow[key] ?? ''}
                       onChange={(e) => {
                         const val = e.target.value;
-                        setEditRow((p) => {
-                          const next = { ...p, [key]: val };
+                      
+                        setEditRow((prev) => {
+                          const next = { ...prev, [key]: val };
+                      
+                          // Auto-calc pending
                           if (key === 'total_amount') {
                             const total = parseFloat(val) || 0;
-                            const received = parseFloat(p.received) || 0;
+                            const received = parseFloat(prev.received) || 0;
                             next.pending = Math.max(0, total - received).toFixed(2);
                           }
+                      
+                          // 🔥 REAL-TIME VALIDATION
+                          const realtimeErrors = validateAmountsRealtime(next);
+
+                          // 🔥 Replace only amount-related errors
+                          setEditErrors((prev) => {
+                            const updated = { ...prev };
+                          
+                            // Remove old amount errors
+                            delete updated.total_amount;
+                            delete updated.received;
+                          
+                            // Add new ones (if any)
+                            return { ...updated, ...realtimeErrors };
+                          });
+                      
                           return next;
                         });
-                        if (editErrors[key]) setEditErrors((p) => { const n = { ...p }; delete n[key]; return n; });
                       }}
                       style={{
                         width: '100%',
@@ -714,8 +795,8 @@ export default function OrderManagement() {
               </div>
             </div>
             <div style={{ marginTop: '14px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setEditOpen(false)} disabled={saving} style={{ padding: '6px 11px', fontSize: '10px', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>
-              <button type="button" onClick={handleSaveEdit} disabled={saving} style={{ padding: '6px 11px', fontSize: '10px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Save'}</button>
+              <button type="button" onClick={() => setEditOpen(false)} disabled={saving} style={{ padding: '5px 11px', fontSize: '10px', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>
+              <button type="button" onClick={handleSaveEdit} disabled={saving} style={{ padding: '5px 11px', fontSize: '10px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Save'}</button>
             </div>
           </div>
         </div>
@@ -726,8 +807,8 @@ export default function OrderManagement() {
           <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '400px' }}>
             <p style={{ margin: '0 0 16px 0' }}>Move this order to cancelled orders? This will remove it from the orders table.</p>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setCancelConfirm(null)} style={{ padding: '8px 16px', background: '#f5f5f5', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>No</button>
-              <button type="button" onClick={handleCancelConfirm} style={{ padding: '8px 16px', background: '#c62828', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Yes, cancel order</button>
+              <button type="button" onClick={() => setCancelConfirm(null)} style={{ padding: '6px 13px', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px' }}>No</button>
+              <button type="button" onClick={handleCancelConfirm} style={{ padding: '6px 13px', background: '#c62828', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px' }}>Yes, cancel order</button>
             </div>
           </div>
         </div>

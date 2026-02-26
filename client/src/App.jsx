@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import SubSystemSelection from './pages/SubSystemSelection';
@@ -65,10 +66,46 @@ const TermsOrHome = () => {
   return <SubSystemSelection />;
 };
 
+const ROUTE_TITLES = {
+  '/login': 'Login',
+  '/register': 'Register',
+  '/forgot-password': 'Forgot Password',
+  '/reset-password': 'Reset Password',
+  '/auth/callback': 'Signing in…',
+  '/accept-terms': 'Accept Terms',
+  '/': 'Select Management',
+  '/dashboard': 'Dashboard',
+  '/control': 'Control Management',
+  '/bookings': 'Booking Management',
+  '/bookings/dashboard': 'Dashboard',
+  '/bookings/new-query': 'New Query',
+  '/bookings/new-order': 'New Order',
+  '/bookings/queries': 'Query Management',
+  '/bookings/orders': 'Order Management',
+  '/bookings/transactions': 'Transactions',
+  '/bookings/expenses': 'Expenses',
+  '/operations': 'Operations Management',
+  '/farm': 'Farm Management',
+  '/procurement': 'Procurement Management',
+  '/accounting': 'Accounting & Finance',
+  '/performance': 'Performance Management',
+};
+
+function DocumentTitle() {
+  const location = useLocation();
+  useEffect(() => {
+    const path = location.pathname;
+    const title = ROUTE_TITLES[path] || ROUTE_TITLES[path.replace(/\/$/, '')] || 'Cattle CRM';
+    document.title = title === 'Cattle CRM' ? title : `${title} | Cattle CRM`;
+  }, [location.pathname]);
+  return null;
+}
+
 function App() {
   return (
     <AuthProvider>
       <Router>
+        <DocumentTitle />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />

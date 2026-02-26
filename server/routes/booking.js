@@ -21,6 +21,364 @@ function toDateOnly(v) {
  * @param {Function} verifyToken - auth middleware
  */
 export const registerBookingRoutes = (app, db, verifyToken) => {
+  // Generate customer ID based on contact lookup
+  app.post("/api/booking/generate-customer-id", verifyToken, async (req, res) => {
+    try {
+      const { contact } = req.body || {};
+      if (!contact || String(contact).trim().length < 3) {
+        return res.status(400).json({ message: "Contact number is required (minimum 3 characters)" });
+      }
+      const contactStr = String(contact).trim();
+
+      // Check existing orders for this contact
+      const [orderRows] = await db.execute(
+        "SELECT customer_id FROM orders WHERE contact = ? LIMIT 1",
+        [contactStr]
+      );
+
+      if (orderRows.length > 0 && orderRows[0].customer_id) {
+        log("BOOKING", "Customer ID found in orders", { user_id: req.userId, contact: contactStr, customer_id: orderRows[0].customer_id });
+        return res.json({ customer_id: orderRows[0].customer_id });
+      }
+
+      // Check cancelled orders for this contact
+      const [cancelledRows] = await db.execute(
+        "SELECT customer_id FROM cancelled_orders WHERE contact = ? LIMIT 1",
+        [contactStr]
+      );
+
+      if (cancelledRows.length > 0 && cancelledRows[0].customer_id) {
+        log("BOOKING", "Customer ID found in cancelled orders", { user_id: req.userId, contact: contactStr, customer_id: cancelledRows[0].customer_id });
+        return res.json({ customer_id: cancelledRows[0].customer_id });
+      }
+
+      // Generate new customer ID: TWF-XXXX-Q format
+      // Find max numeric part from both orders and cancelled_orders
+      const [maxOrderRows] = await db.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(customer_id, '-', 2), '-', -1) AS UNSIGNED)), 0) AS maxNum FROM orders WHERE customer_id LIKE 'TWF-%'"
+      );
+      const [maxCancelledRows] = await db.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(customer_id, '-', 2), '-', -1) AS UNSIGNED)), 0) AS maxNum FROM cancelled_orders WHERE customer_id LIKE 'TWF-%'"
+      );
+
+      const maxOrderNum = Number(maxOrderRows[0]?.maxNum || 0);
+      const maxCancelledNum = Number(maxCancelledRows[0]?.maxNum || 0);
+      const nextNum = Math.max(maxOrderNum, maxCancelledNum) + 1;
+      const customerId = `TWF-${String(nextNum).padStart(4, "0")}-Q`;
+
+      log("BOOKING", "Customer ID generated", { user_id: req.userId, contact: contactStr, customer_id: customerId });
+      res.json({ customer_id: customerId });
+    } catch (error) {
+      logError("BOOKING", "Generate customer ID error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Generate order ID based on order_type
+  app.post("/api/booking/generate-order-id", verifyToken, async (req, res) => {
+    try {
+      const { order_type } = req.body || {};
+      if (!order_type || !String(order_type).trim()) {
+        return res.status(400).json({ message: "Order type is required" });
+      }
+
+      const orderType = String(order_type).trim();
+      const year = 2026;
+
+      // Map order types to prefixes
+      const prefixMap = {
+        "Cow": "C",
+        "Goat (Hissa)": "G",
+        "Hissa - Standard": "S",
+        "Hissa - Premium": "P",
+        "Hissa - Waqf": "W",
+        "Goat": "G",
+      };
+
+      const prefix = prefixMap[orderType] || "O"; // Default to "O" if not found
+
+      // Find next available number for this prefix and year
+      // Check orders with booking_date in the year OR orders with null booking_date (new orders)
+      // Handle both old format (#O-0001-2026) and new format (C-0001-2026)
+      const pattern1 = `${prefix}-%`; // New format: C-0001-2026
+      
+      // Try to find max from new format first
+      const [idRows1] = await db.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(order_id, '-', 2), '-', -1) AS UNSIGNED)), 0) AS nextId FROM orders WHERE order_id LIKE ? AND (YEAR(booking_date) = ? OR booking_date IS NULL)",
+        [pattern1, year]
+      );
+      
+      // Also check old format if prefix is O (for backward compatibility)
+      let maxFromOld = 0;
+      if (prefix === "O") {
+        const [idRows2] = await db.execute(
+          "SELECT COALESCE(MAX(CAST(SUBSTRING(order_id, 4, 4) AS UNSIGNED)), 0) AS nextId FROM orders WHERE order_id LIKE '#O-%' AND (YEAR(booking_date) = ? OR booking_date IS NULL)",
+          [year]
+        );
+        maxFromOld = Number(idRows2[0]?.nextId || 0);
+      }
+      
+      const maxFromNew = Number(idRows1[0]?.nextId || 0);
+      const nextNum = Math.max(maxFromNew, maxFromOld, 0) + 1;
+      const orderId = `${prefix}-${String(nextNum).padStart(4, "0")}-${year}`;
+
+      log("BOOKING", "Order ID generated", { user_id: req.userId, order_type: orderType, order_id: orderId });
+      res.json({ order_id: orderId });
+    } catch (error) {
+      logError("BOOKING", "Generate order ID error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Get available cow/hissa number (day-based independent numbering)
+  app.post("/api/booking/get-available-cow-hissa", verifyToken, async (req, res) => {
+    try {
+      const { order_type, day } = req.body || {};
+      if (!order_type || !String(order_type).trim()) {
+        return res.json({ cow_number: "", hissa_number: "" });
+      }
+
+      const orderType = String(order_type).trim();
+      const dayValue = day ? String(day).trim() : null;
+      const year = 2026;
+
+      // Only for Hissa types
+      const hissaTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf", "Goat (Hissa)"];
+      if (!hissaTypes.includes(orderType)) {
+        return res.json({ cow_number: "", hissa_number: "" });
+      }
+
+      // Get all used cow/hissa combinations for this order_type, day, and year
+      let usedCombinations = [];
+      if (dayValue) {
+        const [usedRows] = await db.execute(
+          "SELECT cow_number, hissa_number FROM orders WHERE order_type = ? AND day = ? AND (YEAR(booking_date) = ? OR booking_date IS NULL) AND cow_number IS NOT NULL AND hissa_number IS NOT NULL",
+          [orderType, dayValue, year]
+        );
+        usedCombinations = usedRows.map((r) => ({ cow: r.cow_number, hissa: r.hissa_number }));
+      } else {
+        const [usedRows] = await db.execute(
+          "SELECT cow_number, hissa_number FROM orders WHERE order_type = ? AND (YEAR(booking_date) = ? OR booking_date IS NULL) AND cow_number IS NOT NULL AND hissa_number IS NOT NULL",
+          [orderType, year]
+        );
+        usedCombinations = usedRows.map((r) => ({ cow: r.cow_number, hissa: r.hissa_number }));
+      }
+
+      // Find first available combination
+      // Cows: S1, S2, S3, ... (Standard)
+      // Premium: P1, P2, P3, ... (Premium)
+      // Waqf: W1, W2, W3, ... (Waqf)
+      // Hissas: 1-7 per cow
+      const prefixMap = {
+        "Hissa - Premium": "P",
+        "Hissa - Standard": "S",
+        "Hissa - Waqf": "W",
+      };
+      
+      const cowPrefix = prefixMap[orderType] || "";
+      const maxCows = 50; // Reasonable limit
+      const maxHissas = 7;
+
+      let foundCow = "";
+      let foundHissa = "";
+
+      for (let cowNum = 1; cowNum <= maxCows; cowNum++) {
+        const cowId = `${cowPrefix}${cowNum}`;
+        for (let hissaNum = 1; hissaNum <= maxHissas; hissaNum++) {
+          const isUsed = usedCombinations.some((uc) => uc.cow === cowId && uc.hissa === String(hissaNum));
+          if (!isUsed) {
+            foundCow = cowId;
+            foundHissa = String(hissaNum);
+            break;
+          }
+        }
+        if (foundCow) break;
+      }
+
+      log("BOOKING", "Available cow/hissa retrieved", {
+        user_id: req.userId,
+        order_type: orderType,
+        day: dayValue,
+        cow_number: foundCow,
+        hissa_number: foundHissa,
+      });
+      res.json({ cow_number: foundCow, hissa_number: foundHissa });
+    } catch (error) {
+      logError("BOOKING", "Get available cow/hissa error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Check if cow/hissa combination already exists
+  app.post("/api/booking/check-cow-hissa", verifyToken, async (req, res) => {
+    try {
+      const { cow_number, hissa_number, order_type, day, order_id } = req.body || {};
+      
+      if (!cow_number || !hissa_number || !order_type) {
+        return res.json({ exists: false });
+      }
+
+      const cowNum = String(cow_number).trim();
+      const hissaNum = String(hissa_number).trim();
+      const orderType = String(order_type).trim();
+      const dayValue = day ? String(day).trim() : null;
+      const year = 2026;
+
+      let query = `
+        SELECT order_id, booking_name, shareholder_name, contact 
+        FROM orders 
+        WHERE cow_number = ? AND hissa_number = ? AND order_type = ?
+        AND (YEAR(booking_date) = ? OR booking_date IS NULL)
+      `;
+      const params = [cowNum, hissaNum, orderType, year];
+
+      if (dayValue) {
+        query += " AND day = ?";
+        params.push(dayValue);
+      }
+
+      // Exclude current order_id if editing
+      if (order_id) {
+        query += " AND order_id != ?";
+        params.push(order_id);
+      }
+
+      const [rows] = await db.execute(query, params);
+      
+      if (rows.length > 0) {
+        const existing = rows[0];
+        return res.json({
+          exists: true,
+          order_id: existing.order_id,
+          booking_name: existing.booking_name,
+          shareholder_name: existing.shareholder_name,
+          contact: existing.contact,
+        });
+      }
+
+      res.json({ exists: false });
+    } catch (error) {
+      logError("BOOKING", "Check cow/hissa error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Create new order
+  app.post("/api/booking/orders", verifyToken, async (req, res) => {
+    try {
+      const body = req.body || {};
+      const {
+        order_id,
+        customer_id,
+        contact,
+        order_type,
+        booking_name,
+        shareholder_name,
+        cow_number,
+        hissa_number,
+        alt_contact,
+        address,
+        area,
+        day,
+        booking_date,
+        total_amount,
+        order_source,
+        reference,
+        description,
+        slot,
+      } = body;
+
+      // Validation
+      if (!order_id || !String(order_id).trim()) {
+        return res.status(400).json({ message: "Order ID is required" });
+      }
+      if (!customer_id || !String(customer_id).trim()) {
+        return res.status(400).json({ message: "Customer ID is required" });
+      }
+      if (!contact || !String(contact).trim()) {
+        return res.status(400).json({ message: "Contact is required" });
+      }
+      if (!order_type || !String(order_type).trim()) {
+        return res.status(400).json({ message: "Order type is required" });
+      }
+
+      // Check if order_id already exists
+      const [existing] = await db.execute("SELECT order_id FROM orders WHERE order_id = ?", [order_id]);
+      if (existing.length > 0) {
+        return res.status(400).json({ message: "Order ID already exists" });
+      }
+
+      const totalAmount = Math.max(0, Number(total_amount) || 0);
+      const receivedAmount = 0;
+      const pendingAmount = totalAmount;
+
+      await db.execute(
+        `INSERT INTO orders (
+          order_id, customer_id, contact, order_type, booking_name, shareholder_name,
+          cow_number, hissa_number, alt_contact, address, area, day, booking_date,
+          total_amount, received_amount, pending_amount, order_source, reference,
+          description, rider_id, slot
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+        [
+          order_id,
+          customer_id,
+          contact,
+          order_type,
+          booking_name || null,
+          shareholder_name || null,
+          cow_number || null,
+          hissa_number || null,
+          alt_contact || null,
+          address || null,
+          area || null,
+          day || null,
+          booking_date ? toDateOnly(booking_date) : null,
+          totalAmount,
+          receivedAmount,
+          pendingAmount,
+          order_source || null,
+          reference || null,
+          description || null,
+          slot || null,
+        ]
+      );
+
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "CREATE_ORDER",
+        entity_type: "orders",
+        entity_id: order_id,
+        new_values: {
+          order_id,
+          customer_id,
+          contact,
+          order_type,
+          booking_name,
+          shareholder_name,
+          cow_number,
+          hissa_number,
+          total_amount: totalAmount,
+        },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+
+      log("BOOKING", "Order created", { user_id: req.userId, order_id });
+      res.json({ message: "Order created successfully", order_id });
+    } catch (error) {
+      logError("BOOKING", "Create order error", error);
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "CREATE_ORDER_ERROR",
+        entity_type: "orders",
+        new_values: { reason: "server_error" },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
   app.get("/api/booking/orders", verifyToken, async (req, res) => {
     try {
       const { search, slot, order_type, day, reference, cow_number, year, page, limit } = req.query;
@@ -47,9 +405,10 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         conditions.push("o.slot = ?");
         params.push(slot);
       }
-      if (order_type) {
-        conditions.push("o.order_type = ?");
-        params.push(order_type);
+      const orderTypes = Array.isArray(order_type) ? order_type : order_type ? [order_type] : [];
+      if (orderTypes.length > 0) {
+        conditions.push(`o.order_type IN (${orderTypes.map(() => "?").join(",")})`);
+        params.push(...orderTypes);
       }
       if (day) {
         conditions.push("o.day = ?");
@@ -122,6 +481,41 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     } catch (error) {
       logError("BOOKING", "Orders list error", error);
       await writeAuditLog(db, { user_id: req.userId, action: "ORDER_LIST_ERROR", entity_type: "orders", new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Orders summary (totals over all orders matching filters - for amount divs on Transactions)
+  app.get("/api/booking/orders/summary", verifyToken, async (req, res) => {
+    try {
+      const { year, order_type } = req.query;
+      const conditions = [];
+      const params = [];
+      if (year === "2026" || year === "2025") {
+        conditions.push("YEAR(o.booking_date) = ?");
+        params.push(year);
+      } else if (year === "2024") {
+        conditions.push("(o.booking_date IS NULL OR YEAR(o.booking_date) < 2025)");
+      }
+      const types = Array.isArray(order_type) ? order_type : order_type ? [order_type] : [];
+      if (types.length > 0) {
+        conditions.push(`o.order_type IN (${types.map(() => "?").join(",")})`);
+        params.push(...types);
+      }
+      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+      const [rows] = await db.execute(
+        `SELECT COALESCE(SUM(p.bank), 0) AS total_bank, COALESCE(SUM(p.cash), 0) AS total_cash
+         FROM orders o
+         LEFT JOIN (SELECT order_id, SUM(bank) AS bank, SUM(cash) AS cash FROM payments GROUP BY order_id) p ON o.order_id = p.order_id
+         ${whereClause}`,
+        params
+      );
+      res.json({
+        totalBank: Number(rows[0]?.total_bank ?? 0),
+        totalCash: Number(rows[0]?.total_cash ?? 0),
+      });
+    } catch (error) {
+      logError("BOOKING", "Orders summary error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -349,7 +743,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       );
       const year = new Date().getFullYear();
       const nextNum = idRows[0]?.nextId ?? 1;
-      const orderId = `#O-${String(nextNum).padStart(4, "0")}-${year}`;
+      const orderId = `O-${String(nextNum).padStart(4, "0")}-${year}`;
 
       await db.execute(
         `INSERT INTO orders (order_id, customer_id, contact, order_type, booking_name, shareholder_name, cow_number, hissa_number, alt_contact, address, area, day, booking_date, total_amount, received_amount, pending_amount, order_source, reference, description, rider_id, slot)
@@ -438,46 +832,450 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     }
   });
 
+  // Expenses summary (totals over all expenses - for amount divs)
+  app.get("/api/booking/expenses/summary", verifyToken, async (req, res) => {
+    try {
+      const [rows] = await db.execute(
+        "SELECT COALESCE(SUM(bank), 0) AS total_bank, COALESCE(SUM(cash), 0) AS total_cash FROM booking_expenses"
+      );
+      res.json({
+        totalBank: Number(rows[0]?.total_bank ?? 0),
+        totalCash: Number(rows[0]?.total_cash ?? 0),
+      });
+    } catch (error) {
+      logError("BOOKING", "Expenses summary error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // List booking expenses (for Expenses page, paginated)
+  app.get("/api/booking/expenses", verifyToken, async (req, res) => {
+    try {
+      const { page = 1, limit = 50 } = req.query;
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+      const offset = (pageNum - 1) * limitNum;
+      const [countRows] = await db.execute("SELECT COUNT(*) AS total FROM booking_expenses");
+      const total = Number(countRows[0]?.total ?? 0);
+      const [rows] = await db.execute(
+        "SELECT expense_id, bank, cash, total, done_at, description, done_by, created_by FROM booking_expenses ORDER BY done_at DESC LIMIT ? OFFSET ?",
+        [limitNum, offset]
+      );
+      const expenses = rows.map((r) => ({ ...r, done_at: toDateOnly(r.done_at) ?? r.done_at }));
+      res.json({ data: expenses, total });
+    } catch (error) {
+      logError("BOOKING", "Expenses list error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Create booking expense
+  app.post("/api/booking/expenses", verifyToken, async (req, res) => {
+    try {
+      let { bank = 0, cash = 0, description = "", done_by = null, done_at = null } = req.body || {};
+  
+      const addBank = Math.max(0, Number(bank) || 0);
+      const addCash = Math.max(0, Number(cash) || 0);
+  
+      if (addBank === 0 && addCash === 0) {
+        return res.status(400).json({ message: "Add at least one of bank or cash amount" });
+      }
+  
+      const total = addBank + addCash;
+  
+      // Normalize optional fields
+      description = String(description || "").trim() || null;
+      done_by = done_by ? String(done_by).trim() : null;
+  
+      // Validate date
+      if (done_at) {
+        const d = new Date(done_at);
+        if (isNaN(d.getTime())) done_at = null;
+        else done_at = d.toISOString().split("T")[0];
+      } else {
+        done_at = null;
+      }
+  
+      const year = new Date().getFullYear();
+  
+      // Get username
+      const [userRows] = await db.execute(
+        "SELECT username FROM users WHERE user_id = ?",
+        [req.userId]
+      );
+  
+      const username = userRows[0]?.username ?? String(req.userId);
+  
+      /*
+        ⭐ Expense ID Generation
+        Format → E-0001-2025
+      */
+      const [idRows] = await db.execute(
+        `SELECT COALESCE(
+          MAX(CAST(SUBSTRING(expense_id, 3, 4) AS UNSIGNED)), 0
+        ) + 1 AS nextId 
+        FROM booking_expenses 
+        WHERE expense_id LIKE 'E-%'`
+      );
+  
+      const nextId = idRows[0]?.nextId ?? 1;
+      const expenseId = `E-${String(nextId).padStart(4, "0")}-${year}`;
+  
+      // Insert expense
+      await db.execute(
+        `INSERT INTO booking_expenses 
+          (expense_id, bank, cash, total, description, done_by, done_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          expenseId,
+          addBank,
+          addCash,
+          total,
+          description,
+          done_by || username,
+          done_at,
+          req.userId
+        ]
+      );
+  
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "ADD_EXPENSE",
+        entity_type: "booking_expenses",
+        entity_id: expenseId,
+        new_values: {
+          bank: addBank,
+          cash: addCash,
+          total,
+          description,
+          done_by: done_by || username,
+          done_at
+        },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent")
+      });
+  
+      log("BOOKING", "Expense added", { user_id: req.userId, expenseId });
+  
+      res.json({
+        message: "Expense added",
+        expense_id: expenseId
+      });
+  
+    } catch (error) {
+      logError("BOOKING", "Add expense error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Update booking expense
+  app.put("/api/booking/expenses/:expenseId", verifyToken, async (req, res) => {
+    try {
+      const { expenseId } = req.params;
+  
+      let {
+        bank,
+        cash,
+        description,
+        done_by = null,
+        done_at = null
+      } = req.body || {};
+  
+      const newBank = Math.max(0, Number(bank) || 0);
+      const newCash = Math.max(0, Number(cash) || 0);
+  
+      if (newBank === 0 && newCash === 0) {
+        return res.status(400).json({
+          message: "At least one of bank or cash must be greater than 0"
+        });
+      }
+  
+      const total = newBank + newCash;
+  
+      // Normalize text fields
+      description = String(description ?? "").trim() || null;
+      done_by = done_by ? String(done_by).trim() || null : null;
+  
+      // Validate date format
+      if (done_at) {
+        const d = new Date(done_at);
+        done_at = isNaN(d.getTime()) ? null : d.toISOString().split("T")[0];
+      } else {
+        done_at = null;
+      }
+  
+      const [existing] = await db.execute(
+        "SELECT expense_id, bank, cash, total, description, done_by, done_at FROM booking_expenses WHERE expense_id = ?",
+        [expenseId]
+      );
+  
+      if (!existing.length) {
+        return res.status(404).json({ message: "Expense not found" });
+      }
+  
+      const oldRow = existing[0];
+  
+      const previousState = {
+        expense_id: oldRow.expense_id,
+        bank: oldRow.bank,
+        cash: oldRow.cash,
+        total: oldRow.total,
+        description: oldRow.description,
+        done_by: oldRow.done_by,
+        done_at: oldRow.done_at
+      };
+  
+      await db.execute(
+        `UPDATE booking_expenses 
+         SET bank = ?, cash = ?, total = ?, description = ?, done_by = ?, done_at = ?
+         WHERE expense_id = ?`,
+        [
+          newBank,
+          newCash,
+          total,
+          description,
+          done_by,
+          done_at,
+          expenseId
+        ]
+      );
+  
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "UPDATE_EXPENSE",
+        entity_type: "booking_expenses",
+        entity_id: expenseId,
+        old_values: previousState,
+        new_values: {
+          expense_id: expenseId,
+          bank: newBank,
+          cash: newCash,
+          total,
+          description,
+          done_by,
+          done_at
+        },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent")
+      });
+  
+      log("BOOKING", "Expense updated", { user_id: req.userId, expenseId });
+  
+      res.json({
+        message: "Expense updated",
+        expense_id: expenseId
+      });
+  
+    } catch (error) {
+      logError("BOOKING", "Update expense error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+// Get next expense ID (for frontend modal display)
+app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
+  try {
+    const year = new Date().getFullYear();
+
+    const [rows] = await db.execute(`
+      SELECT COALESCE(
+        MAX(CAST(SUBSTRING(expense_id, 3, 4) AS UNSIGNED)), 0
+      ) + 1 AS nextId 
+      FROM booking_expenses 
+      WHERE expense_id LIKE 'E-%'
+    `);
+
+    const nextId = rows[0]?.nextId ?? 1;
+
+    const expenseId = `E-${String(nextId).padStart(4, "0")}-${year}`;
+
+    res.json({ expense_id: expenseId });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+  
+  // Delete booking expense
+  app.delete("/api/booking/expenses/:expenseId", verifyToken, async (req, res) => {
+    try {
+      const { expenseId } = req.params;
+      const [existing] = await db.execute("SELECT expense_id, bank, cash, total, done_at, description, done_by, created_by FROM booking_expenses WHERE expense_id = ?", [expenseId]);
+      if (existing.length === 0) return res.status(404).json({ message: "Expense not found" });
+      const row = existing[0];
+      const previousState = { expense_id: row.expense_id, bank: row.bank, cash: row.cash, total: row.total, done_at: toDateOnly(row.done_at) ?? row.done_at, description: row.description, done_by: row.done_by };
+      await db.execute("DELETE FROM booking_expenses WHERE expense_id = ?", [expenseId]);
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "DELETE_EXPENSE",
+        entity_type: "booking_expenses",
+        entity_id: expenseId,
+        old_values: previousState,
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      log("BOOKING", "Expense deleted", { user_id: req.userId, expenseId });
+      res.json({ message: "Expense deleted", expense_id: expenseId });
+    } catch (error) {
+      logError("BOOKING", "Delete expense error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Log expenses export (client calls after generating Excel)
+  app.post("/api/booking/expenses/export-audit", verifyToken, async (req, res) => {
+    try {
+      const { count, expense_ids } = req.body || {};
+      const exportCount = typeof count === "number" && count >= 0 ? count : 0;
+      const newValues = { count: exportCount };
+      if (expense_ids && Array.isArray(expense_ids) && expense_ids.length > 0) {
+        newValues.expense_ids = expense_ids;
+      }
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "EXPENSES_EXPORT",
+        entity_type: "booking_expenses",
+        new_values: newValues,
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      log("BOOKING", "Expenses export", { user_id: req.userId, count: exportCount });
+      res.json({ ok: true });
+    } catch (error) {
+      logError("BOOKING", "Expenses export audit error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
   // Add payment to an order (for Update Transaction modal)
   app.post("/api/booking/orders/:orderId/payments", verifyToken, async (req, res) => {
     try {
       const { orderId } = req.params;
+  
       const { bank = 0, cash = 0 } = req.body || {};
+  
       const addBank = Math.max(0, Number(bank) || 0);
       const addCash = Math.max(0, Number(cash) || 0);
-      if (addBank === 0 && addCash === 0) return res.status(400).json({ message: "Add at least one of bank or cash amount" });
-
+  
+      if (addBank === 0 && addCash === 0) {
+        return res.status(400).json({
+          message: "Add at least one of bank or cash amount"
+        });
+      }
+  
+      // ⭐ Fetch Order
       const [orders] = await db.execute(
-        "SELECT order_id, total_amount, received_amount, pending_amount FROM orders WHERE order_id = ?",
+        "SELECT * FROM orders WHERE order_id = ?",
         [orderId]
       );
-      if (orders.length === 0) return res.status(404).json({ message: "Order not found" });
+  
+      if (!orders.length) {
+        return res.status(404).json({ message: "Order not found" });
+      }
+  
       const order = orders[0];
+  
       const totalAmount = Number(order.total_amount) || 0;
       const currentReceived = Number(order.received_amount) || 0;
-      const newReceived = currentReceived + addBank + addCash;
-      if (newReceived > totalAmount) return res.status(400).json({ message: "Total received cannot exceed order total amount" });
-
+  
+      const paymentAmount = addBank + addCash;
+      const newReceived = currentReceived + paymentAmount;
+  
+      // ⭐ Prevent Overpayment
+      if (newReceived > totalAmount) {
+        return res.status(400).json({
+          message: "Total received cannot exceed order total amount"
+        });
+      }
+  
+      // ⭐ Generate Payment ID
       const [idRows] = await db.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(payment_id, 4, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM payments WHERE payment_id LIKE '#P-%'"
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(payment_id, 3, 4) AS UNSIGNED)),0)+1 AS nextId FROM payments WHERE payment_id LIKE 'P-%'"
       );
+  
       const year = new Date().getFullYear();
-      const paymentId = `#P-${String(idRows[0]?.nextId ?? 1).padStart(4, "0")}-${year}`;
-      const totalReceived = addBank + addCash;
+  
+      const paymentId = `P-${String(idRows[0]?.nextId ?? 1).padStart(4, "0")}-${year}`;
+  
       const today = toDateOnly(new Date());
-
+  
+      const paymentTotal = addBank + addCash;
+  
+      // ⭐ Insert Payment (No new schema fields)
       await db.execute(
-        "INSERT INTO payments (payment_id, bank, cash, total_received, date, order_id) VALUES (?, ?, ?, ?, ?, ?)",
-        [paymentId, addBank, addCash, totalReceived, today, orderId]
+        `INSERT INTO payments (
+          payment_id,
+          order_id,
+          bank,
+          cash,
+          total_received,
+          date
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          paymentId,
+          orderId,
+          addBank,
+          addCash,
+          paymentTotal,
+          today
+        ]
       );
+  
+      // ⭐ Update Order Financial State
       await db.execute(
-        "UPDATE orders SET received_amount = ?, pending_amount = ? WHERE order_id = ?",
-        [newReceived, Math.max(0, totalAmount - newReceived), orderId]
+        `UPDATE orders 
+         SET received_amount = ?, pending_amount = ?
+         WHERE order_id = ?`,
+        [
+          newReceived,
+          Math.max(0, totalAmount - newReceived),
+          orderId
+        ]
       );
-
-      await writeAuditLog(db, { user_id: req.userId, action: "ADD_PAYMENT", entity_type: "orders", entity_id: orderId, new_values: { payment_id: paymentId, bank: addBank, cash: addCash }, ip_address: req.ip, user_agent: req.get("user-agent") });
-      log("BOOKING", "Payment added", { user_id: req.userId, orderId, paymentId });
-      res.json({ message: "Payment added", payment_id: paymentId, received: newReceived, pending: Math.max(0, totalAmount - newReceived) });
+  
+      // ⭐ Audit Log With Order Snapshot
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "ADD_PAYMENT",
+        entity_type: "orders",
+        entity_id: orderId,
+  
+        new_values: {
+          payment_id: paymentId,
+          bank: addBank,
+          cash: addCash,
+          total_received: newReceived,
+          pending_amount: Math.max(0, totalAmount - newReceived),
+  
+          order_id: order.order_id,
+          customer_id: order.customer_id,
+          contact: order.contact,
+          order_type: order.order_type,
+          booking_name: order.booking_name,
+          shareholder_name: order.shareholder_name,
+          cow_number: order.cow_number,
+          hissa_number: order.hissa_number,
+          total_amount: totalAmount
+        },
+  
+        ip_address: req.ip,
+        user_agent: req.get("user-agent")
+      });
+  
+      log("BOOKING", "Payment added", {
+        user_id: req.userId,
+        orderId,
+        paymentId
+      });
+  
+      res.json({
+        message: "Payment added",
+        payment_id: paymentId,
+        received: newReceived,
+        pending: Math.max(0, totalAmount - newReceived)
+      });
+  
     } catch (error) {
       logError("BOOKING", "Add payment error", error);
       res.status(500).json({ message: "Server error" });
@@ -622,7 +1420,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       );
       const year = new Date().getFullYear();
       const nextNum = idRows[0]?.nextId ?? 1;
-      const cancelId = `#C-${String(nextNum).padStart(4, "0")}-${year}`;
+      const cancelId = `C-${String(nextNum).padStart(4, "0")}-${year}`;
       await db.execute(
         `INSERT INTO cancelled_orders (id, customer_id, contact, order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, description, reference) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [cancelId, o.customer_id, o.contact, o.order_type, o.booking_name, o.shareholder_name, o.alt_contact, o.address, o.area, o.day, o.booking_date, o.total_amount, o.order_source, o.description, o.reference]
@@ -1138,3 +1936,4 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     }
   });
 };
+

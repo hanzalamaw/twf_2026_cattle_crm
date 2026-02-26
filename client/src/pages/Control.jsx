@@ -28,7 +28,7 @@ const Modal = ({ show, onClose, children, title, hasAnimated, maxWidth = '550px'
         style={{
           background: '#FFFFFF',
           borderRadius: '12px',
-          padding: '20px',
+          padding: '16px',
           maxWidth: maxWidth,
           width: '90%',
           maxHeight: '90vh',
@@ -528,7 +528,7 @@ const Control = () => {
           display: 'grid', 
           gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
           gap: '16px',
-          marginBottom: '20px'
+          marginBottom: '16px'
         }}>
           <div style={{
             background: '#FFFFFF',
@@ -624,7 +624,7 @@ const Control = () => {
           display: 'grid', 
           gridTemplateColumns: '1fr 1fr', 
           gap: '16px',
-          marginBottom: '20px'
+          marginBottom: '16px'
         }}>
           <div style={{
             background: '#FFFFFF',
@@ -646,7 +646,7 @@ const Control = () => {
                   background: '#1976D2',
                   color: '#FFFFFF',
                   cursor: 'pointer',
-                  fontSize: '12px',
+                  fontSize: '10px',
                   fontWeight: '500',
                   transition: 'all 0.2s'
                 }}
@@ -667,7 +667,7 @@ const Control = () => {
                   background: '#4CAF50',
                   color: '#FFFFFF',
                   cursor: 'pointer',
-                  fontSize: '12px',
+                  fontSize: '10px',
                   fontWeight: '500',
                   transition: 'all 0.2s'
                 }}
@@ -685,7 +685,7 @@ const Control = () => {
                   background: '#FFFFFF',
                   color: '#333',
                   cursor: 'pointer',
-                  fontSize: '12px',
+                  fontSize: '10px',
                   fontWeight: '500',
                   transition: 'all 0.2s'
                 }}
@@ -747,7 +747,7 @@ const Control = () => {
             background: '#1976D2',
             color: '#FFFFFF',
             cursor: 'pointer',
-            fontSize: '12px',
+            fontSize: '10px',
             fontWeight: '500',
             transition: 'all 0.2s',
             boxShadow: '0 2px 4px rgba(25, 118, 210, 0.3)'
@@ -915,7 +915,7 @@ const Control = () => {
           borderRadius: '8px',
           marginBottom: '15px',
           border: '1px solid #FFE0D6',
-          fontSize: '13px',
+          fontSize: '10px',
           zIndex: 999,
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
           animation: 'slideUp 0.3s ease-out'
@@ -935,7 +935,7 @@ const Control = () => {
           borderRadius: '8px',
           marginBottom: '15px',
           border: '1px solid #C8E6C9',
-          fontSize: '13px',
+          fontSize: '10px',
           zIndex: 999,
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
           animation: 'slideUp 0.3s ease-out'
@@ -962,7 +962,7 @@ const Control = () => {
                 borderBottom: activeTab === tab ? '3px solid #1976D2' : '3px solid transparent',
                 color: activeTab === tab ? '#1976D2' : '#666',
                 cursor: 'pointer',
-                fontSize: '12px',
+                fontSize: '10px',
                 fontWeight: activeTab === tab ? '600' : '400',
                 textTransform: 'capitalize',
                 transition: 'all 0.2s',
@@ -1006,7 +1006,7 @@ const Control = () => {
                 background: '#4CAF50',
                 color: '#FFFFFF',
                 cursor: 'pointer',
-                fontSize: '12px',
+                fontSize: '10px',
                 fontWeight: '500',
                 transition: 'all 0.2s',
                 boxShadow: '0 2px 4px rgba(76, 175, 80, 0.3)'
@@ -1291,7 +1291,7 @@ const Control = () => {
                   padding: '8px 10px',
                   borderRadius: '6px',
                   border: '1px solid #E0E0E0',
-                  fontSize: '12px',
+                  fontSize: '10px',
                   outline: 'none',
                   background: '#FAFAFA',
                   boxSizing: 'border-box',
@@ -1316,7 +1316,7 @@ const Control = () => {
                   padding: '10px 12px',
                   borderRadius: '8px',
                   border: '1px solid #E0E0E0',
-                  fontSize: '13px',
+                  fontSize: '10px',
                   outline: 'none',
                   background: '#FAFAFA',
                   boxSizing: 'border-box',
@@ -1342,7 +1342,7 @@ const Control = () => {
                   padding: '10px 40px 10px 12px',
                   borderRadius: '8px',
                   border: '1px solid #E0E0E0',
-                  fontSize: '13px',
+                  fontSize: '10px',
                   outline: 'none',
                   background: '#FAFAFA',
                   boxSizing: 'border-box',
@@ -1391,7 +1391,7 @@ const Control = () => {
                     padding: '10px 12px',
                     borderRadius: '8px',
                     border: '1px solid #E0E0E0',
-                    fontSize: '13px',
+                    fontSize: '10px',
                     outline: 'none',
                     background: '#FAFAFA',
                     boxSizing: 'border-box',
@@ -1414,7 +1414,7 @@ const Control = () => {
                     padding: '10px 12px',
                     borderRadius: '8px',
                     border: '1px solid #E0E0E0',
-                    fontSize: '13px',
+                    fontSize: '10px',
                     outline: 'none',
                     background: '#FAFAFA',
                     boxSizing: 'border-box',
@@ -1439,7 +1439,7 @@ const Control = () => {
                   padding: '10px 12px',
                   borderRadius: '8px',
                   border: '1px solid #E0E0E0',
-                  fontSize: '13px',
+                  fontSize: '10px',
                   outline: 'none',
                   background: '#FAFAFA',
                   boxSizing: 'border-box',
@@ -1464,7 +1464,7 @@ const Control = () => {
                     padding: '10px 12px',
                     borderRadius: '8px',
                     border: '1px solid #E0E0E0',
-                    fontSize: '13px',
+                    fontSize: '10px',
                     outline: 'none',
                     background: '#FAFAFA',
                     boxSizing: 'border-box',
@@ -1492,7 +1492,7 @@ const Control = () => {
                     padding: '10px 12px',
                     borderRadius: '8px',
                     border: '1px solid #E0E0E0',
-                    fontSize: '13px',
+                    fontSize: '10px',
                     outline: 'none',
                     background: '#FAFAFA',
                     boxSizing: 'border-box',
@@ -1522,7 +1522,7 @@ const Control = () => {
                   background: '#FFFFFF',
                   color: '#333',
                   cursor: 'pointer',
-                  fontSize: '13px',
+                  fontSize: '10px',
                   fontWeight: '500',
                   transition: 'all 0.2s'
                 }}
@@ -1544,7 +1544,7 @@ const Control = () => {
                   background: '#1976D2',
                   color: '#FFFFFF',
                   cursor: 'pointer',
-                  fontSize: '13px',
+                  fontSize: '10px',
                   fontWeight: '500',
                   transition: 'all 0.2s'
                 }}
@@ -1586,7 +1586,7 @@ const Control = () => {
                 padding: '10px 12px',
                 borderRadius: '8px',
                 border: '1px solid #E0E0E0',
-                fontSize: '13px',
+                fontSize: '10px',
                 outline: 'none',
                 background: '#FAFAFA',
                 boxSizing: 'border-box',
@@ -1638,7 +1638,7 @@ const Control = () => {
                 background: '#FFFFFF',
                 color: '#333',
                 cursor: 'pointer',
-                fontSize: '13px',
+                fontSize: '10px',
                 fontWeight: '500',
                 transition: 'all 0.2s'
               }}
@@ -1656,7 +1656,7 @@ const Control = () => {
                 background: '#4CAF50',
                 color: '#FFFFFF',
                 cursor: 'pointer',
-                fontSize: '13px',
+                fontSize: '10px',
                 fontWeight: '500',
                 transition: 'all 0.2s'
               }}
@@ -1686,7 +1686,7 @@ const Control = () => {
               display: 'grid', 
               gridTemplateColumns: '1fr 1fr', 
               gap: '16px',
-              marginBottom: '20px'
+              marginBottom: '16px'
             }}>
               <div>
                 <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>User</div>
@@ -1766,7 +1766,7 @@ const Control = () => {
                         background: '#F9F9F9',
                         borderRadius: '8px',
                         padding: '16px',
-                        maxHeight: '400px',
+                        minHeight: '400px',
                         overflow: 'auto'
                       }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1950,41 +1950,82 @@ const Control = () => {
                     </div>
                   )}
 
-                  {isCreate && newValues && (
-                    <div style={{ marginBottom: '20px' }}>
-                      <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#333' }}>
-                        Created Data
-                      </h3>
-                      <div style={{
-                        background: '#F9F9F9',
-                        borderRadius: '8px',
-                        padding: '16px',
-                        maxHeight: '400px',
-                        overflow: 'auto'
-                      }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                          <thead>
-                            <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
-                              <th style={{ textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' }}>Field</th>
-                              <th style={{ textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' }}>Value</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(newValues).map(([key, value]) => (
-                              <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
-                                <td style={{ padding: '8px', fontSize: '12px', fontWeight: '500', color: '#333' }}>
-                                  {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                                </td>
-                                <td style={{ padding: '8px', fontSize: '12px', color: '#333' }}>
-                                  {value !== null && value !== undefined ? String(value) : 'N/A'}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
+{isCreate && newValues && Object.keys(newValues).length > 0 && (
+  <div style={{ marginBottom: '20px' }}>
+    <h3 style={{
+      fontSize: '14px',
+      fontWeight: '600',
+      marginBottom: '12px',
+      color: '#333'
+    }}>
+      Created Data
+    </h3>
+
+    <div style={{
+      background: '#F9F9F9',
+      borderRadius: '8px',
+      padding: '16px',
+      minHeight: '400px',
+      overflow: 'auto'
+    }}>
+      <table style={{
+        width: '100%',
+        borderCollapse: 'collapse'
+      }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
+            <th style={{
+              textAlign: 'left',
+              padding: '8px',
+              fontSize: '11px',
+              fontWeight: '600',
+              color: '#666'
+            }}>
+              Field
+            </th>
+
+            <th style={{
+              textAlign: 'left',
+              padding: '8px',
+              fontSize: '11px',
+              fontWeight: '600',
+              color: '#666'
+            }}>
+              Value
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {Object.entries(newValues).map(([key, value]) => (
+            <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
+              <td style={{
+                padding: '8px',
+                fontSize: '12px',
+                fontWeight: '500',
+                color: '#333'
+              }}>
+                {key
+                  .replace(/_/g, ' ')
+                  .replace(/\b\w/g, l => l.toUpperCase())}
+              </td>
+
+              <td style={{
+                padding: '8px',
+                fontSize: '12px',
+                color: '#333'
+              }}>
+                {value === null || value === undefined
+                  ? 'N/A'
+                  : String(value)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+)}
 
                   {isDelete && oldValues && (
                     <div style={{ marginBottom: '20px' }}>
@@ -2068,7 +2109,7 @@ const Control = () => {
                   background: '#1976D2',
                   color: '#FFFFFF',
                   cursor: 'pointer',
-                  fontSize: '13px',
+                  fontSize: '10px',
                   fontWeight: '500',
                   transition: 'all 0.2s'
                 }}

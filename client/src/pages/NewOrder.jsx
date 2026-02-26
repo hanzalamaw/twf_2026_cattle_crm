@@ -4,12 +4,12 @@ import { useNavigate } from 'react-router-dom';
 const API = 'http://localhost:5000';
 
 const ORDER_TYPES = [
-  'Cow',
-  'Goat (Hissa)',
   'Hissa - Standard',
   'Hissa - Premium',
   'Hissa - Waqf',
   'Goat',
+  'Cow',
+  'Goat (Hissa)',
 ];
 
 const ORDER_SOURCES = [
@@ -42,6 +42,8 @@ const NewOrder = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [keepFormData, setKeepFormData] = useState(false);
+  const [duplicateError, setDuplicateError] = useState(null);
 
   const [formData, setFormData] = useState({
     order_id: '',
@@ -144,6 +146,17 @@ const NewOrder = () => {
       return;
     }
 
+    // For Cow, Goat, Goat (Hissa) - set to '0' and make editable
+    const editableTypes = ['Cow', 'Goat', 'Goat (Hissa)'];
+    if (editableTypes.includes(orderType)) {
+      setFormData((prev) => ({
+        ...prev,
+        cow_number: '0',
+        hissa_number: '0',
+      }));
+      return;
+    }
+
     const currentToken = localStorage.getItem('token');
     if (!currentToken) {
       return;
@@ -179,12 +192,26 @@ const NewOrder = () => {
     generateCustomerId(value);
   };
 
+  // Preset total amounts based on order type
+  const getPresetAmount = (orderType) => {
+    const amountMap = {
+      'Hissa - Standard': '25000',
+      'Hissa - Premium': '29700',
+      'Hissa - Waqf': '21000',
+      'Cow': '',
+      'Goat (Hissa)': '',
+      'Goat': '',
+    };
+    return amountMap[orderType] || '';
+  };
+
   // Handle order type change
   const handleOrderTypeChange = async (e) => {
     const value = e.target.value;
+    const presetAmount = getPresetAmount(value);
     setFormData((prev) => {
       // Update state first
-      const newData = { ...prev, order_type: value };
+      const newData = { ...prev, order_type: value, total_amount: presetAmount };
       // Then trigger async operations
       generateOrderId(value);
       // Recalculate cow/hissa with current day value
@@ -207,12 +234,96 @@ const NewOrder = () => {
     });
   };
 
+  // Check if cow/hissa combination already exists
+  const checkCowHissaDuplicate = useCallback(async (cowNumber, hissaNumber, orderType, day) => {
+    if (!cowNumber || !hissaNumber || !orderType) {
+      return null;
+    }
+
+    const currentToken = localStorage.getItem('token');
+    if (!currentToken) {
+      return null;
+    }
+
+    try {
+      const res = await fetch(`${API}/api/booking/check-cow-hissa`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${currentToken}`,
+        },
+        body: JSON.stringify({
+          cow_number: cowNumber,
+          hissa_number: hissaNumber,
+          order_type: orderType,
+          day: day || null,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        return data.exists ? data : null;
+      }
+    } catch (err) {
+      console.error('Error checking cow/hissa duplicate:', err);
+    }
+    return null;
+  }, []);
+
+  // Handle cow number change
+  const handleCowNumberChange = (e) => {
+    const value = e.target.value;
+    setFormData((prev) => ({ ...prev, cow_number: value }));
+    setDuplicateError(null);
+  };
+
+  // Handle cow number blur (validate on blur)
+  const handleCowNumberBlur = async () => {
+    const { cow_number, hissa_number, order_type, day } = formData;
+    if (cow_number && hissa_number && order_type) {
+      const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day);
+      if (duplicate) {
+        setDuplicateError(duplicate);
+      }
+    }
+  };
+
+  // Handle hissa number change
+  const handleHissaNumberChange = (e) => {
+    const value = e.target.value;
+    setFormData((prev) => ({ ...prev, hissa_number: value }));
+    setDuplicateError(null);
+  };
+
+  // Handle hissa number blur (validate on blur)
+  const handleHissaNumberBlur = async () => {
+    const { cow_number, hissa_number, order_type, day } = formData;
+    if (cow_number && hissa_number && order_type) {
+      const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day);
+      if (duplicate) {
+        setDuplicateError(duplicate);
+      }
+    }
+  };
+
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setDuplicateError(null);
     setLoading(true);
+
+    // Check for duplicate cow/hissa before submission
+    const { cow_number, hissa_number, order_type, day } = formData;
+    if (cow_number && hissa_number && order_type) {
+      const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day);
+      if (duplicate) {
+        setDuplicateError(duplicate);
+        setLoading(false);
+        return;
+      }
+    }
 
     const currentToken = localStorage.getItem('token');
     if (!currentToken) {
@@ -235,9 +346,29 @@ const NewOrder = () => {
 
       if (res.ok) {
         setSuccess('Order created successfully!');
-        setTimeout(() => {
-          navigate('/bookings/orders');
-        }, 1500);
+        
+        if (keepFormData) {
+          // Regenerate order ID, cow/hissa numbers, and keep other fields
+          const currentOrderType = formData.order_type;
+          const currentDay = formData.day;
+          
+          // Regenerate order ID
+          generateOrderId(currentOrderType);
+          
+          // Regenerate cow/hissa numbers
+          getAvailableCowHissa(currentOrderType, currentDay);
+          
+          // Clear only order_id, cow_number, and hissa_number (they will be regenerated)
+          // Keep all other fields
+          setTimeout(() => {
+            setSuccess('');
+          }, 2000);
+        } else {
+          // Navigate away as before
+          setTimeout(() => {
+            navigate('/bookings/orders');
+          }, 1500);
+        }
       } else {
         setError(data.message || 'Failed to create order');
       }
@@ -379,6 +510,121 @@ const NewOrder = () => {
         </div>
       )}
 
+      {/* Duplicate Error Dialog */}
+      {duplicateError && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setDuplicateError(null)}
+        >
+          <div
+            style={{
+              background: '#FFFFFF',
+              borderRadius: '8px',
+              padding: '20px',
+              maxWidth: '500px',
+              width: '90%',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                marginBottom: '16px',
+              }}
+            >
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: '#FEE2E2',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: '12px',
+                }}
+              >
+                <span style={{ fontSize: '20px', color: '#DC2626' }}>⚠️</span>
+              </div>
+              <h3
+                style={{
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#1F2937',
+                  margin: 0,
+                }}
+              >
+                Duplicate Cow/Hissa Combination
+              </h3>
+            </div>
+            <p
+              style={{
+                fontSize: '11px',
+                color: '#6B7280',
+                marginBottom: '16px',
+                lineHeight: '1.5',
+              }}
+            >
+              This cow number and hissa number combination already exists for the selected order type and day.
+            </p>
+            <div
+              style={{
+                background: '#F9FAFB',
+                borderRadius: '6px',
+                padding: '12px',
+                marginBottom: '16px',
+              }}
+            >
+              <div style={{ fontSize: '10px', color: '#6B7280', marginBottom: '4px' }}>
+                Existing Order Details:
+              </div>
+              <div style={{ fontSize: '11px', color: '#1F2937' }}>
+                <div><strong>Order ID:</strong> {duplicateError.order_id}</div>
+                <div><strong>Booking Name:</strong> {duplicateError.booking_name || '—'}</div>
+                <div><strong>Shareholder:</strong> {duplicateError.shareholder_name || '—'}</div>
+                <div><strong>Contact:</strong> {duplicateError.contact || '—'}</div>
+              </div>
+            </div>
+            <button
+              onClick={() => setDuplicateError(null)}
+              style={{
+                width: '100%',
+                padding: '8px 16px',
+                borderRadius: '6px',
+                border: 'none',
+                background: '#FF5722',
+                color: '#FFFFFF',
+                fontSize: '11px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+              }}
+              onMouseOver={(e) => {
+                e.target.style.background = '#E64A19';
+              }}
+              onMouseOut={(e) => {
+                e.target.style.background = '#FF5722';
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit}>
         {/* Order Information */}
         <div style={sectionStyle}>
@@ -428,7 +674,7 @@ const NewOrder = () => {
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
-                <option value="">Select Order Type</option>
+                <option value="" disabled>Select Order Type</option>
                 {ORDER_TYPES.map((type) => (
                   <option key={type} value={type}>
                     {type}
@@ -511,7 +757,7 @@ const NewOrder = () => {
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
-                <option value="">Select Order Source</option>
+                <option value="" disabled={formData.order_source !== ''}>Select Order Source</option>
                 {ORDER_SOURCES.map((source) => (
                   <option key={source} value={source}>
                     {source}
@@ -530,7 +776,7 @@ const NewOrder = () => {
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
-                <option value="">Select Reference</option>
+                <option value="" disabled={formData.reference !== ''}>Select Reference</option>
                 {REFERENCES.map((ref) => (
                   <option key={ref} value={ref}>
                     {ref}
@@ -549,7 +795,7 @@ const NewOrder = () => {
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
-                <option value="">Select Slot</option>
+                <option value="" disabled={formData.slot !== ''}>Select Slot</option>
                 {SLOTS.map((slot) => (
                   <option key={slot} value={slot}>
                     {slot}
@@ -566,7 +812,7 @@ const NewOrder = () => {
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
-                <option value="">Select Day</option>
+                <option value="" disabled={formData.day !== ''}>Select Day</option>
                 {DAYS.map((day) => (
                   <option key={day} value={day}>
                     {day}
@@ -659,12 +905,13 @@ const NewOrder = () => {
               <input
                 type="text"
                 value={formData.cow_number}
-                readOnly
-                style={{
-                  ...inputStyle,
-                  background: '#F5F5F5',
-                  cursor: 'not-allowed',
-                  color: '#666',
+                onChange={handleCowNumberChange}
+                placeholder="Enter cow number"
+                style={inputStyle}
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#e0e0e0';
+                  handleCowNumberBlur();
                 }}
               />
             </div>
@@ -673,12 +920,13 @@ const NewOrder = () => {
               <input
                 type="text"
                 value={formData.hissa_number}
-                readOnly
-                style={{
-                  ...inputStyle,
-                  background: '#F5F5F5',
-                  cursor: 'not-allowed',
-                  color: '#666',
+                onChange={handleHissaNumberChange}
+                placeholder="Enter hissa number"
+                style={inputStyle}
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#e0e0e0';
+                  handleHissaNumberBlur();
                 }}
               />
             </div>
@@ -688,24 +936,62 @@ const NewOrder = () => {
         {/* Additional Information */}
         <div style={sectionStyle}>
           <div style={sectionTitleStyle}>Additional Information</div>
-            <div>
-              <label style={labelStyle}>Description</label>
-              <textarea
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, description: e.target.value }))
-                }
-                placeholder="Enter any additional notes or description"
-                rows="3"
-                style={{
-                  ...inputStyle,
-                  resize: 'vertical',
-                  fontFamily: 'inherit',
-                }}
-                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
-                onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
-              />
-            </div>
+          <div>
+            <label style={labelStyle}>Description</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, description: e.target.value }))
+              }
+              placeholder="Enter any additional notes or description"
+              rows="3"
+              style={{
+                ...inputStyle,
+                resize: 'vertical',
+                fontFamily: 'inherit',
+              }}
+              onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+              onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
+            />
+          </div>
+        </div>
+
+        {/* Keep Form Data Option */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '13px',
+            padding: '10px',
+            background: '#F9FAFB',
+            borderRadius: '6px',
+            border: '1px solid #e0e0e0',
+          }}
+        >
+          <input
+            type="checkbox"
+            id="keepFormData"
+            checked={keepFormData}
+            onChange={(e) => setKeepFormData(e.target.checked)}
+            style={{
+              width: '14px',
+              height: '14px',
+              cursor: 'pointer',
+              accentColor: '#FF5722',
+            }}
+          />
+          <label
+            htmlFor="keepFormData"
+            style={{
+              fontSize: '10px',
+              color: '#666',
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+          >
+            Keep form data after submission (regenerate Order ID, Cow & Hissa numbers)
+          </label>
         </div>
 
         {/* Submit Button */}
