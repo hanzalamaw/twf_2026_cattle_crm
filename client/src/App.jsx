@@ -22,6 +22,7 @@ import QueryManagement from './pages/QueryManagement';
 import Transactions from './pages/Transactions';
 import Expenses from './pages/Expenses';
 import NewOrder from './pages/NewOrder';
+import NewQuery from './pages/NewQuery';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -136,7 +137,7 @@ function App() {
           <Route path="/bookings" element={<ProtectedRoute><RequirePermission permission="booking_management"><MainLayout systemName="" /></RequirePermission></ProtectedRoute>}>
             <Route index element={<Navigate to="/bookings/dashboard" replace />} />
             <Route path="dashboard" element={<RequireBookingDashboard><Dashboard /></RequireBookingDashboard>} />
-            <Route path="new-query" element={<BookingPlaceholder title="New Query" />} />
+            <Route path="new-query" element={<NewQuery />} />
             <Route path="new-order" element={<NewOrder />} />
             <Route path="queries" element={<QueryManagement />} />
             <Route path="orders" element={<OrderManagement />} />
