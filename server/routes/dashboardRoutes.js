@@ -320,47 +320,85 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
   // -----------------------
   // GET: /api/dashboard/reference-wise?year=...
-  // (ONLY 4 types)
+  // Lead generated = orders with that reference + queries (leads) with that reference.
+  // Lead converted = orders with that reference only.
   // -----------------------
   app.get("/api/dashboard/reference-wise", verifyToken, async (req, res) => {
     try {
       const { year = "all" } = req.query;
 
-      const params = [];
-      const conditions = buildYearWhere(year, params);
-      conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
-      conditions.push("o.reference IS NOT NULL AND o.reference != ''");
+      const paramsO = [];
+      const conditionsO = buildYearWhere(year, paramsO);
+      conditionsO.push("o.reference IS NOT NULL AND o.reference != ''");
+      const whereO = conditionsO.length ? `WHERE ${conditionsO.join(" AND ")}` : "";
 
-      const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+      const paramsL = [];
+      const conditionsL = [];
+      if (year === "2026" || year === "2025") {
+        conditionsL.push("YEAR(l.created_at) = ?");
+        paramsL.push(year);
+      } else if (year === "2024") {
+        conditionsL.push("(l.created_at IS NULL OR YEAR(l.created_at) < 2025)");
+      }
+      conditionsL.push("l.reference IS NOT NULL AND l.reference != ''");
+      const whereL = conditionsL.length ? `WHERE ${conditionsL.join(" AND ")}` : "";
 
-      const [rows] = await db.execute(
+      const [orderRows] = await db.execute(
         `
         SELECT
           o.reference AS name,
-          COUNT(*) AS leadsGenerated,
-          SUM(CASE WHEN COALESCE(o.pending_amount,0) <= 0 THEN 1 ELSE 0 END) AS leadsConverted,
+          COUNT(*) AS orderCount,
           COALESCE(SUM(o.total_amount), 0) AS totalRevenueGenerated
         FROM orders o
-        ${where}
+        ${whereO}
         GROUP BY o.reference
-        ORDER BY leadsGenerated DESC
         `,
-        params
+        paramsO
       );
 
-      const data = rows.map((r) => {
-        const generated = Number(r.leadsGenerated || 0);
-        const converted = Number(r.leadsConverted || 0);
-        const conversionRate = generated > 0 ? (converted / generated) * 100 : 0;
+      const [leadRows] = await db.execute(
+        `
+        SELECT l.reference AS name, COUNT(*) AS queryCount
+        FROM leads l
+        ${whereL}
+        GROUP BY l.reference
+        `,
+        paramsL
+      );
 
-        return {
-          name: r.name,
-          leadsGenerated: generated,
-          leadsConverted: converted,
+      const orderMap = new Map();
+      for (const r of orderRows || []) {
+        const orderCount = Number(r.orderCount || 0);
+        orderMap.set(r.name, {
+          orderCount,
+          leadsConverted: orderCount,
           totalRevenueGenerated: Number(r.totalRevenueGenerated || 0),
+        });
+      }
+      const leadMap = new Map();
+      for (const r of leadRows || []) {
+        leadMap.set(r.name, Number(r.queryCount || 0));
+      }
+
+      const allRefs = new Set([...orderMap.keys(), ...leadMap.keys()]);
+      const data = [...allRefs].map((name) => {
+        const o = orderMap.get(name) || {
+          orderCount: 0,
+          totalRevenueGenerated: 0,
+        };
+        const leadsConverted = o.orderCount;
+        const queryCount = leadMap.get(name) || 0;
+        const leadsGenerated = o.orderCount + queryCount;
+        const conversionRate = leadsGenerated > 0 ? (leadsConverted / leadsGenerated) * 100 : 0;
+        return {
+          name,
+          leadsGenerated,
+          leadsConverted,
+          totalRevenueGenerated: o.totalRevenueGenerated,
           conversionRate,
         };
       });
+      data.sort((a, b) => (b.leadsGenerated - a.leadsGenerated));
 
       res.json({ references: data });
     } catch (e) {

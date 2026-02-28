@@ -1,5 +1,5 @@
 // src/pages/Dashboard.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
   LineChart,
@@ -145,8 +145,8 @@ const KPIBox = ({
 const TargetDonut = ({
   achieved = 0,
   target = 2000,
-  size = 130,
-  stroke = 12,
+  size = 200,
+  stroke = 16,
   color = "#FF5722",
   overflowColor = "#E64A19",
   track = "#EAEAEA",
@@ -259,7 +259,7 @@ const TargetAchievement = ({ achieved, target, breakdown }) => {
 };
 
 /* -----------------------------
-   Day Wise Summary
+   Day Wise Summary (single table: row headers + DAY 1 | DAY 2 | DAY 3 columns)
 ------------------------------ */
 
 const DayWiseSummary = ({ days }) => {
@@ -271,42 +271,60 @@ const DayWiseSummary = ({ days }) => {
     return val ?? "—";
   };
 
+  const dayList = days || [];
+  const rowLabels = ["Total Orders", "Payment Cleared", "Pending (Completely)", "Pending (Partially)"];
+  const colLabels = ["Premium", "Standard", "Waqf", "Goat", "Total"];
+
   return (
     <div className="card animCard">
       <div className="cardTitleBig">DAY WISE SUMMARY</div>
 
-      <div className="dayGrid">
-        {(days || []).map((d) => (
-          <div key={d.key} className="dayCard animPop">
-            <div className="dayHeader">{d.title}</div>
-
-            <table className="tblCompact">
-              <thead>
-                <tr>
-                  <th></th>
-                  <th>Premium</th>
-                  <th>Standard</th>
-                  <th>Waqf</th>
-                  <th>Goat</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {(d.data || []).map((r) => (
-                  <tr key={r.label}>
-                    <td>{r.label}</td>
-                    <td>{renderCell(r.premium)}</td>
-                    <td>{renderCell(r.standard)}</td>
-                    <td>{renderCell(r.waqf)}</td>
-                    <td>{renderCell(r.goat)}</td>
-                    <td>{renderCell(r.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ))}
+      <div className="dayWiseTableWrap">
+        <table className="tblDayWise">
+          <thead>
+            <tr>
+              <th className="dayWiseRowHeader">&nbsp;</th>
+              {(dayList).map((d) => (
+                <th key={d.key} colSpan={5} className="dayWiseDayHeader">
+                  {d.title}
+                </th>
+              ))}
+            </tr>
+            <tr>
+              <th className="dayWiseRowHeader">&nbsp;</th>
+              {(dayList).map((d) =>
+                colLabels.map((col) => (
+                  <th key={`${d.key}-${col}`} className="dayWiseColHeader">
+                    {col}
+                  </th>
+                ))
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {rowLabels.map((label) => (
+              <tr key={label}>
+                <td className="dayWiseRowLabel">{label}</td>
+                {(dayList).map((d) => {
+                  const row = (d.data || []).find((r) => r.label === label);
+                  if (!row)
+                    return colLabels.map((col) => (
+                      <td key={`${d.key}-${label}-${col}`} className="dayWiseCell">—</td>
+                    ));
+                  return (
+                    <React.Fragment key={d.key}>
+                      <td className="dayWiseCell">{renderCell(row.premium)}</td>
+                      <td className="dayWiseCell">{renderCell(row.standard)}</td>
+                      <td className="dayWiseCell">{renderCell(row.waqf)}</td>
+                      <td className="dayWiseCell">{renderCell(row.goat)}</td>
+                      <td className="dayWiseCell">{renderCell(row.total)}</td>
+                    </React.Fragment>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -574,7 +592,7 @@ const Dashboard = () => {
 
         .page{
           padding: 12px 16px;
-          font-family: 'Poppins', sans-serif;
+          font-family: 'Poppins', 'Inter', sans-serif;
           display:flex;
           flex-direction:column;
           gap: 10px;
@@ -702,8 +720,8 @@ const Dashboard = () => {
         /* Target */
         .targetGrid{
           display:grid;
-          grid-template-columns: 160px 1fr;
-          gap: 10px;
+          grid-template-columns: 220px 1fr;
+          gap: 16px;
           align-items:center;
         }
         @media(max-width:980px){ .targetGrid{ grid-template-columns:1fr; } }
@@ -718,11 +736,12 @@ const Dashboard = () => {
           text-align:center;
           white-space:nowrap;
         }
-        .donutSmall{ font-size: 10px; color:#374151; }
-        .donutBig{ font-size: 20px; font-weight: 800; color:#1f2937; }
-        .donutRed{ font-size: 10px; color:#b91c1c; font-style: italic; }
+        .donutSmall{ font-size: 13px; color:#374151; }
+        .donutBig{ font-size: 42px; font-weight: 800; color:#1f2937; }
+        .donutRed{ font-size: 11px; color:#b91c1c; font-style: italic; }
+        .donutRed *{ font-style: inherit; }
 
-        .progressWrap{ display:flex; flex-direction:column; gap: 6px; }
+        .progressWrap{ display:flex; flex-direction:column; gap: 14px; }
         .progressRow{ display:flex; flex-direction:column; gap: 4px; }
         .progressHead{ display:flex; justify-content:space-between; align-items:baseline; gap: 8px; }
         .progressLabel{ font-size: 11px; font-weight: 700; color:#111827; white-space:nowrap; }
@@ -741,36 +760,43 @@ const Dashboard = () => {
           border-radius: 999px;
         }
 
-        /* Day Wise Layout */
-        .dayGrid{
-          display:grid;
-          grid-template-columns: repeat(2, minmax(260px,1fr));
-          gap: 10px;
-          justify-content:center;
+        /* Day Wise Summary - single table (image 2 style) */
+        .dayWiseTableWrap{ width: 100%; overflow-x: auto; border-radius: 12px; border: 1px solid #e5e7eb; }
+        .tblDayWise{
+          width: 100%;
+          border-collapse: separate;
+          border-spacing: 0;
+          background: #fff;
+          min-width: 640px;
         }
-        .dayGrid .dayCard{ width:100%; }
-        .dayGrid .dayCard:nth-child(3){
-          grid-column: 1 / -1;
-          max-width: 520px;
-          justify-self: center;
+        .tblDayWise th, .tblDayWise td{
+          padding: 8px 10px;
+          font-size: 12px;
+          border: 1px solid #e5e7eb;
         }
-        @media(max-width:1200px){
-          .dayGrid{ grid-template-columns:1fr; }
-          .dayGrid .dayCard:nth-child(3){ grid-column: auto; max-width: 100%; justify-self: stretch; }
-        }
-
-        .dayHeader{
-          background:#FF5722;
-          color:#fff;
-          font-size: 14px;
+        .dayWiseRowHeader{ background: #f3f4f6; font-weight: 600; color: #374151; text-align: left; width: 160px; }
+        .dayWiseDayHeader{
+          background: #FF5722;
+          color: #fff;
           font-weight: 700;
-          text-align:center;
-          padding: 6px 8px;
-          border-radius: 8px;
-          margin-bottom: 6px;
+          text-align: center;
+          letter-spacing: 0.5px;
+          padding: 10px 8px;
         }
+        .dayWiseColHeader{
+          background: #f9fafb;
+          color: #6b7280;
+          font-weight: 600;
+          text-align: center;
+        }
+        .dayWiseRowLabel{
+          background: #f3f4f6;
+          color: #374151;
+          font-weight: 500;
+        }
+        .dayWiseCell{ text-align: center; color: #4b5563; }
 
-        /* ✅ Table compact + fixed layout so headings never overflow */
+        /* Table compact (legacy / other uses) */
         .tblCompact{
           width:100%;
           border-collapse:separate;
@@ -868,29 +894,31 @@ const Dashboard = () => {
         /* Source Wise Summary - card grid */
         .sourceGrid{
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+          grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
           gap: 8px;
         }
         .sourceCard{
           background: #f8f9fa;
-          border-radius: 8px;
-          padding: 8px 10px;
+          border-radius: 6px;
+          padding: 4px 8px;
           display: flex;
           align-items: center;
-          gap: 8px;
-          border: 1px solid #eee;
+          gap: 6px;
+          border: 1px solid #e5e7eb;
+          outline: 1px solid rgba(0,0,0,0.06);
+          min-height: 28px;
         }
         .sourceCardEmpty{ justify-content: center; color: #6b7280; font-size: 11px; }
         .sourceIcon{
-          width: 32px; height: 32px;
-          border-radius: 6px;
+          width: 22px; height: 22px;
+          border-radius: 4px;
           background: #FF5722;
           display: flex; align-items: center; justify-content: center;
           flex-shrink: 0;
         }
-        .sourcePin{ font-size: 14px; filter: brightness(0) invert(1); }
-        .sourceName{ font-size: 11px; font-weight: 600; color: #374151; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .sourceCount{ font-size: 14px; font-weight: 800; color: #111827; }
+        .sourcePin{ font-size: 10px; filter: brightness(0) invert(1); }
+        .sourceName{ font-size: 11px; font-weight: 600; color: #374151; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sourceCount{ font-size: 14px; font-weight: 800; color: #111827; white-space: nowrap; flex-shrink: 0; }
 
         /* Sales Overview Chart */
         .chartWrap{ width: 100%; min-height: 260px; }

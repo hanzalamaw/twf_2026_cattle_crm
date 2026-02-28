@@ -92,6 +92,61 @@ const ROUTE_TITLES = {
   '/performance': 'Performance Management',
 };
 
+const API_BASE = 'http://localhost:5000';
+
+function clearSessionAndRedirectToLogin() {
+  localStorage.removeItem('token');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('user');
+  window.location.href = '/login';
+}
+
+function AuthFetchInterceptor() {
+  const { user } = useAuth();
+  useEffect(() => {
+    if (!user) return;
+    const originalFetch = window.fetch;
+    window.fetch = async function (...args) {
+      const res = await originalFetch.apply(this, args);
+      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+      const isApi = url.includes('/api/');
+      const isAuthEndpoint = /\/api\/(login|register|refresh|forgot-password|reset-password|accept-terms)/.test(url);
+      if (res.status === 401 && isApi && !isAuthEndpoint) {
+        const refreshToken = localStorage.getItem('refreshToken');
+        if (!refreshToken) {
+          clearSessionAndRedirectToLogin();
+          return res;
+        }
+        try {
+          const refreshRes = await originalFetch(`${API_BASE}/api/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken }),
+          });
+          if (!refreshRes.ok) {
+            clearSessionAndRedirectToLogin();
+            return res;
+          }
+          const data = await refreshRes.json().catch(() => ({}));
+          if (!data?.token) {
+            clearSessionAndRedirectToLogin();
+            return res;
+          }
+          localStorage.setItem('token', data.token);
+          const newHeaders = { ...(args[1]?.headers || {}), Authorization: `Bearer ${data.token}` };
+          return originalFetch(args[0], { ...args[1], headers: newHeaders });
+        } catch {
+          clearSessionAndRedirectToLogin();
+          return res;
+        }
+      }
+      return res;
+    };
+    return () => { window.fetch = originalFetch; };
+  }, [user]);
+  return null;
+}
+
 function DocumentTitle() {
   const location = useLocation();
   useEffect(() => {
@@ -107,6 +162,7 @@ function App() {
     <AuthProvider>
       <Router>
         <DocumentTitle />
+        <AuthFetchInterceptor />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
