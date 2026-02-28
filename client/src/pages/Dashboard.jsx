@@ -1,6 +1,15 @@
-// src/pages/Dashboard.jsx (or wherever your dashboard is)
+// src/pages/Dashboard.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 const fmt = (n) => Number(n || 0).toLocaleString("en-PK");
 
@@ -136,10 +145,10 @@ const KPIBox = ({
 const TargetDonut = ({
   achieved = 0,
   target = 2000,
-  size = 170,
-  stroke = 14,
-  color = "#0B8A6A",
-  overflowColor = "#0A5B47",
+  size = 130,
+  stroke = 12,
+  color = "#FF5722",
+  overflowColor = "#E64A19",
   track = "#EAEAEA",
 }) => {
   const radius = (size - stroke) / 2;
@@ -365,6 +374,109 @@ const ReferenceWiseSummary = ({ references }) => {
 };
 
 /* -----------------------------
+   Source Wise Summary (card grid)
+------------------------------ */
+
+const SourceWiseSummary = ({ sources }) => {
+  return (
+    <div className="card animCard">
+      <div className="cardTitle">SOURCE WISE SUMMARY</div>
+      <div className="sourceGrid">
+        {(sources || []).map((s, i) => (
+          <div key={s.sourceName + i} className="sourceCard animPop">
+            <div className="sourceIcon">
+              <span className="sourcePin">📍</span>
+            </div>
+            <div className="sourceName">{s.sourceName}</div>
+            <div className="sourceCount">
+              <AnimatedNumber value={Number(s.count || 0)} duration={500} format={(n) => fmt(Math.round(n))} />
+            </div>
+          </div>
+        ))}
+        {(!sources || sources.length === 0) && (
+          <div className="sourceCard sourceCardEmpty">No source data</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* -----------------------------
+   Sales Overview (line chart + tooltip)
+------------------------------ */
+
+const SalesOverviewChart = ({ series, reveal }) => {
+  const data = useMemo(() => (series || []).map((d) => ({ ...d, name: d.date })), [series]);
+
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (!active || !payload?.length || !label) return null;
+    const p = payload[0]?.payload || {};
+    return (
+      <div className="chartTooltip">
+        <div className="chartTooltipTitle">{label}</div>
+        <div className="chartTooltipRow">
+          <span>Orders:</span>
+          <span>{fmt(Number(p.orders || 0))}</span>
+        </div>
+        <div className="chartTooltipRow green">
+          <span>Total Sales:</span>
+          <span>Rs {fmt(Number(p.totalSales || 0))}</span>
+        </div>
+        <div className="chartTooltipRow green">
+          <span>Received Payments:</span>
+          <span>Rs {fmt(Number(p.receivedPayments || 0))}</span>
+        </div>
+        <div className="chartTooltipRow red">
+          <span>Pending Payments:</span>
+          <span>Rs {fmt(Number(p.pendingPayments || 0))}</span>
+        </div>
+        <div className="chartTooltipRow">
+          <span>Total Quantity:</span>
+          <span>{fmt(Number(p.totalQuantity || 0))}</span>
+        </div>
+        <div className="chartTooltipRow">
+          <span>Avg Order Value:</span>
+          <span>Rs {fmt(Number(p.avgOrderValue || 0))}</span>
+        </div>
+      </div>
+    );
+  };
+
+  if (!data.length) {
+    return (
+      <div className="card animCard">
+        <div className="cardTitle">SALES OVERVIEW</div>
+        <div className="chartPlaceholder">No data for selected year</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card animCard">
+      <div className="cardTitle">SALES OVERVIEW</div>
+      <div className="chartWrap">
+        <ResponsiveContainer width="100%" height={280}>
+          <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+            <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="#6b7280" />
+            <YAxis tick={{ fontSize: 10 }} stroke="#6b7280" tickFormatter={(v) => fmt(v)} />
+            <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#FF5722", strokeWidth: 1 }} />
+            <Line
+              type="monotone"
+              dataKey={reveal ? "totalSales" : "orders"}
+              stroke="#FF5722"
+              strokeWidth={2}
+              dot={{ fill: "#FF5722", r: 3 }}
+              activeDot={{ r: 5, fill: "#FF5722", stroke: "#fff", strokeWidth: 2 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+
+/* -----------------------------
    Dashboard
 ------------------------------ */
 
@@ -376,9 +488,10 @@ const Dashboard = () => {
   const [kpis, setKpis] = useState(null);
   const [targetData, setTargetData] = useState(null);
   const [days, setDays] = useState([]);
+  const [sources, setSources] = useState([]);
   const [references, setReferences] = useState([]);
+  const [salesOverview, setSalesOverview] = useState([]);
 
-  // ✅ Blur/unblur KPI values
   const [kpiValuesVisible, setKpiValuesVisible] = useState(false);
 
   const token = useMemo(() => localStorage.getItem("token"), []);
@@ -388,34 +501,45 @@ const Dashboard = () => {
       try {
         setLoading(true);
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const y = encodeURIComponent(year);
 
-        const [k, t, d, r] = await Promise.all([
-          fetch(`/api/dashboard/kpis?year=${encodeURIComponent(year)}`, { headers }),
-          fetch(`/api/dashboard/target-achievement?year=${encodeURIComponent(year)}`, { headers }),
-          fetch(`/api/dashboard/day-wise?year=${encodeURIComponent(year)}`, { headers }),
-          fetch(`/api/dashboard/reference-wise?year=${encodeURIComponent(year)}`, { headers }),
+        const [k, t, d, src, r, sales] = await Promise.all([
+          fetch(`/api/dashboard/kpis?year=${y}`, { headers }),
+          fetch(`/api/dashboard/target-achievement?year=${y}`, { headers }),
+          fetch(`/api/dashboard/day-wise?year=${y}`, { headers }),
+          fetch(`/api/dashboard/source-wise?year=${y}`, { headers }),
+          fetch(`/api/dashboard/reference-wise?year=${y}`, { headers }),
+          fetch(`/api/dashboard/sales-overview?year=${y}`, { headers }),
         ]);
 
         const kj = await k.json();
         const tj = await t.json();
         const dj = await d.json();
+        const srcj = await src.json();
         const rj = await r.json();
+        const salesj = await sales.json();
 
         if (!k.ok) throw new Error(kj?.message || "KPIs failed");
         if (!t.ok) throw new Error(tj?.message || "Target failed");
         if (!d.ok) throw new Error(dj?.message || "Day-wise failed");
+        if (!src.ok) throw new Error(srcj?.message || "Source-wise failed");
         if (!r.ok) throw new Error(rj?.message || "Reference-wise failed");
+        if (!sales.ok) throw new Error(salesj?.message || "Sales overview failed");
 
         setKpis(kj.kpis || null);
         setTargetData(tj || null);
         setDays(dj.days || []);
+        setSources(srcj.sources || []);
         setReferences(rj.references || []);
+        setSalesOverview(salesj.series || []);
       } catch (e) {
         console.error(e);
         setKpis(null);
         setTargetData(null);
         setDays([]);
+        setSources([]);
         setReferences([]);
+        setSalesOverview([]);
       } finally {
         setLoading(false);
       }
@@ -449,11 +573,11 @@ const Dashboard = () => {
         *{ box-sizing:border-box; }
 
         .page{
-          padding: 16px;
+          padding: 12px 16px;
           font-family: 'Poppins', sans-serif;
           display:flex;
           flex-direction:column;
-          gap: 12px;
+          gap: 10px;
         }
 
         /* ---------------- Animations ---------------- */
@@ -480,15 +604,15 @@ const Dashboard = () => {
           gap: 10px;
           flex-wrap: wrap;
         }
-        .hTitle{ margin:0; font-size:22px; font-weight:800; color:#111827; }
-        .hSub{ margin:6px 0 0; font-size:14px; color:#6b7280; }
+        .hTitle{ margin:0; font-size:18px; font-weight:700; color:#111827; }
+        .hSub{ margin:4px 0 0; font-size:12px; color:#6b7280; }
 
         .headerRight{ display:flex; align-items:center; gap: 8px; }
         .select{
-          padding: 8px 10px;
-          border-radius: 10px;
+          padding: 6px 10px;
+          border-radius: 8px;
           border: 1px solid #e5e7eb;
-          font-size: 14px;
+          font-size: 12px;
           background: #fff;
           cursor:pointer;
         }
@@ -511,11 +635,11 @@ const Dashboard = () => {
         /* KPI */
         .kpiGrid{
           display:grid;
-          grid-template-columns: repeat(3, minmax(220px, 1fr));
-          gap: 12px;
+          grid-template-columns: repeat(3, minmax(160px, 1fr));
+          gap: 8px;
         }
         @media (max-width: 1100px){
-          .kpiGrid{ grid-template-columns: repeat(2, minmax(220px, 1fr)); }
+          .kpiGrid{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
         }
         @media (max-width: 720px){
           .kpiGrid{ grid-template-columns: 1fr; }
@@ -523,22 +647,22 @@ const Dashboard = () => {
 
         .kpiCard{
           background:#fff;
-          border-radius: 14px;
-          padding: 12px;
+          border-radius: 10px;
+          padding: 8px 10px;
           display:flex;
           align-items:center;
-          gap: 12px;
-          box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+          gap: 8px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.04);
           border: 1px solid #f1f1f1;
         }
         .kpiIcon{
-          width: 48px; height: 48px; border-radius: 999px;
+          width: 36px; height: 36px; border-radius: 8px;
           display:flex; align-items:center; justify-content:center;
-          font-size: 22px;
+          font-size: 16px;
           flex: 0 0 auto;
         }
-        .kpiTitle{ font-size: 13px; color:#6b7280; }
-        .kpiValue{ font-size: 22px; font-weight: 900; color:#111827; line-height: 1.1; }
+        .kpiTitle{ font-size: 11px; color:#6b7280; }
+        .kpiValue{ font-size: 16px; font-weight: 800; color:#111827; line-height: 1.1; }
 
         /* Blur like "Bank" field */
         .kpiBlurField{
@@ -555,30 +679,31 @@ const Dashboard = () => {
 
         .card{
           background:#fff;
-          border-radius: 14px;
-          padding: 16px;
+          border-radius: 10px;
+          padding: 12px;
           border: 1px solid #f1f1f1;
-          box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.04);
         }
 
-        .cardTitleBig{
+        .cardTitle, .cardTitleBig{
           text-align:center;
-          font-size: 30px;
-          font-weight: 900;
-          letter-spacing: .8px;
+          font-size: 16px;
+          font-weight: 700;
+          letter-spacing: .5px;
           color:#243447;
-          margin-bottom: 12px;
+          margin-bottom: 10px;
           white-space:nowrap;
         }
+        .cardTitleBig{ font-size: 16px; }
         @media(max-width:720px){
-          .cardTitleBig{ font-size: 22px; white-space:normal; }
+          .cardTitleBig, .cardTitle{ font-size: 14px; white-space:normal; }
         }
 
         /* Target */
         .targetGrid{
           display:grid;
-          grid-template-columns: 220px 1fr;
-          gap: 14px;
+          grid-template-columns: 160px 1fr;
+          gap: 10px;
           align-items:center;
         }
         @media(max-width:980px){ .targetGrid{ grid-template-columns:1fr; } }
@@ -593,60 +718,56 @@ const Dashboard = () => {
           text-align:center;
           white-space:nowrap;
         }
-        .donutSmall{ font-size: 12px; color:#374151; }
-        .donutBig{ font-size: 30px; font-weight: 900; color:#1f2937; }
-        .donutRed{ font-size: 12px; color:#b91c1c; font-style: italic; }
+        .donutSmall{ font-size: 10px; color:#374151; }
+        .donutBig{ font-size: 20px; font-weight: 800; color:#1f2937; }
+        .donutRed{ font-size: 10px; color:#b91c1c; font-style: italic; }
 
-        .progressWrap{ display:flex; flex-direction:column; gap: 10px; }
-        .progressRow{ display:flex; flex-direction:column; gap: 6px; }
-        .progressHead{ display:flex; justify-content:space-between; align-items:baseline; gap: 10px; }
-        .progressLabel{ font-size: 13px; font-weight: 800; color:#111827; white-space:nowrap; }
-        .progressVal{ font-size: 13px; font-weight: 900; color:#111827; white-space:nowrap; }
-        .progressPct{ font-weight: 700; color:#374151; }
+        .progressWrap{ display:flex; flex-direction:column; gap: 6px; }
+        .progressRow{ display:flex; flex-direction:column; gap: 4px; }
+        .progressHead{ display:flex; justify-content:space-between; align-items:baseline; gap: 8px; }
+        .progressLabel{ font-size: 11px; font-weight: 700; color:#111827; white-space:nowrap; }
+        .progressVal{ font-size: 11px; font-weight: 800; color:#111827; white-space:nowrap; }
+        .progressPct{ font-weight: 600; color:#374151; font-size: 10px; }
 
         .progressTrack{
-          height: 8px;
+          height: 6px;
           border-radius: 999px;
-          background:#d9d9d9;
+          background:#e5e7eb;
           overflow:hidden;
         }
         .progressFill{
           height:100%;
-          background:#0B8A6A;
+          background:#FF5722;
           border-radius: 999px;
         }
 
-        /* Day Wise Layout: Day 1 & Day 2 in one row, Day 3 centered below */
+        /* Day Wise Layout */
         .dayGrid{
           display:grid;
-          grid-template-columns: repeat(2, minmax(320px,1fr));
-          gap:14px;
+          grid-template-columns: repeat(2, minmax(260px,1fr));
+          gap: 10px;
           justify-content:center;
         }
         .dayGrid .dayCard{ width:100%; }
         .dayGrid .dayCard:nth-child(3){
           grid-column: 1 / -1;
-          max-width: 620px;
+          max-width: 520px;
           justify-self: center;
         }
         @media(max-width:1200px){
           .dayGrid{ grid-template-columns:1fr; }
-          .dayGrid .dayCard:nth-child(3){
-            grid-column: auto;
-            max-width: 100%;
-            justify-self: stretch;
-          }
+          .dayGrid .dayCard:nth-child(3){ grid-column: auto; max-width: 100%; justify-self: stretch; }
         }
 
         .dayHeader{
-          background:#0B8A6A;
+          background:#FF5722;
           color:#fff;
-          font-size:18px;
-          font-weight:900;
+          font-size: 14px;
+          font-weight: 700;
           text-align:center;
-          padding:10px;
-          border-radius:10px;
-          margin-bottom:10px;
+          padding: 6px 8px;
+          border-radius: 8px;
+          margin-bottom: 6px;
         }
 
         /* ✅ Table compact + fixed layout so headings never overflow */
@@ -663,8 +784,8 @@ const Dashboard = () => {
 
         .tblCompact th,
         .tblCompact td{
-          padding:9px 8px;
-          font-size:12px;
+          padding: 6px 6px;
+          font-size: 11px;
           text-align:center;
           border-bottom:1px solid #ededed;
           border-right:1px solid #ededed;
@@ -710,14 +831,14 @@ const Dashboard = () => {
           border-spacing:0;
           background:#f7f7f7;
           border:1px solid #ededed;
-          border-radius:12px;
+          border-radius: 10px;
           overflow:hidden;
-          min-width: 900px;
+          min-width: 560px;
           table-layout: fixed;
         }
         .tblRefOld th, .tblRefOld td{
-          padding: 10px 10px;
-          font-size: 12px;
+          padding: 6px 8px;
+          font-size: 11px;
           color:#243447;
           text-align:center;
           border-bottom:1px solid #ededed;
@@ -738,11 +859,55 @@ const Dashboard = () => {
         .tblRefOld th:first-child,
         .tblRefOld td:first-child{
           text-align:left;
-          width:220px;
-          font-weight:800;
+          width: 140px;
+          font-weight:700;
           background:#fafafa;
           white-space:nowrap;
         }
+
+        /* Source Wise Summary - card grid */
+        .sourceGrid{
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+          gap: 8px;
+        }
+        .sourceCard{
+          background: #f8f9fa;
+          border-radius: 8px;
+          padding: 8px 10px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          border: 1px solid #eee;
+        }
+        .sourceCardEmpty{ justify-content: center; color: #6b7280; font-size: 11px; }
+        .sourceIcon{
+          width: 32px; height: 32px;
+          border-radius: 6px;
+          background: #FF5722;
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+        .sourcePin{ font-size: 14px; filter: brightness(0) invert(1); }
+        .sourceName{ font-size: 11px; font-weight: 600; color: #374151; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .sourceCount{ font-size: 14px; font-weight: 800; color: #111827; }
+
+        /* Sales Overview Chart */
+        .chartWrap{ width: 100%; min-height: 260px; }
+        .chartPlaceholder{ padding: 24px; text-align: center; color: #6b7280; font-size: 12px; }
+        .chartTooltip{
+          background: #fff;
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
+          padding: 10px 12px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+          font-size: 11px;
+          min-width: 180px;
+        }
+        .chartTooltipTitle{ font-weight: 700; margin-bottom: 6px; color: #111827; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+        .chartTooltipRow{ display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; }
+        .chartTooltipRow.green{ color: #166534; }
+        .chartTooltipRow.red{ color: #b91c1c; }
       `}</style>
 
       {/* Header */}
@@ -794,7 +959,9 @@ const Dashboard = () => {
         <>
           <TargetAchievement achieved={achievedForDonut} target={targetTotal} breakdown={fixedBreakdown} />
           <DayWiseSummary days={days} />
+          <SourceWiseSummary sources={sources} />
           <ReferenceWiseSummary references={references} />
+          <SalesOverviewChart series={salesOverview} reveal={kpiValuesVisible} />
         </>
       )}
     </div>

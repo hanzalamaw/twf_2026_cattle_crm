@@ -368,4 +368,93 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
       res.status(500).json({ message: "Server error" });
     }
   });
+
+  // -----------------------
+  // GET: /api/dashboard/source-wise?year=...
+  // Order count per order_source (for Source wise summary cards)
+  // -----------------------
+  app.get("/api/dashboard/source-wise", verifyToken, async (req, res) => {
+    try {
+      const { year = "all" } = req.query;
+
+      const params = [];
+      const conditions = buildYearWhere(year, params);
+      conditions.push("(o.order_source IS NOT NULL AND o.order_source != '')");
+
+      const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+      const [rows] = await db.execute(
+        `
+        SELECT
+          o.order_source AS sourceName,
+          COUNT(*) AS count
+        FROM orders o
+        ${where}
+        GROUP BY o.order_source
+        ORDER BY count DESC
+        `,
+        params
+      );
+
+      const sources = (rows || []).map((r) => ({
+        sourceName: r.sourceName || "—",
+        count: Number(r.count || 0),
+      }));
+
+      res.json({ sources });
+    } catch (e) {
+      logError("DASHBOARD", "Source-wise error", e);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // -----------------------
+  // GET: /api/dashboard/sales-overview?year=...
+  // Daily series for line chart: date, orders, totalSales, receivedPayments, pendingPayments, totalQuantity, avgOrderValue
+  // -----------------------
+  app.get("/api/dashboard/sales-overview", verifyToken, async (req, res) => {
+    try {
+      const { year = "2026" } = req.query;
+
+      const params = [];
+      const conditions = buildYearWhere(year, params);
+      conditions.push("o.booking_date IS NOT NULL");
+      const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+      const [rows] = await db.execute(
+        `
+        SELECT
+          DATE(o.booking_date) AS date,
+          COUNT(*) AS orders,
+          COALESCE(SUM(o.total_amount), 0) AS totalSales,
+          COALESCE(SUM(o.received_amount), 0) AS receivedPayments,
+          COALESCE(SUM(o.pending_amount), 0) AS pendingPayments
+        FROM orders o
+        ${where}
+        GROUP BY DATE(o.booking_date)
+        ORDER BY date ASC
+        `,
+        params
+      );
+
+      const series = (rows || []).map((r) => {
+        const orders = Number(r.orders || 0);
+        const totalSales = Number(r.totalSales || 0);
+        return {
+          date: r.date ? String(r.date).slice(0, 10) : "",
+          orders,
+          totalSales,
+          receivedPayments: Number(r.receivedPayments || 0),
+          pendingPayments: Number(r.pendingPayments || 0),
+          totalQuantity: orders,
+          avgOrderValue: orders > 0 ? Math.round(totalSales / orders) : 0,
+        };
+      });
+
+      res.json({ series });
+    } catch (e) {
+      logError("DASHBOARD", "Sales overview error", e);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
 };

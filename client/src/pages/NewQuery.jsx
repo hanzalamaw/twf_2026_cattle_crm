@@ -61,7 +61,7 @@ const NewQuery = () => {
     description: '',
   });
 
-  // ---------- Generate Lead ID based on Order Type ----------
+  // ---------- Generate Lead ID (same pattern as order_id: L-0001-2026) ----------
   const generateLeadIdRef = useCallback(async (orderType) => {
     if (!orderType) {
       setFormData((prev) => ({ ...prev, lead_id: '' }));
@@ -69,28 +69,60 @@ const NewQuery = () => {
     }
 
     const currentToken = localStorage.getItem('token');
-    if (!currentToken) {
-      return;
-    }
+    if (!currentToken) return;
 
     try {
-      const res = await fetch(`${API}/api/booking/generate-lead-id`, {
+      const res = await fetch(`${API}/api/leads/generate-lead-id`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${currentToken}`,
         },
-        body: JSON.stringify({ order_type: orderType }),
+        body: JSON.stringify({}),
       });
 
       if (res.ok) {
         const data = await res.json();
-        setFormData((prev) => ({ ...prev, lead_id: data.lead_id }));
+        setFormData((prev) => ({ ...prev, lead_id: data.lead_id || '' }));
       }
     } catch (err) {
       console.error('Error generating lead ID:', err);
     }
   }, []);
+
+  // ---------- Generate Customer ID (debounced, like NewOrder) ----------
+  const generateCustomerIdRef = useCallback(async (contact) => {
+    if (!contact || String(contact).trim().length < 3) {
+      setFormData((prev) => ({ ...prev, customer_id: '' }));
+      return;
+    }
+    const currentToken = localStorage.getItem('token');
+    if (!currentToken) return;
+    try {
+      const res = await fetch(`${API}/api/booking/generate-customer-id`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${currentToken}`,
+        },
+        body: JSON.stringify({ contact: String(contact).trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.customer_id) {
+        setFormData((prev) => ({ ...prev, customer_id: data.customer_id }));
+      } else {
+        setFormData((prev) => ({ ...prev, customer_id: '' }));
+      }
+    } catch (err) {
+      console.error('Error generating customer ID:', err);
+    }
+  }, []);
+
+  const debounceTimeoutRef = useRef(null);
+  const generateCustomerId = useCallback((contact) => {
+    if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    debounceTimeoutRef.current = setTimeout(() => generateCustomerIdRef(contact), 500);
+  }, [generateCustomerIdRef]);
 
   // ---------- Preset Total Amount Based on Order Type ----------
   const getPresetAmount = (orderType) => {
@@ -118,30 +150,10 @@ const NewQuery = () => {
     });
   };
 
-  // ---------- Generate Customer ID based on Contact ----------
-  const generateCustomerId = async (contact) => {
-    try {
-      if (!contact || String(contact).trim().length < 3) {
-        throw new Error("Contact number is required (minimum 3 characters)");
-      }
-      const contactStr = String(contact).trim();
-
-      // Check existing orders for this contact
-      const [orderRows] = await fetch(`${API}/api/booking/generate-customer-id`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ contact: contactStr }),
-      });
-
-      const data = await orderRows.json();
-      return data.customer_id || '';
-    } catch (error) {
-      console.error('Error generating customer ID:', error);
-      return '';
-    }
+  const handleContactChange = (e) => {
+    const value = e.target.value;
+    setFormData((prev) => ({ ...prev, contact: value }));
+    generateCustomerId(value);
   };
 
   // ---------- Handle Form Submission ----------
@@ -159,15 +171,34 @@ const NewQuery = () => {
       return;
     }
 
-    if (!formData.contact || !formData.order_type || !formData.booking_name || !formData.booking_date || !formData.total_amount) {
-      setError('Please fill in all the required fields');
+    const contactStr = String(formData.contact || '').trim();
+    const bookingNameStr = String(formData.booking_name || '').trim();
+    if (!contactStr || contactStr.length < 3) {
+      setError('Contact is required (minimum 3 characters)');
       setLoading(false);
       return;
     }
-
-    // Generate Customer ID based on contact before form submission
-    const customer_id = await generateCustomerId(formData.contact);
-    setFormData((prev) => ({ ...prev, customer_id }));
+    if (!formData.order_type) {
+      setError('Order type is required');
+      setLoading(false);
+      return;
+    }
+    if (!bookingNameStr) {
+      setError('Booking name is required');
+      setLoading(false);
+      return;
+    }
+    if (!formData.booking_date) {
+      setError('Booking date is required');
+      setLoading(false);
+      return;
+    }
+    const totalNum = Number(formData.total_amount);
+    if (!Number.isFinite(totalNum) || totalNum < 0) {
+      setError('Total amount must be a valid positive number');
+      setLoading(false);
+      return;
+    }
 
     try {
       const res = await fetch(`${API}/api/leads`, {
@@ -182,10 +213,13 @@ const NewQuery = () => {
       const data = await res.json();
 
       if (res.ok) {
-        setSuccess('Query created successfully!');
-        setFormData({ ...formData, lead_id: '', customer_id: '' }); // Clear form fields after success
+        setSuccess('Lead created successfully!');
+        setFormData((prev) => ({ ...prev, lead_id: '', customer_id: '' }));
+      } else if (res.status === 401) {
+        setError('Session expired. Please log in again.');
+        setTimeout(() => navigate('/login'), 1500);
       } else {
-        setError(data.message || 'Failed to create query');
+        setError(data.message || 'Failed to create lead');
       }
     } catch (err) {
       setError('Network error. Please try again.');
@@ -246,7 +280,28 @@ const NewQuery = () => {
         background: '#F9FAFB',
       }}
     >
-      <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#333' }}>New Lead</h2>
+      <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', flexShrink: 0 }}>
+        <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#333', margin: 0 }}>New Lead</h2>
+        <button
+          type="button"
+          onClick={() => navigate('/bookings/queries')}
+          style={{
+            padding: '6px 13px',
+            borderRadius: '6px',
+            border: '1px solid #e0e0e0',
+            background: '#FFFFFF',
+            color: '#666',
+            fontSize: '11px',
+            cursor: 'pointer',
+            fontWeight: '500',
+            transition: 'all 0.2s',
+          }}
+          onMouseOver={(e) => { e.target.style.background = '#F5F5F5'; }}
+          onMouseOut={(e) => { e.target.style.background = '#FFFFFF'; }}
+        >
+          Back to Queries
+        </button>
+      </div>
 
       {error && (
         <div
@@ -292,7 +347,7 @@ const NewQuery = () => {
             }}
           >
             <div>
-              <label style={labelStyle}>Lead ID <span style={{ color: 'red' }}>*</span></label>
+              <label style={labelStyle}>Lead ID <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="text"
                 value={formData.lead_id}
@@ -322,12 +377,14 @@ const NewQuery = () => {
             </div>
 
             <div>
-              <label style={labelStyle}>Order Type <span style={{ color: 'red' }}>*</span></label>
+              <label style={labelStyle}>Order Type <span style={{ color: '#FF5722' }}>*</span></label>
               <select
                 value={formData.order_type}
                 onChange={handleOrderTypeChange}
                 style={inputStyle}
                 required
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
                 <option value="" disabled>Select Order Type</option>
                 {ORDER_TYPES.map((type) => (
@@ -339,18 +396,16 @@ const NewQuery = () => {
             </div>
 
             <div>
-              <label style={labelStyle}>Contact <span style={{ color: 'red' }}>*</span></label>
+              <label style={labelStyle}>Contact <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="text"
                 value={formData.contact}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setFormData((prev) => ({ ...prev, contact: value }));
-                  generateLeadId(value);
-                }}
+                onChange={handleContactChange}
                 required
                 placeholder="e.g., 0300-1234567"
                 style={inputStyle}
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
             </div>
 
@@ -368,7 +423,7 @@ const NewQuery = () => {
             </div>
 
             <div>
-              <label style={labelStyle}>Booking Date <span style={{ color: 'red' }}>*</span></label>
+              <label style={labelStyle}>Booking Date <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="date"
                 value={formData.booking_date}
@@ -377,19 +432,25 @@ const NewQuery = () => {
                 }
                 required
                 style={inputStyle}
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
             </div>
 
             <div>
-              <label style={labelStyle}>Total Amount <span style={{ color: 'red' }}>*</span></label>
+              <label style={labelStyle}>Total Amount <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="number"
+                min="0"
+                step="1"
                 value={formData.total_amount}
                 onChange={(e) =>
                   setFormData((prev) => ({ ...prev, total_amount: e.target.value }))
                 }
                 required
                 style={inputStyle}
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
             </div>
 
@@ -460,7 +521,7 @@ const NewQuery = () => {
             }}
           >
             <div>
-              <label style={labelStyle}>Booking Name</label>
+              <label style={labelStyle}>Booking Name <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="text"
                 value={formData.booking_name}
@@ -469,6 +530,8 @@ const NewQuery = () => {
                 }
                 placeholder="Enter booking name"
                 style={inputStyle}
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
             </div>
 

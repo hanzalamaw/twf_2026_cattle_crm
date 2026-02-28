@@ -60,17 +60,38 @@ export const registerNewQueryRoutes = (app, db, verifyToken) => {
     }
   };
 
-  // ---------- Generate Lead ID based on Order Type ----------
-  const generateLeadId = async (orderType) => {
+  // ---------- Generate Lead ID (same pattern as order_id: L-0001-2026) ----------
+  const generateLeadId = async () => {
     try {
-      const [result] = await db.execute("SELECT MAX(lead_id) AS max_id FROM leads");
-      const maxId = result[0].max_id || 0;
-      return `L-${maxId + 1}`;
+      const year = 2026;
+      // Support both L-0001-2026 and #L-0001-2026
+      const [rows] = await db.execute(
+        `SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(LEADING '#' FROM lead_id), '-', 2), '-', -1) AS UNSIGNED)), 0) AS nextId 
+         FROM leads 
+         WHERE (lead_id LIKE 'L-%' OR lead_id LIKE '#L-%') 
+         AND lead_id LIKE ?`,
+        [`%-${year}`]
+      );
+      const nextNum = Number(rows[0]?.nextId || 0) + 1;
+      const leadId = `L-${String(nextNum).padStart(4, "0")}-${year}`;
+      return leadId;
     } catch (err) {
       logError("LEAD", "Generate Lead ID error", err);
       throw new Error("Unable to generate Lead ID");
     }
   };
+
+  // ---------- POST generate-lead-id (for frontend, like generate-order-id) ----------
+  app.post("/api/leads/generate-lead-id", verifyToken, async (req, res) => {
+    try {
+      const lead_id = await generateLeadId();
+      log("LEAD", "Lead ID generated", { user_id: req.userId, lead_id });
+      return res.json({ lead_id });
+    } catch (err) {
+      logError("LEAD", "Generate lead ID error", err);
+      return res.status(500).json({ message: "Server error" });
+    }
+  });
 
   // ---------- Save new lead ----------
   app.post("/api/leads", verifyToken, async (req, res) => {
@@ -91,38 +112,52 @@ export const registerNewQueryRoutes = (app, db, verifyToken) => {
         description,
       } = req.body;
 
-      // Check required fields
-      if (!contact || !order_type || !booking_name || !booking_date || !total_amount) {
-        return res.status(400).json({ message: "Missing required fields" });
+      const contactStr = contact != null ? String(contact).trim() : "";
+      const orderTypeStr = order_type != null ? String(order_type).trim() : "";
+      const bookingNameStr = booking_name != null ? String(booking_name).trim() : "";
+      const bookingDateStr = booking_date != null ? String(booking_date).trim() : "";
+
+      if (!contactStr || contactStr.length < 3) {
+        return res.status(400).json({ message: "Contact is required (minimum 3 characters)" });
+      }
+      if (!orderTypeStr) {
+        return res.status(400).json({ message: "Order type is required" });
+      }
+      if (!bookingNameStr) {
+        return res.status(400).json({ message: "Booking name is required" });
+      }
+      if (!bookingDateStr) {
+        return res.status(400).json({ message: "Booking date is required" });
+      }
+      const totalNum = Number(total_amount);
+      if (!Number.isFinite(totalNum) || totalNum < 0) {
+        return res.status(400).json({ message: "Total amount must be a valid positive number" });
       }
 
-      // Generate Customer ID if not already provided
-      const customer_id = await generateCustomerId(contact);
+      const customer_id = await generateCustomerId(contactStr);
 
-      // Generate Lead ID based on the order type
-      const lead_id = await generateLeadId(order_type);
+      const lead_id = await generateLeadId();
 
-      // Insert the new lead into the leads table
-      const [result] = await db.execute(
+      await db.execute(
         `INSERT INTO leads 
          (lead_id, customer_id, contact, order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, reference, description) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           lead_id,
           customer_id,
-          contact,
-          order_type,
-          booking_name,
-          shareholder_name || null,
-          alt_contact || null,
-          address || null,
-          area || null,
-          day || null,
-          booking_date,
-          total_amount,
-          order_source || null,
-          reference || null,
-          description || null,
+          contactStr,
+          orderTypeStr,
+          bookingNameStr,
+          (shareholder_name != null && String(shareholder_name).trim()) || null,
+          (alt_contact != null && String(alt_contact).trim()) || null,
+          (address != null && String(address).trim()) || null,
+          (area != null && String(area).trim()) || null,
+          (day != null && String(day).trim()) || null,
+          bookingDateStr,
+          totalNum,
+          (order_source != null && String(order_source).trim()) || null,
+          (reference != null && String(reference).trim()) || null,
+          (description != null && String(description).trim()) || null,
         ]
       );
 
