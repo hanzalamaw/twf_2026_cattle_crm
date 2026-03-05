@@ -75,7 +75,10 @@ export default function QueryManagement() {
 
   const fetchFilters = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/booking/leads/filters`, {
+      const params = new URLSearchParams();
+      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+      const url = params.toString() ? `${API}/api/booking/leads/filters?${params.toString()}` : `${API}/api/booking/leads/filters`;
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -85,7 +88,7 @@ export default function QueryManagement() {
     } catch (e) {
       console.error(e);
     }
-  }, [token]);
+  }, [token, yearFilter]);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -274,7 +277,38 @@ export default function QueryManagement() {
 
   const handleExport = async () => {
     const ids = Array.from(selectedIds);
-    const toExport = ids.length ? leads.filter((r) => ids.includes(r.lead_id)) : leads;
+    // Fetch ALL leads matching current filters (paginate; server caps at 100 per request)
+    let allLeads = [];
+    const limit = 100;
+    let pageNum = 1;
+    let total = 0;
+    do {
+      const params = new URLSearchParams();
+      if (search.trim()) params.set('search', search.trim());
+      if (orderType) params.set('order_type', orderType);
+      if (day) params.set('day', day);
+      if (reference) params.set('reference', reference);
+      if (area) params.set('area', area);
+      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+      params.set('page', String(pageNum));
+      params.set('limit', String(limit));
+      const res = await fetch(`${API}/api/booking/leads?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        setError('Failed to load queries for export');
+        return;
+      }
+      const json = await res.json();
+      const data = Array.isArray(json) ? json : json.data;
+      total = typeof json.total === 'number' ? json.total : 0;
+      const chunk = Array.isArray(data) ? data : [];
+      allLeads = allLeads.concat(chunk);
+      if (chunk.length < limit || allLeads.length >= total) break;
+      pageNum += 1;
+    } while (true);
+
+    const toExport = ids.length ? allLeads.filter((r) => ids.includes(r.lead_id)) : allLeads;
     if (toExport.length === 0) {
       alert('Select at least one row to export, or leave none selected to export all.');
       return;

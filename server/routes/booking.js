@@ -522,10 +522,22 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
 
   app.get("/api/booking/orders/filters", verifyToken, async (req, res) => {
     try {
-      const [slots] = await db.execute("SELECT DISTINCT slot AS value FROM orders WHERE slot IS NOT NULL AND slot != '' ORDER BY slot");
-      const [types] = await db.execute("SELECT DISTINCT order_type AS value FROM orders WHERE order_type IS NOT NULL ORDER BY order_type");
-      const [days] = await db.execute("SELECT DISTINCT day AS value FROM orders WHERE day IS NOT NULL ORDER BY day");
-      const [refs] = await db.execute("SELECT DISTINCT reference AS value FROM orders WHERE reference IS NOT NULL AND reference != '' ORDER BY reference");
+      const { year } = req.query;
+      const conditions = [];
+      const params = [];
+      if (year === "2026" || year === "2025") {
+        conditions.push("YEAR(booking_date) = ?");
+        params.push(year);
+      } else if (year === "2024") {
+        conditions.push("(booking_date IS NULL OR YEAR(booking_date) < 2025)");
+      }
+      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+      const andOrWhere = whereClause ? " AND " : " WHERE ";
+
+      const [slots] = await db.execute(`SELECT DISTINCT slot AS value FROM orders ${whereClause}${andOrWhere}slot IS NOT NULL AND slot != '' ORDER BY slot`, params);
+      const [types] = await db.execute(`SELECT DISTINCT order_type AS value FROM orders ${whereClause}${andOrWhere}order_type IS NOT NULL ORDER BY order_type`, params);
+      const [days] = await db.execute(`SELECT DISTINCT day AS value FROM orders ${whereClause}${andOrWhere}day IS NOT NULL ORDER BY day`, params);
+      const [refs] = await db.execute(`SELECT DISTINCT reference AS value FROM orders ${whereClause}${andOrWhere}reference IS NOT NULL AND reference != '' ORDER BY reference`, params);
       res.json({
         slots: slots.map((r) => r.value),
         order_types: types.map((r) => r.value),
@@ -625,10 +637,22 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
 
   app.get("/api/booking/leads/filters", verifyToken, async (req, res) => {
     try {
-      const [types] = await db.execute("SELECT DISTINCT order_type AS value FROM leads WHERE order_type IS NOT NULL ORDER BY order_type");
-      const [days] = await db.execute("SELECT DISTINCT day AS value FROM leads WHERE day IS NOT NULL ORDER BY day");
-      const [refs] = await db.execute("SELECT DISTINCT reference AS value FROM leads WHERE reference IS NOT NULL AND reference != '' ORDER BY reference");
-      const [areas] = await db.execute("SELECT DISTINCT area AS value FROM leads WHERE area IS NOT NULL AND area != '' ORDER BY area");
+      const { year } = req.query;
+      const conditions = [];
+      const params = [];
+      if (year === "2026" || year === "2025") {
+        conditions.push("YEAR(booking_date) = ?");
+        params.push(year);
+      } else if (year === "2024") {
+        conditions.push("(booking_date IS NULL OR YEAR(booking_date) < 2025)");
+      }
+      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+      const andOrWhere = whereClause ? " AND " : " WHERE ";
+
+      const [types] = await db.execute(`SELECT DISTINCT order_type AS value FROM leads ${whereClause}${andOrWhere}order_type IS NOT NULL ORDER BY order_type`, params);
+      const [days] = await db.execute(`SELECT DISTINCT day AS value FROM leads ${whereClause}${andOrWhere}day IS NOT NULL ORDER BY day`, params);
+      const [refs] = await db.execute(`SELECT DISTINCT reference AS value FROM leads ${whereClause}${andOrWhere}reference IS NOT NULL AND reference != '' ORDER BY reference`, params);
+      const [areas] = await db.execute(`SELECT DISTINCT area AS value FROM leads ${whereClause}${andOrWhere}area IS NOT NULL AND area != '' ORDER BY area`, params);
       res.json({
         order_types: types.map((r) => r.value),
         days: days.map((r) => r.value),

@@ -273,18 +273,28 @@ export default function Expenses() {
   };
 
   const handleExport = async () => {
-    let toExport;
-    if (selectedIds.size > 0) {
-      toExport = expenses.filter((e) => selectedIds.has(e.expense_id));
-    } else {
-      const res = await authFetch(`${API}/api/booking/expenses?page=1&limit=100000`, { headers: { Authorization: `Bearer ${token}` } });
+    // Fetch ALL expenses (paginate; server caps at 100 per request)
+    let allExpenses = [];
+    const limit = 100;
+    let pageNum = 1;
+    let total = 0;
+    do {
+      const res = await authFetch(`${API}/api/booking/expenses?page=${pageNum}&limit=${limit}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) {
         setError('Failed to load expenses for export');
         return;
       }
       const data = await res.json();
-      toExport = Array.isArray(data.data) ? data.data : [];
-    }
+      total = typeof data.total === 'number' ? data.total : 0;
+      const chunk = Array.isArray(data.data) ? data.data : [];
+      allExpenses = allExpenses.concat(chunk);
+      if (chunk.length < limit || allExpenses.length >= total) break;
+      pageNum += 1;
+    } while (true);
+
+    const toExport = selectedIds.size > 0
+      ? allExpenses.filter((e) => selectedIds.has(e.expense_id))
+      : allExpenses;
     if (toExport.length === 0) {
       alert(selectedIds.size > 0 ? 'No selected expenses to export.' : 'No expenses to export.');
       return;

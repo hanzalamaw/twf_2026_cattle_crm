@@ -200,7 +200,10 @@ export default function OrderManagement() {
 
   const fetchFilters = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/booking/orders/filters`, {
+      const params = new URLSearchParams();
+      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+      const url = params.toString() ? `${API}/api/booking/orders/filters?${params.toString()}` : `${API}/api/booking/orders/filters`;
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -210,7 +213,7 @@ export default function OrderManagement() {
     } catch (e) {
       console.error(e);
     }
-  }, [token]);
+  }, [token, yearFilter]);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -390,47 +393,44 @@ export default function OrderManagement() {
   const handleExport = async () => {
     try {
       let toExport = [];
-  
       const ids = Array.from(selectedIds);
-  
-      // ✅ If checkbox selected → export selected rows only
-      if (ids.length > 0) {
-        toExport = orders.filter(r => ids.includes(r.order_id));
-      }
-  
-      // ✅ If nothing selected → export filtered dataset (year + filters follow UI)
-      else {
-        const params = new URLSearchParams();
-  
-        if (search?.trim()) params.set('search', search.trim());
-        if (slot) params.set('slot', slot);
-        if (orderType) params.set('order_type', orderType);
-        if (day) params.set('day', day);
-        if (reference) params.set('reference', reference);
-        if (cowNumber?.trim()) params.set('cow_number', cowNumber.trim());
-  
-        if (yearFilter && yearFilter !== 'all') {
-          params.set('year', yearFilter);
-        }
-  
-        const res = await fetch(
-          `${API}/api/booking/orders?page=1&limit=100000&${params.toString()}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-  
+
+      // Fetch ALL orders matching current filters (paginate; server caps at 100 per request)
+      const params = new URLSearchParams();
+      if (search?.trim()) params.set('search', search.trim());
+      if (slot) params.set('slot', slot);
+      if (orderType) params.set('order_type', orderType);
+      if (day) params.set('day', day);
+      if (reference) params.set('reference', reference);
+      if (cowNumber?.trim()) params.set('cow_number', cowNumber.trim());
+      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+
+      const limit = 100;
+      let pageNum = 1;
+      let allOrders = [];
+      let total = 0;
+      do {
+        params.set('page', String(pageNum));
+        params.set('limit', String(limit));
+        const res = await fetch(`${API}/api/booking/orders?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (!res.ok) {
           alert('Failed to load data for export');
           return;
         }
-  
         const json = await res.json();
         const data = Array.isArray(json) ? json : json.data;
-  
-        toExport = Array.isArray(data) ? data : [];
-      }
-  
+        total = typeof json.total === 'number' ? json.total : 0;
+        const chunk = Array.isArray(data) ? data : [];
+        allOrders = allOrders.concat(chunk);
+        if (chunk.length < limit || allOrders.length >= total) break;
+        pageNum += 1;
+      } while (true);
+
+      // If checkbox selected → export selected rows only; else export all filtered
+      toExport = ids.length > 0 ? allOrders.filter(r => ids.includes(r.order_id)) : allOrders;
+
       if (!toExport.length) {
         alert('No data to export');
         return;

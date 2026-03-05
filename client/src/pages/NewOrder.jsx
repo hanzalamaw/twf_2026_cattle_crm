@@ -7,8 +7,6 @@ const ORDER_TYPES = [
   'Hissa - Standard',
   'Hissa - Premium',
   'Hissa - Waqf',
-  'Goat',
-  'Cow',
   'Goat (Hissa)',
 ];
 
@@ -146,8 +144,8 @@ const NewOrder = () => {
       return;
     }
 
-    // For Cow, Goat, Goat (Hissa) - set to '0' and make editable
-    const editableTypes = ['Cow', 'Goat', 'Goat (Hissa)'];
+    // For Goat (Hissa) - set to '0' and make editable (no duplicate check when both are 0)
+    const editableTypes = ['Goat (Hissa)'];
     if (editableTypes.includes(orderType)) {
       setFormData((prev) => ({
         ...prev,
@@ -198,11 +196,17 @@ const NewOrder = () => {
       'Hissa - Standard': '25000',
       'Hissa - Premium': '29700',
       'Hissa - Waqf': '21000',
-      'Cow': '',
       'Goat (Hissa)': '',
-      'Goat': '',
     };
     return amountMap[orderType] || '';
+  };
+
+  // When Goat (Hissa) is selected and cow/hissa are both 0, skip duplicate check
+  const shouldSkipCowHissaDuplicate = (orderType, cowNumber, hissaNumber) => {
+    if (orderType !== 'Goat (Hissa)') return false;
+    const c = String(cowNumber ?? '').trim();
+    const h = String(hissaNumber ?? '').trim();
+    return (c === '0' || c === '') && (h === '0' || h === '');
   };
 
   // Handle order type change
@@ -237,6 +241,9 @@ const NewOrder = () => {
   // Check if cow/hissa combination already exists
   const checkCowHissaDuplicate = useCallback(async (cowNumber, hissaNumber, orderType, day) => {
     if (!cowNumber || !hissaNumber || !orderType) {
+      return null;
+    }
+    if (shouldSkipCowHissaDuplicate(orderType, cowNumber, hissaNumber)) {
       return null;
     }
 
@@ -280,7 +287,7 @@ const NewOrder = () => {
   // Handle cow number blur (validate on blur)
   const handleCowNumberBlur = async () => {
     const { cow_number, hissa_number, order_type, day } = formData;
-    if (cow_number && hissa_number && order_type) {
+    if (cow_number && hissa_number && order_type && !shouldSkipCowHissaDuplicate(order_type, cow_number, hissa_number)) {
       const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day);
       if (duplicate) {
         setDuplicateError(duplicate);
@@ -298,7 +305,7 @@ const NewOrder = () => {
   // Handle hissa number blur (validate on blur)
   const handleHissaNumberBlur = async () => {
     const { cow_number, hissa_number, order_type, day } = formData;
-    if (cow_number && hissa_number && order_type) {
+    if (cow_number && hissa_number && order_type && !shouldSkipCowHissaDuplicate(order_type, cow_number, hissa_number)) {
       const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day);
       if (duplicate) {
         setDuplicateError(duplicate);
@@ -314,9 +321,9 @@ const NewOrder = () => {
     setDuplicateError(null);
     setLoading(true);
 
-    // Check for duplicate cow/hissa before submission
+    // Check for duplicate cow/hissa before submission (skip when Goat (Hissa) with cow/hissa both 0)
     const { cow_number, hissa_number, order_type, day } = formData;
-    if (cow_number && hissa_number && order_type) {
+    if (cow_number && hissa_number && order_type && !shouldSkipCowHissaDuplicate(order_type, cow_number, hissa_number)) {
       const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day);
       if (duplicate) {
         setDuplicateError(duplicate);

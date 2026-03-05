@@ -196,20 +196,12 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
           COUNT(*) AS totalOrders,
 
-          -- ✅ cleared = pending_amount <= 0
-          SUM(CASE WHEN COALESCE(o.pending_amount,0) <= 0 THEN 1 ELSE 0 END) AS paymentCleared,
-
-          -- ✅ pending completely = received=0 AND pending>0
-          SUM(CASE 
-              WHEN COALESCE(o.received_amount,0) <= 0 AND COALESCE(o.pending_amount,0) > 0 THEN 1
-              ELSE 0
-          END) AS pendingCompletely,
-
-          -- ✅ pending partially = received>0 AND pending>0
-          SUM(CASE 
-              WHEN COALESCE(o.received_amount,0) > 0 AND COALESCE(o.pending_amount,0) > 0 THEN 1
-              ELSE 0
-          END) AS pendingPartially
+          -- Payment Cleared: pending is 0
+          SUM(CASE WHEN COALESCE(o.pending_amount,0) = 0 THEN 1 ELSE 0 END) AS paymentCleared,
+          -- Pending (Completely): pending = total amount (nothing paid)
+          SUM(CASE WHEN COALESCE(o.pending_amount,0) = COALESCE(o.total_amount,0) AND COALESCE(o.total_amount,0) > 0 THEN 1 ELSE 0 END) AS pendingCompletely,
+          -- Pending (Partially): some pending but less than total (some amount paid)
+          SUM(CASE WHEN COALESCE(o.pending_amount,0) > 0 AND COALESCE(o.pending_amount,0) < COALESCE(o.total_amount,0) THEN 1 ELSE 0 END) AS pendingPartially
 
         FROM orders o
         ${where}
@@ -256,14 +248,19 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
       };
 
       for (const r of rows) {
-        const d = r.dayKey;
-        const t = r.typeKey;
-        if (!base[d] || !base[d].rows || base[d].rows.totalOrders[t] === undefined) continue;
+        const d = r.dayKey ?? r.daykey ?? null;
+        const t = r.typeKey ?? r.typekey ?? null;
+        const totalOrders = Number(r.totalOrders ?? r.totalorders ?? 0);
+        const paymentCleared = Number(r.paymentCleared ?? r.paymentcleared ?? 0);
+        const pendingCompletely = Number(r.pendingCompletely ?? r.pendingcompletely ?? 0);
+        const pendingPartially = Number(r.pendingPartially ?? r.pendingpartially ?? 0);
 
-        base[d].rows.totalOrders[t] = Number(r.totalOrders || 0);
-        base[d].rows.paymentCleared[t] = Number(r.paymentCleared || 0);
-        base[d].rows.pendingCompletely[t] = Number(r.pendingCompletely || 0);
-        base[d].rows.pendingPartially[t] = Number(r.pendingPartially || 0);
+        if (!d || !t || !base[d] || !base[d].rows || base[d].rows.totalOrders[t] === undefined) continue;
+
+        base[d].rows.totalOrders[t] = totalOrders;
+        base[d].rows.paymentCleared[t] = paymentCleared;
+        base[d].rows.pendingCompletely[t] = pendingCompletely;
+        base[d].rows.pendingPartially[t] = pendingPartially;
       }
 
       const toCard = (dkey) => {
