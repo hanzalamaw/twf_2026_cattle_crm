@@ -1,6 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+
+const API_BASE = 'http://localhost:5000';
+
+function clearSessionAndRedirectToLogin() {
+  localStorage.removeItem('token');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('user');
+  window.location.href = '/login';
+}
 
 const OPTIONS = [
   { id: 'control', name: 'Control Management', path: '/control', permission: 'control_management' },
@@ -16,6 +25,39 @@ const SubSystemSelection = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [accessBlocked, setAccessBlocked] = useState(null);
+
+  // Validate session on home page load: if token expired, redirect to login without requiring a click
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    const validate = async () => {
+      const res = await fetch(`${API_BASE}/api/me`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) return;
+      if (res.status === 401) {
+        const refreshToken = localStorage.getItem('refreshToken');
+        if (!refreshToken) {
+          clearSessionAndRedirectToLogin();
+          return;
+        }
+        const refreshRes = await fetch(`${API_BASE}/api/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+        if (!refreshRes.ok) {
+          clearSessionAndRedirectToLogin();
+          return;
+        }
+        const data = await refreshRes.json().catch(() => ({}));
+        if (!data?.token) {
+          clearSessionAndRedirectToLogin();
+          return;
+        }
+        localStorage.setItem('token', data.token);
+      }
+    };
+    validate();
+  }, []);
 
   const permissions = user?.permissions || {};
   const hasAccess = (perm) => (perm === 'performance_management' ? true : !!permissions[perm]);

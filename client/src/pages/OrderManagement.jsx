@@ -442,17 +442,20 @@ export default function OrderManagement() {
       const rows = toExport.map(row =>
         COLUMNS.map(col => {
           const val = row[col.key];
-  
-          if (AMOUNT_KEYS.includes(col.key)) return formatAmount(val);
-  
+
+          if (AMOUNT_KEYS.includes(col.key)) {
+            const n = Number(val);
+            return Number.isFinite(n) ? n : (val ?? '');
+          }
+
           if (col.key === 'booking_date') return formatDate(val);
-  
+
           if (col.key === 'payment_status') return val || '—';
-  
+
           return val != null ? String(val) : '—';
         })
       );
-  
+
       const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
       const wb = XLSX.utils.book_new();
   

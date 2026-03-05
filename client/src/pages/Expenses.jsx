@@ -304,7 +304,10 @@ export default function Expenses() {
     const rows = toExport.map((row) =>
       EXPENSE_COLUMNS.map((col) => {
         const val = row[col.key];
-        if (['bank', 'cash', 'total'].includes(col.key)) return formatAmount(val);
+        if (['bank', 'cash', 'total'].includes(col.key)) {
+          const n = Number(val);
+          return Number.isFinite(n) ? n : (val ?? '');
+        }
         if (col.key === 'done_at') return formatDate(val);
         return val != null ? String(val) : '—';
       })

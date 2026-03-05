@@ -57,9 +57,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
   // GET: /api/dashboard/kpis?year=2026|2025|2024|all
   //
-  // ✅ IMPORTANT FIX:
-  // KPIs should be GLOBAL for ALL orders (do NOT filter by TYPE_KEY_SQL)
-  //
+  // ✅ KPIs from 4 order types only: Hissa Premium, Standard, Waqf, Goat (Hissa)
   // ✅ Received Payments = SUM(orders.received_amount)
   // ✅ Cleared Orders = COUNT where pending_amount <= 0
   // ✅ Clearance Rate = clearedOrders / totalOrders * 100
@@ -70,6 +68,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
       const params = [];
       const conditions = buildYearWhere(year, params);
+      conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
       const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
       const [rows] = await db.execute(
@@ -145,7 +144,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
       }
 
       const achievedTotal = map.premium + map.standard + map.waqf + map.goat;
-      const targetTotal = 2000;
+      const targetTotal = year === "2025" ? 1000 : 2000;
 
       const breakdown = [
         { key: "premium", label: TYPES.premium, value: map.premium },

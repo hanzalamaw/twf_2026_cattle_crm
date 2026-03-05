@@ -317,7 +317,10 @@ export default function QueryManagement() {
     const rows = toExport.map((row) =>
       COLUMNS.map((col) => {
         const val = row[col.key];
-        if (AMOUNT_KEYS.includes(col.key)) return formatAmount(val);
+        if (AMOUNT_KEYS.includes(col.key)) {
+          const n = Number(val);
+          return Number.isFinite(n) ? n : (val ?? '');
+        }
         if (col.key === 'booking_date') return formatDate(val);
         if (col.key === 'created_at') return formatCreated(val);
         return val != null ? String(val) : '—';
