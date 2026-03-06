@@ -25,35 +25,51 @@ const SubSystemSelection = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [accessBlocked, setAccessBlocked] = useState(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
 
-  // Validate session on home page load: if token expired, redirect to login without requiring a click
+  // On this page only: validate session on load and auto-logout if token expired or invalid
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (!token) return;
+    if (!token) {
+      clearSessionAndRedirectToLogin();
+      return;
+    }
     const validate = async () => {
-      const res = await fetch(`${API_BASE}/api/me`, { headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) return;
-      if (res.status === 401) {
-        const refreshToken = localStorage.getItem('refreshToken');
-        if (!refreshToken) {
-          clearSessionAndRedirectToLogin();
+      try {
+        const res = await fetch(`${API_BASE}/api/me`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+          setSessionChecked(true);
           return;
         }
-        const refreshRes = await fetch(`${API_BASE}/api/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken }),
-        });
-        if (!refreshRes.ok) {
-          clearSessionAndRedirectToLogin();
+        if (res.status === 401) {
+          const refreshToken = localStorage.getItem('refreshToken');
+          if (!refreshToken) {
+            clearSessionAndRedirectToLogin();
+            return;
+          }
+          const refreshRes = await fetch(`${API_BASE}/api/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken }),
+          });
+          if (!refreshRes.ok) {
+            clearSessionAndRedirectToLogin();
+            return;
+          }
+          const data = await refreshRes.json().catch(() => ({}));
+          if (!data?.token) {
+            clearSessionAndRedirectToLogin();
+            return;
+          }
+          localStorage.setItem('token', data.token);
+          setSessionChecked(true);
           return;
         }
-        const data = await refreshRes.json().catch(() => ({}));
-        if (!data?.token) {
-          clearSessionAndRedirectToLogin();
-          return;
-        }
-        localStorage.setItem('token', data.token);
+        // Any other non-ok (403, 500, etc.) → treat as invalid session on this page
+        clearSessionAndRedirectToLogin();
+      } catch (_err) {
+        // Network error: don't redirect (user might be offline); allow page to show
+        setSessionChecked(true);
       }
     };
     validate();
@@ -86,6 +102,23 @@ const SubSystemSelection = () => {
     setAccessBlocked(null);
     navigate(option.path);
   };
+
+  // While checking session, show minimal UI so we don't flash content before redirect
+  if (!sessionChecked) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '100vh',
+        width: '100vw',
+        background: '#FFFFFF',
+        fontFamily: "'Poppins', 'Inter', sans-serif",
+      }}>
+        <p style={{ color: '#888', fontSize: '14px' }}>Checking session…</p>
+      </div>
+    );
+  }
 
   return (
     <div style={{

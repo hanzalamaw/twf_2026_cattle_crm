@@ -36,7 +36,7 @@ const TYPE_KEY_SQL = `
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissapremium') THEN 'premium'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissastandard') THEN 'standard'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissawaqf') THEN 'waqf'
-    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('goathissa','goat') THEN 'goat'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('goathissa') THEN 'goat'
     ELSE NULL
   END
 `;
@@ -325,6 +325,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
       const paramsO = [];
       const conditionsO = buildYearWhere(year, paramsO);
+      conditionsO.push(`${TYPE_KEY_SQL} IS NOT NULL`);
       conditionsO.push("o.reference IS NOT NULL AND o.reference != ''");
       const whereO = conditionsO.length ? `WHERE ${conditionsO.join(" AND ")}` : "";
 
@@ -413,6 +414,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
       const params = [];
       const conditions = buildYearWhere(year, params);
+      conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
       conditions.push("(o.order_source IS NOT NULL AND o.order_source != '')");
 
       const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -452,6 +454,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
       const params = [];
       const conditions = buildYearWhere(year, params);
+      conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
       conditions.push("o.booking_date IS NOT NULL");
       const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 

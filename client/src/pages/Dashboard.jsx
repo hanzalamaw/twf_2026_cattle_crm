@@ -1038,7 +1038,7 @@ const Dashboard = () => {
         .refRow:hover td { background: #fff8f6 !important; }
 
         /* ---- Source Wise ---- */
-        .sourceWiseCard { background: #f5f5f5; }
+        .sourceWiseCard { background: #fff; }
         .sourceCardHeader {
           display: flex; justify-content: center; align-items: center;
           margin-bottom: 12px; gap: 8px; flex-wrap: wrap;

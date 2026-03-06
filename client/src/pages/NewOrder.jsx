@@ -371,10 +371,8 @@ const NewOrder = () => {
             setSuccess('');
           }, 2000);
         } else {
-          // Navigate away as before
-          setTimeout(() => {
-            navigate('/bookings/orders');
-          }, 1500);
+          // Stay on same page; success message already shown
+          setTimeout(() => setSuccess(''), 3000);
         }
       } else {
         setError(data.message || 'Failed to create order');
@@ -903,42 +901,49 @@ const NewOrder = () => {
           </div>
         </div>
 
-        {/* Livestock Information */}
-        <div style={sectionStyle}>
-          <div style={sectionTitleStyle}>Livestock Information</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '13px' }}>
-            <div>
-              <label style={labelStyle}>Cow Number</label>
-              <input
-                type="text"
-                value={formData.cow_number}
-                onChange={handleCowNumberChange}
-                placeholder="Enter cow number"
-                style={inputStyle}
-                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
-                onBlur={(e) => {
-                  e.target.style.borderColor = '#e0e0e0';
-                  handleCowNumberBlur();
-                }}
-              />
+        {/* Livestock Information (disabled for Goat (Hissa)) */}
+        {(() => {
+          const isGoatHissa = formData.order_type === 'Goat (Hissa)';
+          return (
+            <div style={{ ...sectionStyle, opacity: isGoatHissa ? 0.6 : 1, pointerEvents: isGoatHissa ? 'none' : 'auto' }}>
+              <div style={sectionTitleStyle}>Livestock Information</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '13px' }}>
+                <div>
+                  <label style={labelStyle}>Cow Number</label>
+                  <input
+                    type="text"
+                    value={formData.cow_number}
+                    onChange={handleCowNumberChange}
+                    placeholder="Enter cow number"
+                    style={inputStyle}
+                    disabled={isGoatHissa}
+                    onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = '#e0e0e0';
+                      handleCowNumberBlur();
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Hissa Number</label>
+                  <input
+                    type="text"
+                    value={formData.hissa_number}
+                    onChange={handleHissaNumberChange}
+                    placeholder="Enter hissa number"
+                    style={inputStyle}
+                    disabled={isGoatHissa}
+                    onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = '#e0e0e0';
+                      handleHissaNumberBlur();
+                    }}
+                  />
+                </div>
+              </div>
             </div>
-            <div>
-              <label style={labelStyle}>Hissa Number</label>
-              <input
-                type="text"
-                value={formData.hissa_number}
-                onChange={handleHissaNumberChange}
-                placeholder="Enter hissa number"
-                style={inputStyle}
-                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
-                onBlur={(e) => {
-                  e.target.style.borderColor = '#e0e0e0';
-                  handleHissaNumberBlur();
-                }}
-              />
-            </div>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Additional Information */}
         <div style={sectionStyle}>
