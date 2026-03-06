@@ -117,6 +117,11 @@ const MENU_ITEMS = [
   { id: 'performance', label: 'Performance Management', icon: <PerformanceIcon />, path: '/performance', permission: 'performance_management' },
 ];
 
+const PERFORMANCE_MENU_ITEMS = [
+  { id: 'perf-admin', label: 'Admin', icon: <PerformanceIcon />, path: '/performance/admin', permission: 'performance_management' },
+  { id: 'perf-dashboard', label: 'Dashboard', icon: <DashboardIcon />, path: '/performance/dashboard', permission: 'performance_management' },
+];
+
 const BOOKING_MENU_ITEMS = [
   { id: 'bm-dashboard', label: 'Dashboard', iconDefault: '/icons/dashboard_default.png', iconActive: '/icons/dashboard_active.png', path: '/bookings/dashboard', managersOnly: true },
   { id: 'bm-new-query', label: 'New Query', iconDefault: '/icons/new_query_default.png', iconActive: '/icons/new_query_active.png', path: '/bookings/new-query', permission: 'booking_management' },
@@ -137,9 +142,10 @@ function Sidebar() {
   const roleId = user?.role_id;
   const isManager = [3, 5, 7].includes(roleId);
   const isBookingContext = location.pathname.startsWith('/bookings');
+  const isPerformanceContext = location.pathname.startsWith('/performance');
 
   const isAdminOrManager = [1, 2, 3, 5, 7].includes(roleId);
-  const items = isBookingContext ? BOOKING_MENU_ITEMS : MENU_ITEMS;
+  const items = isBookingContext ? BOOKING_MENU_ITEMS : isPerformanceContext ? PERFORMANCE_MENU_ITEMS : MENU_ITEMS;
   const visibleItems = items.filter((item) => {
     if (item.managersOnly) {
       return isBookingContext ? isAdminOrManager : isManager;
@@ -182,7 +188,7 @@ function Sidebar() {
       </div>
 
       <nav className="sidebar-nav">
-        <span className="nav-section-label">{isExpanded ? (isBookingContext ? 'BOOKING MANAGEMENT' : 'MANAGEMENT') : ''}</span>
+        <span className="nav-section-label">{isExpanded ? (isBookingContext ? 'BOOKING MANAGEMENT' : isPerformanceContext ? 'PERFORMANCE' : 'MANAGEMENT') : ''}</span>
         <ul className="nav-list">
           {visibleItems.map((item) => (
             <li key={item.id} className={`nav-item ${isActive(item.path) ? 'active' : ''}`}>
@@ -194,9 +200,9 @@ function Sidebar() {
                 <span className="nav-icon nav-icon-main">
                   {item.iconDefault ? (
                     <img src={isActive(item.path) ? item.iconActive : item.iconDefault} alt="" style={{ width: '20px', height: '20px', display: 'block' }} />
-                  ) : (
+                  ) : item.icon ? (
                     item.icon
-                  )}
+                  ) : null}
                 </span>
                 {isExpanded && <span className="nav-label">{item.label}</span>}
               </button>

@@ -13,7 +13,8 @@ import Operations from './pages/Operations';
 import Farm from './pages/Farm';
 import Procurement from './pages/Procurement';
 import Accounting from './pages/Accounting';
-import Performance from './pages/Performance';
+import PerformanceAdmin from './pages/PerformanceAdmin';
+import PerformanceDashboard from './pages/PerformanceDashboard';
 import Dashboard from './pages/Dashboard';
 import BookingPlaceholder from './pages/BookingPlaceholder';
 import AcceptTerms from './pages/AcceptTerms';
@@ -90,6 +91,8 @@ const ROUTE_TITLES = {
   '/procurement': 'Procurement Management',
   '/accounting': 'Accounting & Finance',
   '/performance': 'Performance Management',
+  '/performance/admin': 'Performance Admin',
+  '/performance/dashboard': 'Performance Dashboard',
 };
 
 const API_BASE = 'http://localhost:5000';
@@ -218,7 +221,9 @@ function App() {
           </Route>
 
           <Route path="/performance" element={<ProtectedRoute><RequirePermission permission="performance_management"><MainLayout systemName="Performance Management" /></RequirePermission></ProtectedRoute>}>
-            <Route index element={<Performance />} />
+            <Route index element={<Navigate to="/performance/admin" replace />} />
+            <Route path="admin" element={<PerformanceAdmin />} />
+            <Route path="dashboard" element={<PerformanceDashboard />} />
           </Route>
         </Routes>
       </Router>
