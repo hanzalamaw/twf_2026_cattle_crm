@@ -95,7 +95,7 @@ const KPIBox = ({ title, value, icon, bubble, isMoney, isPercent, reveal = true,
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="kpiIcon" style={{ background: bubble }}>
+      <div className="kpiIcon">
         {typeof icon === "string" && (icon.startsWith("/") || icon.endsWith(".png")) ? (
           <img src={icon} alt="" className="kpiIconImg" />
         ) : (
@@ -267,7 +267,7 @@ const TargetDonut = ({
           return (
             <>
               <div className="donutSmall" style={{ color }}>{seg?.label}</div>
-              <div className="donutBig" style={{ fontSize: 32, color }}>
+              <div className="donutBig" style={{ color }}>
                 <AnimatedNumber value={Number(seg?.value || 0)} duration={400} format={(n) => fmt(Math.round(n))} />
               </div>
               <div className="donutRed" style={{ color: "#6b7280" }}>
@@ -278,18 +278,18 @@ const TargetDonut = ({
         })() : isOver ? (
           /* Over-achievement center */
           <>
-            <div className="donutSmall" style={{ color: "#6b7280", fontSize: 11 }}>Total Orders</div>
-            <div className="donutBig" style={{ fontSize: 36, color: "#111827" }}>
+            <div className="donutSmall" style={{ color: "#6b7280" }}>Total Orders</div>
+            <div className="donutBig" style={{ color: "#111827" }}>
               <AnimatedNumber value={achieved} duration={750} format={(n) => fmt(Math.round(n))} />
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
-              <span style={{ fontSize: 13, color: "#d97706", fontWeight: 700 }}>🎯 </span>
-              <span style={{ fontSize: 11, color: "#d97706", fontWeight: 700 }}>Target Hit!</span>
+              <span style={{ fontSize: 13, color: "#d97706", fontWeight: 600 }}>🎯 </span>
+              <span style={{ fontSize: 12, color: "#d97706", fontWeight: 600 }}>Target Hit!</span>
             </div>
             <div className="donutOverBadge animPop">
               +<AnimatedNumber value={overAmount} duration={800} format={(n) => fmt(Math.round(n))} /> over
             </div>
-            <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 1 }}>
+            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 1, fontWeight: 400 }}>
               (<AnimatedNumber value={overPct} duration={800} format={(n) => `+${n.toFixed(1)}%`} />)
             </div>
           </>
@@ -673,8 +673,8 @@ const SalesOverviewChart = ({ series, reveal }) => {
               {chartType === "line" ? (
                 <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="#6b7280" />
-                  <YAxis tick={{ fontSize: 10 }} stroke="#6b7280" tickFormatter={(v) => fmt(v)} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#6b7280" />
+                  <YAxis tick={{ fontSize: 11 }} stroke="#6b7280" tickFormatter={(v) => fmt(v)} />
                   <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#FF5722", strokeWidth: 1 }} />
                   <Line
                     type="monotone"
@@ -688,8 +688,8 @@ const SalesOverviewChart = ({ series, reveal }) => {
               ) : (
                 <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="#6b7280" />
-                  <YAxis tick={{ fontSize: 10 }} stroke="#6b7280" tickFormatter={(v) => fmt(v)} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#6b7280" />
+                  <YAxis tick={{ fontSize: 11 }} stroke="#6b7280" tickFormatter={(v) => fmt(v)} />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey={activeMetric} fill="#FF5722" radius={[4, 4, 0, 0]}>
                     {data.map((_, idx) => (
@@ -841,13 +841,13 @@ const Dashboard = () => {
           display: flex; justify-content: space-between; align-items: center;
           gap: 10px; flex-wrap: wrap;
         }
-        .hTitle { margin:0; font-size:18px; font-weight:700; color:#111827; font-family: inherit; }
-        .hSub { margin:4px 0 0; font-size:12px; font-weight:400; color:#6b7280; font-family: inherit; }
+        .hTitle { margin:0; font-size:17px; font-weight:600; color:#111827; font-family: inherit; }
+        .hSub { margin:4px 0 0; font-size:13px; font-weight:400; color:#6b7280; font-family: inherit; }
         .headerRight { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 
         .select {
           padding: 6px 10px; border-radius: 8px; border: 1px solid #e5e7eb;
-          font-size: 12px; background: #fff; cursor: pointer; transition: border-color .15s;
+          font-size: 13px; font-weight: 400; background: #fff; cursor: pointer; transition: border-color .15s;
         }
         .select:hover { border-color: #FF5722; }
         .select:focus { outline: none; border-color: #FF5722; box-shadow: 0 0 0 3px rgba(255,87,34,.12); }
@@ -864,14 +864,14 @@ const Dashboard = () => {
 
         .refreshBtn {
           padding: 7px 12px; border-radius: 10px; border: 1px solid #e5e7eb;
-          background: #fff; cursor: pointer; font-size: 12px; font-weight: 600;
+          background: #fff; cursor: pointer; font-size: 13px; font-weight: 500;
           color: #374151; display: flex; align-items: center; gap: 5px;
           transition: all .15s; box-shadow: 0 2px 6px rgba(0,0,0,0.04);
         }
         .refreshBtn:hover { background: #fff4f0; border-color: #FF5722; color: #FF5722; }
         .refreshIcon { font-size: 14px; display:inline-block; }
         .refreshIcon.spinning { animation: spin .7s linear infinite; }
-        .lastRefreshed { font-size: 10px; color: #9ca3af; white-space: nowrap; }
+        .lastRefreshed { font-size: 11px; color: #9ca3af; white-space: nowrap; font-weight: 400; }
 
         .kpiGrid {
           display: grid;
@@ -883,7 +883,7 @@ const Dashboard = () => {
 
         .kpiCard {
           background: #fff; border-radius: 10px; padding: 14px 12px; min-height: 72px;
-          display: flex; align-items: center; gap: 10px;
+          display: flex; align-items: center; gap: 8px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.04); border: 1px solid #f1f1f1;
           position: relative; overflow: hidden;
           transition: transform .18s, box-shadow .18s, border-color .18s; cursor: default;
@@ -893,16 +893,16 @@ const Dashboard = () => {
         }
         .kpiGlow { position: absolute; inset: 0; opacity: .07; pointer-events: none; border-radius: inherit; transition: opacity .2s; }
         .kpiIcon {
-          width: 40px; height: 40px; border-radius: 8px;
+          width: 64px; height: 64px;
           display: flex; align-items: center; justify-content: center;
-          font-size: 18px; flex: 0 0 auto; transition: transform .2s;
-          overflow: hidden;
+          flex: 0 0 auto; transition: transform .2s;
         }
-        .kpiIconImg { width: 22px; height: 22px; object-fit: contain; }
-        .kpiCard:hover .kpiIcon { transform: scale(1.12) rotate(-4deg); }
-        .kpiTitle { font-size: 12px; font-weight: 400; color: #6b7280; font-family: inherit; }
-        .kpiValue { font-size: 20px; font-weight: 600; color: #111827; line-height: 1.15; font-family: inherit; }
-        .kpiTrend { font-size: 10px; margin-top: 2px; font-weight: 600; }
+        .kpiIconImg { width: 50px; height: 50px; object-fit: contain; }
+        .kpiCard:hover .kpiIcon { transform: scale(1.08); }
+        .kpiText { display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+        .kpiTitle { font-size: 11px; font-weight: 400; color: #6b7280; font-family: inherit; }
+        .kpiValue { font-size: 18px; font-weight: 600; color: #111827; line-height: 1.2; font-family: inherit; }
+        .kpiTrend { font-size: 11px; margin-top: 2px; font-weight: 500; }
         .kpiTrendUp { color: #16a34a; }
         .kpiTrendDown { color: #dc2626; }
 
@@ -919,17 +919,17 @@ const Dashboard = () => {
         .card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.07); }
 
         .cardTitle, .cardTitleBig {
-          text-align: center; font-size: 17px; font-weight: 700; letter-spacing: .3px;
+          text-align: center; font-size: 15px; font-weight: 600; letter-spacing: .2px;
           color: #111827; margin-bottom: 10px; white-space: nowrap;
         }
-        @media(max-width:720px) { .cardTitleBig, .cardTitle { font-size:15px; white-space:normal; } }
+        @media(max-width:720px) { .cardTitleBig, .cardTitle { font-size: 14px; white-space: normal; } }
 
         .cardTitleClickable {
           cursor: pointer; display: flex; align-items: center; justify-content: center;
           gap: 8px; user-select: none; transition: color .15s;
         }
         .cardTitleClickable:hover { color: #FF5722; }
-        .collapseChevron { font-size: 10px; }
+        .collapseChevron { font-size: 11px; font-weight: 500; }
 
         /* ---- Target ---- */
         .targetGrid {
@@ -942,9 +942,9 @@ const Dashboard = () => {
           display: flex; flex-direction: column; align-items: center; justify-content: center;
           text-align: center; white-space: nowrap; pointer-events: none;
         }
-        .donutSmall { font-size: 13px; color: #374151; }
-        .donutBig { font-size: 42px; font-weight: 800; color: #1f2937; }
-        .donutRed { font-size: 11px; color: #b91c1c; font-style: italic; }
+        .donutSmall { font-size: 12px; font-weight: 500; color: #374151; }
+        .donutBig { font-size: 28px; font-weight: 600; color: #1f2937; }
+        .donutRed { font-size: 12px; font-weight: 400; color: #b91c1c; font-style: italic; }
         .donutRed * { font-style: inherit; }
 
         /* Over-achievement badge in center */
@@ -952,7 +952,7 @@ const Dashboard = () => {
           margin-top: 3px;
           background: linear-gradient(135deg, #fbbf24, #f59e0b);
           color: #78350f;
-          font-size: 11px; font-weight: 800;
+          font-size: 11px; font-weight: 600;
           padding: 2px 10px; border-radius: 20px;
           box-shadow: 0 2px 6px rgba(251,191,36,0.4);
           animation: pulseGold 2s ease-in-out infinite;
@@ -970,11 +970,11 @@ const Dashboard = () => {
           transform: translateX(3px); box-shadow: 0 2px 8px rgba(0,0,0,0.06);
         }
         .progressHead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-        .progressLabel { font-size: 11px; font-weight: 700; color: #111827; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+        .progressLabel { font-size: 12px; font-weight: 500; color: #111827; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
         .progressDot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transition: transform .2s; }
         .progressRowActive .progressDot { transform: scale(1.5); }
-        .progressVal { font-size: 11px; font-weight: 800; color: #111827; white-space: nowrap; }
-        .progressPct { font-weight: 600; color: #374151; font-size: 10px; }
+        .progressVal { font-size: 12px; font-weight: 600; color: #111827; white-space: nowrap; }
+        .progressPct { font-weight: 500; color: #374151; font-size: 11px; }
         .progressTrack { height: 7px; border-radius: 999px; background: #e5e7eb; overflow: hidden; }
         .progressFill { height: 100%; border-radius: 999px; }
         .donutWrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
@@ -986,29 +986,29 @@ const Dashboard = () => {
           background: #fff; min-width: 640px;
         }
         .tblDayWise th, .tblDayWise td {
-          padding: 8px 10px; font-size: 13px;
+          padding: 8px 10px; font-size: 13px; font-weight: 400;
           border-bottom: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; font-family: inherit;
         }
         .tblDayWise th:last-child, .tblDayWise td:last-child { border-right: none; }
         .tblDayWise tbody tr:last-child td { border-bottom: none; }
         .dayWiseCorner {
           background: #f3f4f6; width: 170px; min-width: 170px;
-          font-size: 10px; font-weight: 700; text-transform: uppercase;
-          letter-spacing: .5px; color: #9ca3af; text-align: center; vertical-align: middle;
+          font-size: 11px; font-weight: 600; text-transform: uppercase;
+          letter-spacing: .4px; color: #6b7280; text-align: center; vertical-align: middle;
           border-bottom: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb;
         }
         .dayWiseDayHeader {
-          background: #FF5722; color: #fff; font-weight: 700; font-size: 14px;
-          text-align: center; letter-spacing: .5px; padding: 10px 12px;
+          background: #FF5722; color: #fff; font-weight: 600; font-size: 13px;
+          text-align: center; letter-spacing: .3px; padding: 10px 12px;
           border-bottom: 1px solid rgba(255,255,255,0.25);
         }
         .dayWiseDayHeaderSep { border-left: 4px solid #fff !important; }
-        .dayWiseColHeader { background: #f9fafb; color: #374151; font-weight: 600; font-size: 12px; text-align: center; }
+        .dayWiseColHeader { background: #f9fafb; color: #374151; font-weight: 500; font-size: 12px; text-align: center; }
         .dayWiseColGroupStart { border-left: 4px solid #fff !important; }
         .dayWiseCellGroupStart { border-left: 4px solid #fff !important; }
         .dayWiseRowLabel { background: #f3f4f6; color: #374151; font-weight: 500; font-size: 13px; border-right: 1px solid #e5e7eb; }
-        .dayWiseCell { text-align: center; color: #111827; font-size: 13px; font-weight: 500; transition: background .15s; }
-        .dayWiseCellTotal { font-weight: 700; color: #111827; font-size: 13px; }
+        .dayWiseCell { text-align: center; color: #111827; font-size: 13px; font-weight: 400; transition: background .15s; }
+        .dayWiseCellTotal { font-weight: 600; color: #111827; font-size: 13px; }
         .dayWiseRowHighlight td { background: #fff4f0 !important; }
         .tblDayWise tbody tr { transition: background .1s; }
 
@@ -1020,20 +1020,20 @@ const Dashboard = () => {
           border-radius: 10px; overflow: hidden; min-width: 560px; table-layout: fixed;
         }
         .tblRefOld th, .tblRefOld td {
-          padding: 6px 8px; font-size: 11px; color: #243447;
+          padding: 8px 10px; font-size: 12px; font-weight: 400; color: #374151;
           text-align: center; border-bottom: 1px solid #ededed; border-right: 1px solid #ededed;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
-        .tblRefOld th { background: #f0f0f0; font-weight: 900; white-space: normal; line-height: 1.15; }
+        .tblRefOld th { background: #f0f0f0; font-weight: 600; white-space: normal; line-height: 1.25; }
         .tblRefOld tr:last-child td { border-bottom: none; }
         .tblRefOld th:last-child, .tblRefOld td:last-child { border-right: none; }
         .tblRefOld th:first-child, .tblRefOld td:first-child {
-          text-align: left; width: 140px; font-weight: 700; background: #fafafa; white-space: nowrap;
+          text-align: left; width: 140px; font-weight: 600; background: #fafafa; white-space: nowrap;
         }
         .sortableCol { transition: background .15s; }
         .sortableCol:hover { background: #ffe8e0 !important; color: #FF5722; }
         .activeSortCol { background: #fff0eb !important; color: #FF5722; }
-        .sortIcon { font-size: 10px; opacity: .7; }
+        .sortIcon { font-size: 11px; opacity: .8; font-weight: 500; }
         .refRow { transition: background .12s; }
         .refRow:hover td { background: #fff8f6 !important; }
 
@@ -1052,14 +1052,14 @@ const Dashboard = () => {
           transition: transform .15s, box-shadow .15s, border-color .15s;
         }
         .sourceCardInteractive:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: #d1d5db; }
-        .sourceCardEmpty { justify-content: center; color: #6b7280; font-size: 12px; }
+        .sourceCardEmpty { justify-content: center; color: #6b7280; font-size: 13px; font-weight: 400; }
         .sourceIcon {
           width: 28px; height: 28px; border-radius: 6px; background: #7c3aed; color: #fff;
           display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 12px;
         }
         .sourcePin { font-size: 12px; }
-        .sourceName { font-size: 13px; font-weight: 400; color: #111827; flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .sourceCount { font-size: 16px; font-weight: 600; color: #111827; white-space: nowrap; flex-shrink: 0; }
+        .sourceName { font-size: 13px; font-weight: 500; color: #111827; flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sourceCount { font-size: 15px; font-weight: 600; color: #111827; white-space: nowrap; flex-shrink: 0; }
 
         /* ---- Sales Overview ---- */
         .salesOverviewHeader { display: flex; justify-content: space-between; align-items: center; position: relative; }
@@ -1067,26 +1067,26 @@ const Dashboard = () => {
         .salesOverviewHeaderRight { margin-left: auto; z-index: 1; }
         .viewToggle { display: flex; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
         .viewToggleBtn {
-          padding: 5px 10px; border: none; background: #fff;
-          font-size: 11px; font-weight: 600; color: #6b7280; cursor: pointer; transition: background .15s, color .15s;
+          padding: 6px 12px; border: none; background: #fff;
+          font-size: 12px; font-weight: 500; color: #6b7280; cursor: pointer; transition: background .15s, color .15s;
         }
         .viewToggleBtn:hover { background: #f9f9f9; color: #374151; }
         .viewToggleActive { background: #FF5722 !important; color: #fff !important; }
         .metricChips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
         .metricChip {
-          padding: 4px 10px; border-radius: 20px; border: 1px solid #e5e7eb;
-          background: #f9fafb; font-size: 11px; font-weight: 600; color: #6b7280;
+          padding: 5px 12px; border-radius: 20px; border: 1px solid #e5e7eb;
+          background: #f9fafb; font-size: 12px; font-weight: 500; color: #6b7280;
           cursor: pointer; transition: all .15s;
         }
         .metricChip:hover { border-color: #FF5722; color: #FF5722; background: #fff4f0; }
         .metricChipActive { background: #FF5722 !important; color: #fff !important; border-color: #FF5722 !important; }
         .chartWrap { width: 100%; min-height: 260px; }
-        .chartPlaceholder { padding: 24px; text-align: center; color: #6b7280; font-size: 12px; }
+        .chartPlaceholder { padding: 24px; text-align: center; color: #6b7280; font-size: 13px; font-weight: 400; }
         .chartTooltip {
           background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px;
-          box-shadow: 0 4px 12px rgba(0,0,0,.1); font-size: 11px; min-width: 180px;
+          box-shadow: 0 4px 12px rgba(0,0,0,.1); font-size: 12px; font-weight: 400; min-width: 180px;
         }
-        .chartTooltipTitle { font-weight: 700; margin-bottom: 6px; color: #111827; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+        .chartTooltipTitle { font-weight: 600; font-size: 12px; margin-bottom: 6px; color: #111827; border-bottom: 1px solid #eee; padding-bottom: 4px; }
         .chartTooltipRow { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; }
         .chartTooltipRow.green { color: #166534; }
         .chartTooltipRow.red { color: #b91c1c; }
