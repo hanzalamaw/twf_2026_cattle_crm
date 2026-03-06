@@ -144,7 +144,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
       }
 
       const achievedTotal = map.premium + map.standard + map.waqf + map.goat;
-      const targetTotal = year === "2025" ? 1000 : 2000;
+      const targetTotal = year === "2024" ? 500 : year === "2025" ? 1000 : 2000;
 
       const breakdown = [
         { key: "premium", label: TYPES.premium, value: map.premium },

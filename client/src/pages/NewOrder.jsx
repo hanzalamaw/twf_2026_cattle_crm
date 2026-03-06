@@ -138,7 +138,7 @@ const NewOrder = () => {
   }, []);
 
   // Get available cow/hissa when order_type or day changes
-  const getAvailableCowHissa = useCallback(async (orderType, day) => {
+  const getAvailableCowHissa = useCallback(async (orderType, day, bookingDate) => {
     if (!orderType) {
       setFormData((prev) => ({ ...prev, cow_number: '', hissa_number: '' }));
       return;
@@ -167,7 +167,7 @@ const NewOrder = () => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${currentToken}`,
         },
-        body: JSON.stringify({ order_type: orderType, day: day || null }),
+        body: JSON.stringify({ order_type: orderType, day: day || null, booking_date: bookingDate || null }),
       });
 
       if (res.ok) {
@@ -219,7 +219,7 @@ const NewOrder = () => {
       // Then trigger async operations
       generateOrderId(value);
       // Recalculate cow/hissa with current day value
-      getAvailableCowHissa(value, prev.day);
+      getAvailableCowHissa(value, prev.day, prev.booking_date);
       return newData;
     });
   };
@@ -232,14 +232,14 @@ const NewOrder = () => {
       const newData = { ...prev, day: value };
       // Recalculate cow/hissa when day changes (if order_type is set)
       if (prev.order_type) {
-        getAvailableCowHissa(prev.order_type, value);
+        getAvailableCowHissa(prev.order_type, value, prev.booking_date);
       }
       return newData;
     });
   };
 
   // Check if cow/hissa combination already exists
-  const checkCowHissaDuplicate = useCallback(async (cowNumber, hissaNumber, orderType, day) => {
+  const checkCowHissaDuplicate = useCallback(async (cowNumber, hissaNumber, orderType, day, bookingDate) => {
     if (!cowNumber || !hissaNumber || !orderType) {
       return null;
     }
@@ -264,6 +264,7 @@ const NewOrder = () => {
           hissa_number: hissaNumber,
           order_type: orderType,
           day: day || null,
+          booking_date: bookingDate || null,
         }),
       });
 
@@ -286,9 +287,9 @@ const NewOrder = () => {
 
   // Handle cow number blur (validate on blur)
   const handleCowNumberBlur = async () => {
-    const { cow_number, hissa_number, order_type, day } = formData;
+    const { cow_number, hissa_number, order_type, day, booking_date } = formData;
     if (cow_number && hissa_number && order_type && !shouldSkipCowHissaDuplicate(order_type, cow_number, hissa_number)) {
-      const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day);
+      const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day, booking_date);
       if (duplicate) {
         setDuplicateError(duplicate);
       }
@@ -304,9 +305,9 @@ const NewOrder = () => {
 
   // Handle hissa number blur (validate on blur)
   const handleHissaNumberBlur = async () => {
-    const { cow_number, hissa_number, order_type, day } = formData;
+    const { cow_number, hissa_number, order_type, day, booking_date } = formData;
     if (cow_number && hissa_number && order_type && !shouldSkipCowHissaDuplicate(order_type, cow_number, hissa_number)) {
-      const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day);
+      const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day, booking_date);
       if (duplicate) {
         setDuplicateError(duplicate);
       }
@@ -322,9 +323,9 @@ const NewOrder = () => {
     setLoading(true);
 
     // Check for duplicate cow/hissa before submission (skip when Goat (Hissa) with cow/hissa both 0)
-    const { cow_number, hissa_number, order_type, day } = formData;
+    const { cow_number, hissa_number, order_type, day, booking_date } = formData;
     if (cow_number && hissa_number && order_type && !shouldSkipCowHissaDuplicate(order_type, cow_number, hissa_number)) {
-      const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day);
+      const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day, booking_date);
       if (duplicate) {
         setDuplicateError(duplicate);
         setLoading(false);
@@ -363,7 +364,7 @@ const NewOrder = () => {
           generateOrderId(currentOrderType);
           
           // Regenerate cow/hissa numbers
-          getAvailableCowHissa(currentOrderType, currentDay);
+          getAvailableCowHissa(currentOrderType, currentDay, formData.booking_date);
           
           // Clear only order_id, cow_number, and hissa_number (they will be regenerated)
           // Keep all other fields

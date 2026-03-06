@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
 
 const API = 'http://localhost:5000';
@@ -24,6 +24,8 @@ const COLUMNS = [
 ];
 
 const AMOUNT_KEYS = ['total_amount'];
+
+const SLOTS = ['SLOT 1', 'SLOT 2', 'SLOT 3', 'SLOT GOAT', 'SLOT WAQF'];
 
 function formatAmount(val) {
   if (val == null || val === '') return '—';
@@ -63,6 +65,9 @@ export default function QueryManagement() {
   const [totalCount, setTotalCount] = useState(0);
   const [confirmingLeadId, setConfirmingLeadId] = useState(null);
   const [confirmModalLead, setConfirmModalLead] = useState(null);
+  const [confirmForm, setConfirmForm] = useState({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
+  const [confirmDuplicateError, setConfirmDuplicateError] = useState(null);
+  const confirmDuplicateCheckTimeoutRef = useRef(null);
   const [area, setArea] = useState('');
   const [editOpen, setEditOpen] = useState(false);
   const [editRow, setEditRow] = useState(null);
@@ -126,6 +131,51 @@ export default function QueryManagement() {
   useEffect(() => { setPage(1); }, [search, orderType, day, reference, area, yearFilter]);
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
+  // When confirm modal opens, auto-generate order_id and cow/hissa like New Order page
+  useEffect(() => {
+    if (!confirmModalLead || !token) return;
+    const lead = confirmModalLead;
+    const orderType = lead.type || '';
+    const day = lead.day || '';
+    const dateStr = formatDate(lead.booking_date) || '';
+    setConfirmForm((prev) => ({ ...prev, booking_date: dateStr }));
+
+    const generateOrderId = async () => {
+      if (!orderType) return;
+      try {
+        const res = await fetch(`${API}/api/booking/generate-order-id`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ order_type: orderType }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setConfirmForm((prev) => ({ ...prev, order_id: data.order_id || '' }));
+        }
+      } catch (e) { console.error(e); }
+    };
+    const getAvailableCowHissa = async () => {
+      if (!orderType) return;
+      if (orderType === 'Goat (Hissa)') {
+        setConfirmForm((prev) => ({ ...prev, cow_number: '0', hissa_number: '0' }));
+        return;
+      }
+      try {
+        const res = await fetch(`${API}/api/booking/get-available-cow-hissa`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ order_type: orderType, day: day || null, booking_date: dateStr || null }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setConfirmForm((prev) => ({ ...prev, cow_number: data.cow_number || '', hissa_number: data.hissa_number || '' }));
+        }
+      } catch (e) { console.error(e); }
+    };
+    generateOrderId();
+    getAvailableCowHissa();
+  }, [confirmModalLead, token]);
+
   const toggleSelect = (leadId) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -151,21 +201,113 @@ export default function QueryManagement() {
     setError('');
   };
 
-  const handleConfirmClick = (lead) => setConfirmModalLead(lead);
+  const shouldSkipCowHissaDuplicate = (orderType, cowNumber, hissaNumber) => {
+    if (orderType !== 'Goat (Hissa)') return false;
+    const c = String(cowNumber ?? '').trim();
+    const h = String(hissaNumber ?? '').trim();
+    return (c === '0' || c === '') && (h === '0' || h === '');
+  };
+
+  const checkCowHissaDuplicate = useCallback(async (cowNumber, hissaNumber, orderType, day, bookingDate) => {
+    if (!cowNumber || !hissaNumber || !orderType) return null;
+    if (shouldSkipCowHissaDuplicate(orderType, cowNumber, hissaNumber)) return null;
+    if (!token) return null;
+    try {
+      const res = await fetch(`${API}/api/booking/check-cow-hissa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          cow_number: cowNumber,
+          hissa_number: hissaNumber,
+          order_type: orderType,
+          day: day || null,
+          booking_date: bookingDate || null,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.exists ? data : null;
+      }
+    } catch (e) { console.error(e); }
+    return null;
+  }, [token]);
+
+  // Real-time duplicate check when cow/hissa or booking_date change (debounced)
+  useEffect(() => {
+    if (!confirmModalLead || !token) return;
+    const { cow_number, hissa_number, booking_date } = confirmForm;
+    const orderType = confirmModalLead.type || '';
+    const day = confirmModalLead.day || '';
+    if (!(cow_number || '').trim() || !(hissa_number || '').trim() || !orderType || shouldSkipCowHissaDuplicate(orderType, cow_number, hissa_number)) {
+      setConfirmDuplicateError(null);
+      return;
+    }
+    if (confirmDuplicateCheckTimeoutRef.current) clearTimeout(confirmDuplicateCheckTimeoutRef.current);
+    confirmDuplicateCheckTimeoutRef.current = setTimeout(async () => {
+      const dup = await checkCowHissaDuplicate((cow_number || '').trim(), (hissa_number || '').trim(), orderType, day, (booking_date || '').trim() || null);
+      if (dup) setConfirmDuplicateError(dup);
+      else setConfirmDuplicateError(null);
+      confirmDuplicateCheckTimeoutRef.current = null;
+    }, 400);
+    return () => {
+      if (confirmDuplicateCheckTimeoutRef.current) {
+        clearTimeout(confirmDuplicateCheckTimeoutRef.current);
+        confirmDuplicateCheckTimeoutRef.current = null;
+      }
+    };
+  }, [confirmForm.cow_number, confirmForm.hissa_number, confirmForm.booking_date, confirmModalLead, token, checkCowHissaDuplicate]);
+
+  const handleConfirmClick = (lead) => {
+    setConfirmModalLead(lead);
+    setConfirmDuplicateError(null);
+    setConfirmForm({
+      order_id: '',
+      slot: '',
+      booking_date: formatDate(lead.booking_date) || '',
+      cow_number: '',
+      hissa_number: '',
+    });
+  };
 
   const handleConfirmOrder = async () => {
     if (!confirmModalLead) return;
     const lead = confirmModalLead;
+    if (!(confirmForm.order_id || '').trim()) {
+      setError('Order ID is required');
+      return;
+    }
+    const orderType = lead.type || '';
+    const day = lead.day || '';
+    const bookingDate = (confirmForm.booking_date || '').trim();
+    const cow_number = (confirmForm.cow_number || '').trim();
+    const hissa_number = (confirmForm.hissa_number || '').trim();
+    if (cow_number && hissa_number && orderType && !shouldSkipCowHissaDuplicate(orderType, cow_number, hissa_number)) {
+      const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, orderType, day, bookingDate);
+      if (duplicate) {
+        setConfirmDuplicateError(duplicate);
+        return;
+      }
+    }
+    setConfirmDuplicateError(null);
     setConfirmingLeadId(lead.lead_id);
     setError('');
     try {
       const res = await fetch(`${API}/api/booking/leads/${encodeURIComponent(lead.lead_id)}/confirm-order`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          order_id: (confirmForm.order_id || '').trim(),
+          slot: (confirmForm.slot || '').trim() || null,
+          booking_date: (confirmForm.booking_date || '').trim() || null,
+          cow_number: (confirmForm.cow_number || '').trim() || null,
+          hissa_number: (confirmForm.hissa_number || '').trim() || null,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.order_id) {
         setConfirmModalLead(null);
+        setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
+        setConfirmDuplicateError(null);
         setSelectedIds((prev) => { const next = new Set(prev); next.delete(lead.lead_id); return next; });
         fetchLeads();
       } else {
@@ -530,14 +672,125 @@ export default function QueryManagement() {
       </div>
 
       {confirmModalLead && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }} onClick={() => !confirmingLeadId && setConfirmModalLead(null)}>
-          <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '400px', width: '90%' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }} onClick={() => !confirmingLeadId && (setConfirmModalLead(null), setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' }), setConfirmDuplicateError(null))}>
+          <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '420px', width: '90%' }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Confirm order</h3>
-            <p style={{ margin: '0 0 16px 0', color: '#555' }}>Are you sure you want to create an order from lead &quot;{confirmModalLead.booking_name || confirmModalLead.lead_id}&quot;? This will move the lead to Orders.</p>
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => !confirmingLeadId && setConfirmModalLead(null)} disabled={!!confirmingLeadId} style={{ padding: '8px 16px', background: '#f5f5f5', border: 'none', borderRadius: '8px', cursor: confirmingLeadId ? 'not-allowed' : 'pointer' }}>No</button>
-              <button type="button" onClick={handleConfirmOrder} disabled={!!confirmingLeadId} style={{ padding: '8px 16px', background: '#166534', color: '#fff', border: 'none', borderRadius: '8px', cursor: confirmingLeadId ? 'not-allowed' : 'pointer' }}>{confirmingLeadId ? '...' : 'Yes, confirm'}</button>
+            <p style={{ margin: '0 0 16px 0', color: '#555', fontSize: '13px' }}>Create order from lead &quot;{confirmModalLead.booking_name || confirmModalLead.lead_id}&quot;. Fill or adjust the fields below.</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Order ID</label>
+                <input
+                  value={confirmForm.order_id}
+                  readOnly
+                  placeholder="Auto-generated"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px', background: '#f5f5f5', color: '#555', cursor: 'not-allowed' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Slot</label>
+                <select
+                  value={confirmForm.slot}
+                  onChange={(e) => setConfirmForm((p) => ({ ...p, slot: e.target.value }))}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }}
+                >
+                  <option value="">Select Slot</option>
+                  {SLOTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Booking Date</label>
+                <input
+                  type="date"
+                  value={confirmForm.booking_date}
+                  onChange={(e) => {
+                    const newDate = e.target.value;
+                    setConfirmForm((p) => ({ ...p, booking_date: newDate }));
+                    if (confirmModalLead && confirmModalLead.type && confirmModalLead.type !== 'Goat (Hissa)' && token) {
+                      fetch(`${API}/api/booking/get-available-cow-hissa`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({ order_type: confirmModalLead.type, day: confirmModalLead.day || null, booking_date: newDate || null }),
+                      }).then((res) => res.ok ? res.json() : {}).then((data) => {
+                        if (data && (data.cow_number != null || data.hissa_number != null)) {
+                          setConfirmForm((p) => ({ ...p, cow_number: data.cow_number || '', hissa_number: data.hissa_number || '' }));
+                        }
+                      }).catch(() => {});
+                    }
+                  }}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }}
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Cow Number</label>
+                  <input
+                    value={confirmForm.cow_number}
+                    onChange={(e) => { setConfirmForm((p) => ({ ...p, cow_number: e.target.value })); setConfirmDuplicateError(null); }}
+                    onBlur={async () => {
+                      if (!confirmModalLead) return;
+                      const { cow_number: c, hissa_number: h, booking_date: bd } = confirmForm;
+                      const ot = confirmModalLead.type || '';
+                      const d = confirmModalLead.day || '';
+                      if (c && h && ot && !shouldSkipCowHissaDuplicate(ot, c, h)) {
+                        const dup = await checkCowHissaDuplicate(c, h, ot, d, bd);
+                        if (dup) setConfirmDuplicateError(dup);
+                      }
+                    }}
+                    placeholder="Auto-generated"
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Hissa Number</label>
+                  <input
+                    value={confirmForm.hissa_number}
+                    onChange={(e) => { setConfirmForm((p) => ({ ...p, hissa_number: e.target.value })); setConfirmDuplicateError(null); }}
+                    onBlur={async () => {
+                      if (!confirmModalLead) return;
+                      const { cow_number: c, hissa_number: h, booking_date: bd } = confirmForm;
+                      const ot = confirmModalLead.type || '';
+                      const d = confirmModalLead.day || '';
+                      if (c && h && ot && !shouldSkipCowHissaDuplicate(ot, c, h)) {
+                        const dup = await checkCowHissaDuplicate(c, h, ot, d, bd);
+                        if (dup) setConfirmDuplicateError(dup);
+                      }
+                    }}
+                    placeholder="Auto-generated"
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }}
+                  />
+                </div>
+              </div>
             </div>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => !confirmingLeadId && (setConfirmModalLead(null), setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' }), setConfirmDuplicateError(null))} disabled={!!confirmingLeadId} style={{ padding: '8px 16px', background: '#f5f5f5', border: 'none', borderRadius: '8px', cursor: confirmingLeadId ? 'not-allowed' : 'pointer' }}>Cancel</button>
+              <button type="button" onClick={handleConfirmOrder} disabled={!!confirmingLeadId} style={{ padding: '8px 16px', background: '#166534', color: '#fff', border: 'none', borderRadius: '8px', cursor: confirmingLeadId ? 'not-allowed' : 'pointer' }}>{confirmingLeadId ? '...' : 'Confirm'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDuplicateError && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1002 }} onClick={() => setConfirmDuplicateError(null)}>
+          <div style={{ background: '#fff', borderRadius: '8px', padding: '20px', maxWidth: '500px', width: '90%', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '12px' }}>
+                <span style={{ fontSize: '20px', color: '#DC2626' }}>⚠️</span>
+              </div>
+              <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937', margin: 0 }}>Duplicate Cow/Hissa Combination</h3>
+            </div>
+            <p style={{ fontSize: '11px', color: '#6B7280', marginBottom: '16px', lineHeight: '1.5' }}>
+              This cow number and hissa number combination already exists for the selected order type and day.
+            </p>
+            <div style={{ background: '#F9FAFB', borderRadius: '6px', padding: '12px', marginBottom: '16px' }}>
+              <div style={{ fontSize: '10px', color: '#6B7280', marginBottom: '4px' }}>Existing Order Details:</div>
+              <div style={{ fontSize: '11px', color: '#1F2937' }}>
+                <div><strong>Order ID:</strong> {confirmDuplicateError.order_id}</div>
+                <div><strong>Booking Name:</strong> {confirmDuplicateError.booking_name || '—'}</div>
+                <div><strong>Shareholder:</strong> {confirmDuplicateError.shareholder_name || '—'}</div>
+                <div><strong>Contact:</strong> {confirmDuplicateError.contact || '—'}</div>
+              </div>
+            </div>
+            <button type="button" onClick={() => setConfirmDuplicateError(null)} style={{ width: '100%', padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#FF5722', color: '#fff', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Close</button>
           </div>
         </div>
       )}

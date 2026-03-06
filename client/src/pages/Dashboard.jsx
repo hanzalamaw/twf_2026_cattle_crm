@@ -275,29 +275,29 @@ const TargetDonut = ({
               </div>
             </>
           );
-        })() : isOver ? (
+        })(        ) : isOver ? (
           /* Over-achievement center */
           <>
             <div className="donutSmall" style={{ color: "#6b7280" }}>Total Orders</div>
-            <div className="donutBig" style={{ color: "#111827" }}>
+            <div className="donutBig donutBigBold" style={{ color: "#111827" }}>
               <AnimatedNumber value={achieved} duration={750} format={(n) => fmt(Math.round(n))} />
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
               <span style={{ fontSize: 13, color: "#d97706", fontWeight: 600 }}>🎯 </span>
               <span style={{ fontSize: 12, color: "#d97706", fontWeight: 600 }}>Target Hit!</span>
             </div>
-            <div className="donutOverBadge animPop">
-              +<AnimatedNumber value={overAmount} duration={800} format={(n) => fmt(Math.round(n))} /> over
-            </div>
-            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 1, fontWeight: 400 }}>
-              (<AnimatedNumber value={overPct} duration={800} format={(n) => `+${n.toFixed(1)}%`} />)
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2, fontSize: 11, color: "#6b7280", fontWeight: 400 }}>
+              <span className="donutOverBadgeGray animPop">
+                +<AnimatedNumber value={overAmount} duration={800} format={(n) => fmt(Math.round(n))} /> over
+              </span>
+              <span>(<AnimatedNumber value={overPct} duration={800} format={(n) => `+${n.toFixed(1)}%`} />)</span>
             </div>
           </>
         ) : (
           /* Normal center */
           <>
             <div className="donutSmall">Total Orders:</div>
-            <div className="donutBig">
+            <div className="donutBig donutBigBold">
               <AnimatedNumber value={achieved} duration={750} format={(n) => fmt(Math.round(n))} />
             </div>
             <div className="donutRed">
@@ -934,8 +934,9 @@ const Dashboard = () => {
         /* ---- Target ---- */
         .targetGrid {
           display: grid; grid-template-columns: 240px 1fr; gap: 16px; align-items: center;
+          min-height: 320px;
         }
-        @media(max-width:980px) { .targetGrid { grid-template-columns: 1fr; } }
+        @media(max-width:980px) { .targetGrid { grid-template-columns: 1fr; min-height: 380px; } }
 
         .donutCenter {
           position: absolute; inset: 0;
@@ -944,10 +945,11 @@ const Dashboard = () => {
         }
         .donutSmall { font-size: 12px; font-weight: 500; color: #374151; }
         .donutBig { font-size: 28px; font-weight: 600; color: #1f2937; }
+        .donutBigBold { font-size: 38px !important; font-weight: 700 !important; }
         .donutRed { font-size: 12px; font-weight: 400; color: #b91c1c; font-style: italic; }
         .donutRed * { font-style: inherit; }
 
-        /* Over-achievement badge in center */
+        /* Over-achievement badge in center (gold) */
         .donutOverBadge {
           margin-top: 3px;
           background: linear-gradient(135deg, #fbbf24, #f59e0b);
@@ -957,6 +959,10 @@ const Dashboard = () => {
           box-shadow: 0 2px 6px rgba(251,191,36,0.4);
           animation: pulseGold 2s ease-in-out infinite;
           letter-spacing: .2px;
+        }
+        .donutOverBadgeGray {
+          color: #6b7280;
+          font-size: 11px; font-weight: 500;
         }
 
         .progressWrap { display: flex; flex-direction: column; gap: 10px; }
@@ -1044,22 +1050,22 @@ const Dashboard = () => {
           margin-bottom: 12px; gap: 8px; flex-wrap: wrap;
         }
         .sourceCardHeader .cardTitle { margin-bottom: 0; text-align: center; }
-        .sourceGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+        .sourceGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
         .sourceCard {
-          background: #fff; border-radius: 10px; padding: 12px 14px;
-          display: flex; align-items: center; gap: 10px; border: 1px solid #e8e8e8;
-          min-height: 52px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+          background: #fff; border-radius: 8px; padding: 8px 12px;
+          display: flex; align-items: center; gap: 8px; border: 1px solid #e8e8e8;
+          min-height: 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
           transition: transform .15s, box-shadow .15s, border-color .15s;
         }
         .sourceCardInteractive:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: #d1d5db; }
-        .sourceCardEmpty { justify-content: center; color: #6b7280; font-size: 13px; font-weight: 400; }
+        .sourceCardEmpty { justify-content: center; color: #6b7280; font-size: 11px; font-weight: 400; }
         .sourceIcon {
-          width: 28px; height: 28px; border-radius: 6px; background: #7c3aed; color: #fff;
-          display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 12px;
+          width: 24px; height: 24px; border-radius: 5px; background: #7c3aed; color: #fff;
+          display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 10px;
         }
-        .sourcePin { font-size: 12px; }
-        .sourceName { font-size: 13px; font-weight: 500; color: #111827; flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .sourceCount { font-size: 15px; font-weight: 600; color: #111827; white-space: nowrap; flex-shrink: 0; }
+        .sourcePin { font-size: 10px; }
+        .sourceName { font-size: 11px; font-weight: 500; color: #111827; flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sourceCount { font-size: 12px; font-weight: 600; color: #111827; white-space: nowrap; flex-shrink: 0; }
 
         /* ---- Sales Overview ---- */
         .salesOverviewHeader { display: flex; justify-content: space-between; align-items: center; position: relative; }

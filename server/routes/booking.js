@@ -133,14 +133,14 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
   // Get available cow/hissa number (day-based independent numbering)
   app.post("/api/booking/get-available-cow-hissa", verifyToken, async (req, res) => {
     try {
-      const { order_type, day } = req.body || {};
+      const { order_type, day, booking_date } = req.body || {};
       if (!order_type || !String(order_type).trim()) {
         return res.json({ cow_number: "", hissa_number: "" });
       }
 
       const orderType = String(order_type).trim();
       const dayValue = day ? String(day).trim() : null;
-      const year = 2026;
+      const year = booking_date ? (new Date(booking_date).getFullYear() || 2026) : 2026;
 
       // Only for Hissa types
       const hissaTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf", "Goat (Hissa)"];
@@ -212,7 +212,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
   // Check if cow/hissa combination already exists
   app.post("/api/booking/check-cow-hissa", verifyToken, async (req, res) => {
     try {
-      const { cow_number, hissa_number, order_type, day, order_id } = req.body || {};
+      const { cow_number, hissa_number, order_type, day, order_id, booking_date } = req.body || {};
       
       if (!cow_number || !hissa_number || !order_type) {
         return res.json({ exists: false });
@@ -222,7 +222,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const hissaNum = String(hissa_number).trim();
       const orderType = String(order_type).trim();
       const dayValue = day ? String(day).trim() : null;
-      const year = 2026;
+      const year = booking_date ? (new Date(booking_date).getFullYear() || 2026) : 2026;
 
       let query = `
         SELECT order_id, booking_name, shareholder_name, contact 
@@ -747,10 +747,11 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     }
   });
 
-  // Confirm lead → create order and remove lead (audit logged)
+  // Confirm lead → create order and remove lead (audit logged). Body may include order_id, slot, booking_date, cow_number, hissa_number.
   app.post("/api/booking/leads/:leadId/confirm-order", verifyToken, async (req, res) => {
     try {
       const { leadId } = req.params;
+      const body = req.body || {};
       const [leadRows] = await db.execute(
         "SELECT lead_id, customer_id, contact, order_type AS order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, reference, description FROM leads WHERE lead_id = ?",
         [leadId]
@@ -762,16 +763,24 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const lead = leadRows[0];
       const totalAmount = Number(lead.total_amount) || 0;
 
-      const [idRows] = await db.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(order_id, 4, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM orders WHERE order_id LIKE '#O-%'"
-      );
-      const year = new Date().getFullYear();
-      const nextNum = idRows[0]?.nextId ?? 1;
-      const orderId = `O-${String(nextNum).padStart(4, "0")}-${year}`;
+      let orderId = body.order_id && String(body.order_id).trim() ? String(body.order_id).trim() : null;
+      if (!orderId) {
+        const [idRows] = await db.execute(
+          "SELECT COALESCE(MAX(CAST(SUBSTRING(order_id, 4, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM orders WHERE order_id LIKE '#O-%'"
+        );
+        const year = new Date().getFullYear();
+        const nextNum = idRows[0]?.nextId ?? 1;
+        orderId = `O-${String(nextNum).padStart(4, "0")}-${year}`;
+      }
+
+      const slotVal = body.slot != null && String(body.slot).trim() !== "" ? String(body.slot).trim() : null;
+      const bookingDateVal = body.booking_date != null && String(body.booking_date).trim() !== "" ? toDateOnly(body.booking_date) : toDateOnly(lead.booking_date);
+      const cowNumber = body.cow_number != null && String(body.cow_number).trim() !== "" ? String(body.cow_number).trim() : null;
+      const hissaNumber = body.hissa_number != null && String(body.hissa_number).trim() !== "" ? String(body.hissa_number).trim() : null;
 
       await db.execute(
         `INSERT INTO orders (order_id, customer_id, contact, order_type, booking_name, shareholder_name, cow_number, hissa_number, alt_contact, address, area, day, booking_date, total_amount, received_amount, pending_amount, order_source, reference, description, rider_id, slot)
-         VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, NULL)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, ?)`,
         [
           orderId,
           lead.customer_id ?? null,
@@ -779,16 +788,19 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           lead.order_type ?? null,
           lead.booking_name ?? null,
           lead.shareholder_name ?? null,
+          cowNumber,
+          hissaNumber,
           lead.alt_contact ?? null,
           lead.address ?? null,
           lead.area ?? null,
           lead.day ?? null,
-          toDateOnly(lead.booking_date) ?? null,
+          bookingDateVal ?? null,
           totalAmount,
           totalAmount, // pending_amount
           lead.order_source ?? null,
           lead.reference ?? null,
           lead.description ?? null,
+          slotVal,
         ]
       );
 
