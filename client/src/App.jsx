@@ -24,6 +24,7 @@ import Transactions from './pages/Transactions';
 import Expenses from './pages/Expenses';
 import NewOrder from './pages/NewOrder';
 import NewQuery from './pages/NewQuery';
+import Stats from './pages/Stats';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -93,6 +94,7 @@ const ROUTE_TITLES = {
   '/performance': 'Performance Management',
   '/performance/admin': 'Performance Admin',
   '/performance/dashboard': 'Performance Dashboard',
+  '/stats': 'Stats',
 };
 
 const API_BASE = 'http://localhost:5000';
@@ -225,6 +227,12 @@ function App() {
             <Route path="admin" element={<PerformanceAdmin />} />
             <Route path="dashboard" element={<PerformanceDashboard />} />
           </Route>
+
+          <Route path="/stats" element={
+            <ProtectedRoute>
+              <Stats />
+            </ProtectedRoute>
+          } />
         </Routes>
       </Router>
     </AuthProvider>

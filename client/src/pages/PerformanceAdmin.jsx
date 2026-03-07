@@ -80,12 +80,25 @@ export default function PerformanceAdmin() {
     return { totalTargetCalls, totalTargetLeads, totalTargetOrders, latestDate, reportCount: dailyReports.length };
   }, [performers, dailyReports]);
 
+  const linkedUserIds = useMemo(
+    () => new Set(performers.map((p) => p.user_id)),
+    [performers]
+  );
+
   const fmtDate = (d) => {
     if (!d) return '—';
     const s = String(d).slice(0, 10);
     const [y, m, day] = s.split('-');
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${parseInt(day)} ${months[parseInt(m) - 1]} ${y}`;
+  };
+
+  const todayLocalDateString = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   };
 
   const validateTargets = (calls, leads, orders) => {
@@ -124,7 +137,17 @@ export default function PerformanceAdmin() {
     } catch (e) { setError(e.message); }
   };
 
-  const openAddDaily = () => { setEditingReport(null); setDailyForm({ performer_id: performers[0]?.performer_id || '', date: new Date().toISOString().slice(0, 10), calls_done: '', leads_generated: '', orders_confirmed: '' }); setShowDailyModal(true); };
+  const openAddDaily = () => {
+    setEditingReport(null);
+    setDailyForm({
+      performer_id: performers[0]?.performer_id || '',
+      date: todayLocalDateString(),
+      calls_done: '',
+      leads_generated: '',
+      orders_confirmed: '',
+    });
+    setShowDailyModal(true);
+  };
   const openEditReport = (r) => { setEditingReport(r); setDailyForm({ performer_id: r.performer_id, date: String(r.date).slice(0, 10), calls_done: r.calls_done ?? '', leads_generated: r.leads_generated ?? '', orders_confirmed: r.orders_confirmed ?? '' }); setShowDailyModal(true); };
 
   const submitDaily = async (e) => {
@@ -340,7 +363,17 @@ export default function PerformanceAdmin() {
           {formField('Linked User *',
             <select style={inputStyle} value={performerForm.user_id} onChange={(e) => setPerformerForm((f) => ({ ...f, user_id: e.target.value }))} required disabled={!!editingPerformer}>
               <option value="">Select user</option>
-              {users.map((u) => <option key={u.user_id} value={u.user_id}>{u.username}{u.first_name || u.last_name ? ` (${[u.first_name, u.last_name].filter(Boolean).join(' ')})` : ''}</option>)}
+              {users.map((u) => {
+                const isLinked = linkedUserIds.has(u.user_id);
+                const isCurrent = editingPerformer && editingPerformer.user_id === u.user_id;
+                if (isLinked && !isCurrent) return null;
+                return (
+                  <option key={u.user_id} value={u.user_id}>
+                    {u.username}
+                    {u.first_name || u.last_name ? ` (${[u.first_name, u.last_name].filter(Boolean).join(' ')})` : ''}
+                  </option>
+                );
+              })}
             </select>
           )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>

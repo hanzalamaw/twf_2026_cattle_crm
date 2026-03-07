@@ -35,6 +35,13 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
       if (!display_name || !user_id) {
         return res.status(400).json({ message: "display_name and user_id are required" });
       }
+      const [existing] = await db.execute(
+        "SELECT performer_id FROM performance_targets WHERE user_id = ?",
+        [user_id]
+      );
+      if (existing.length > 0) {
+        return res.status(400).json({ message: "This user is already linked to another performer." });
+      }
       const c = Number(calls_target) || 0, l = Number(leads_target) || 0, o = Number(orders_target) || 0;
       const targetErr = validateTargets(c, l, o);
       if (targetErr) return res.status(400).json({ message: targetErr });
@@ -61,6 +68,13 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
         values.push(display_name.trim());
       }
       if (user_id !== undefined) {
+        const [existing] = await db.execute(
+          "SELECT performer_id FROM performance_targets WHERE user_id = ? AND performer_id <> ?",
+          [user_id, id]
+        );
+        if (existing.length > 0) {
+          return res.status(400).json({ message: "This user is already linked to another performer." });
+        }
         updates.push("user_id = ?");
         values.push(user_id);
       }
@@ -122,7 +136,9 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
     try {
       const { performer_id, from_date, to_date } = req.query;
       let sql = `
-        SELECT r.report_id, r.performer_id, r.date, r.calls_done, r.leads_generated, r.orders_confirmed,
+        SELECT r.report_id, r.performer_id,
+               DATE_FORMAT(r.date, '%Y-%m-%d') AS date,
+               r.calls_done, r.leads_generated, r.orders_confirmed,
                pt.display_name
         FROM pms_daily_report r
         JOIN performance_targets pt ON r.performer_id = pt.performer_id

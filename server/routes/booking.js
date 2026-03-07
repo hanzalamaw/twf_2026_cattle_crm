@@ -209,6 +209,74 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     }
   });
 
+  // Hissa stats sheet (for /stats page)
+  // Returns totals per cow/day/type (distinct hissa_number) and slot distribution (for row coloring).
+  app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
+    try {
+      const yearParam = parseInt(req.query.year, 10);
+      const year = Number.isFinite(yearParam) ? yearParam : 2026;
+      const days = ["DAY 1", "DAY 2", "DAY 3"];
+      const orderTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf"];
+
+      const [rows] = await db.execute(
+        `
+        SELECT
+          o.order_type,
+          o.day,
+          o.cow_number,
+          o.slot,
+          COUNT(DISTINCT o.hissa_number) AS total_hissa
+        FROM orders o
+        WHERE o.order_type IN (${orderTypes.map(() => "?").join(",")})
+          AND o.day IN (${days.map(() => "?").join(",")})
+          AND o.cow_number IS NOT NULL AND o.cow_number <> ''
+          AND o.hissa_number IS NOT NULL AND o.hissa_number <> ''
+          AND YEAR(o.booking_date) = ?
+        GROUP BY o.order_type, o.day, o.cow_number, o.slot
+        `,
+        [...orderTypes, ...days, year]
+      );
+
+      const out = { year, days, order_types: orderTypes, types: {} };
+
+      for (const ot of orderTypes) {
+        out.types[ot] = {};
+        for (const d of days) out.types[ot][d] = {};
+      }
+
+      const slotOrder = ["SLOT 1", "SLOT 2", "SLOT 3"];
+      const normalizeSlot = (slot) => {
+        const s = String(slot || "").trim();
+        if (slotOrder.includes(s)) return s;
+        return null;
+      };
+
+      for (const r of rows) {
+        const ot = String(r.order_type || "").trim();
+        const d = String(r.day || "").trim();
+        const cow = String(r.cow_number || "").trim();
+        const slot = normalizeSlot(r.slot);
+        const count = Math.max(0, Number(r.total_hissa) || 0);
+
+        if (!out.types[ot] || !out.types[ot][d] || !cow) continue;
+
+        if (!out.types[ot][d][cow]) {
+          out.types[ot][d][cow] = {
+            total_hissa: 0,
+            slot_counts: { "SLOT 1": 0, "SLOT 2": 0, "SLOT 3": 0 },
+          };
+        }
+        out.types[ot][d][cow].total_hissa += count;
+        if (slot) out.types[ot][d][cow].slot_counts[slot] += count;
+      }
+
+      res.json(out);
+    } catch (error) {
+      logError("BOOKING", "Hissa sheet stats error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
   // Check if cow/hissa combination already exists
   app.post("/api/booking/check-cow-hissa", verifyToken, async (req, res) => {
     try {

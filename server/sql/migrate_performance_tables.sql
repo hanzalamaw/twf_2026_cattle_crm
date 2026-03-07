@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS performance_targets (
     leads_target INT DEFAULT 0,
     orders_target INT DEFAULT 0,
 
+    UNIQUE KEY uq_performance_user (user_id),
     FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
 
