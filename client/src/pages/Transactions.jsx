@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 const API = 'http://localhost:5000';
 
+const HIDDEN_TYPES = ['Cow', 'Goat'];
+
 const ORDER_COLUMNS = [
   { key: 'customer_id', label: 'Customer ID' },
   { key: 'order_id', label: 'Order ID' },
@@ -163,8 +165,10 @@ export default function Transactions() {
       if (res.ok) {
         const data = await res.json();
         const list = Array.isArray(data.data) ? data.data : [];
-        setOrders(list);
-        setTotalCount(typeof data.total === 'number' ? data.total : list.length);
+        // Filter out Cow and Goat rows
+        const filtered = list.filter((row) => !HIDDEN_TYPES.includes(row.type));
+        setOrders(filtered);
+        setTotalCount(typeof data.total === 'number' ? data.total : filtered.length);
       } else {
         setError('Failed to load orders');
       }
@@ -294,14 +298,19 @@ export default function Transactions() {
 
   if (loading && orders.length === 0) {
     return (
-      <div style={{ padding: '19px', fontFamily: "'Poppins', 'Inter', sans-serif" }}>
+      <div style={{ padding: '19px', fontFamily: "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif" }}>
         <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#333', marginBottom: '16px' }}>Transactions</h2>
         <div style={{ padding: '32px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading...</div>
       </div>
     );
   }
 
-  const typeOptions = filters.order_types && filters.order_types.length > 0 ? filters.order_types : [...new Set(orders.map((o) => o.type).filter(Boolean))].sort();
+  // Type options — never show Cow or Goat
+  const typeOptions = (
+    filters.order_types && filters.order_types.length > 0
+      ? filters.order_types
+      : [...new Set(orders.map((o) => o.type).filter(Boolean))].sort()
+  ).filter((t) => !HIDDEN_TYPES.includes(t));
   const s = summary || {};
   const totalExpensesBank = Number(s.totalExpensesBank) ?? 0;
   const totalExpensesCash = Number(s.totalExpensesCash) ?? 0;
@@ -324,7 +333,7 @@ export default function Transactions() {
   const isOnHandDisabled = !onHandAvailable || appliedTypes.length > 0;
 
   return (
-    <div style={{ padding: '19px', fontFamily: "'Poppins', 'Inter', sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
+    <div style={{ padding: '19px', fontFamily: "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
 
       {/* ── Top bar ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0, flexWrap: 'nowrap', gap: '10px' }}>
@@ -428,21 +437,34 @@ export default function Transactions() {
       )}
 
       {/* ── Summary cards ── */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '16px', flexShrink: 0 }}>
-        <div style={{ flex: '1 1 200px', minWidth: '180px', padding: '16px 20px', borderRadius: '8px', border: '1px solid #e0e0e0', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-          <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Bank only</div>
-          <div style={{ fontSize: '18px', fontWeight: '700', color: '#166534', minHeight: '28px' }}>
-            {amountVisible
-              ? <span>{formatAmount(bankOnlyAmount)}</span>
-              : <span style={{ filter: 'blur(6px)', userSelect: 'none', color: '#999' }}>{formatAmount(bankOnlyAmount)}</span>}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px', flexShrink: 0 }}>
+        {/* Bank Only card */}
+        <div style={{ flex: '1 1 160px', minWidth: '160px', padding: '14px 12px', borderRadius: '10px', border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <img src="/icons/total_orders_amount.png" alt="" style={{ width: '50px', height: '50px', objectFit: 'contain' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
+            <div style={{ fontSize: '11px', fontWeight: '400', color: '#6b7280' }}>Bank Only</div>
+            <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827', lineHeight: '1.2' }}>
+              {amountVisible
+                ? <span>{formatAmount(bankOnlyAmount)}</span>
+                : <span style={{ filter: 'blur(6px)', userSelect: 'none', display: 'inline-block', minWidth: '120px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', padding: '6px 10px' }}>{formatAmount(bankOnlyAmount)}</span>}
+            </div>
           </div>
         </div>
-        <div style={{ flex: '1 1 200px', minWidth: '180px', padding: '16px 20px', borderRadius: '8px', border: '1px solid #e0e0e0', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-          <div style={{ fontSize: '10px', color: '#666', marginBottom: '3px' }}>Cash</div>
-          <div style={{ fontSize: '14px', fontWeight: '700', color: '#b91c1c', minHeight: '22px' }}>
-            {amountVisible
-              ? <span>{formatAmount(cashAmount)}</span>
-              : <span style={{ filter: 'blur(6px)', userSelect: 'none', color: '#999' }}>{formatAmount(cashAmount)}</span>}
+
+        {/* Cash card */}
+        <div style={{ flex: '1 1 160px', minWidth: '160px', padding: '14px 12px', borderRadius: '10px', border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <img src="/icons/total_orders_amount.png" alt="" style={{ width: '50px', height: '50px', objectFit: 'contain' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
+            <div style={{ fontSize: '11px', fontWeight: '400', color: '#6b7280' }}>Cash</div>
+            <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827', lineHeight: '1.2' }}>
+              {amountVisible
+                ? <span>{formatAmount(cashAmount)}</span>
+                : <span style={{ filter: 'blur(6px)', userSelect: 'none', display: 'inline-block', minWidth: '120px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', padding: '6px 10px' }}>{formatAmount(cashAmount)}</span>}
+            </div>
           </div>
         </div>
       </div>

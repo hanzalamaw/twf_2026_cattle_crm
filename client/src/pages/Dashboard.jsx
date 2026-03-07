@@ -143,18 +143,15 @@ const TargetDonut = ({
   const overAmount = isOver ? achieved - target : 0;
   const overPct = target > 0 ? (overAmount / target) * 100 : 0;
 
-  // Inner donut: capped at target (the normal breakdown segments)
   const innerRadius = (size - stroke) / 2;
   const innerC = 2 * Math.PI * innerRadius;
   const cx = size / 2, cy = size / 2;
 
-  // Outer ring: only visible when over-achieved
   const outerStroke = 8;
   const outerRadius = (size - stroke) / 2 + stroke / 2 + outerStroke / 2 + 4;
   const outerC = 2 * Math.PI * outerRadius;
 
-  // Build inner segments — cap total at target
-  const capTotal = target; // use target as the full circle for the inner ring
+  const capTotal = target;
   const segments = [];
   let cursor = 0;
 
@@ -165,7 +162,6 @@ const TargetDonut = ({
     cursor += dash;
   });
 
-  // If not over-achieved, show remaining grey arc
   if (!isOver) {
     const achievedTotal = breakdown.reduce((s, b) => s + Number(b.value || 0), 0);
     const remainingRatio = capTotal > 0 ? Math.max(0, (capTotal - achievedTotal) / capTotal) : 1;
@@ -173,8 +169,6 @@ const TargetDonut = ({
     segments.push({ key: "remaining", label: "Remaining", value: Math.max(0, target - achievedTotal), pct: null, ratio: remainingRatio, dash: remainingDash, offset: cursor });
   }
 
-  // Over-achievement arc (outer ring) — golden color, fills proportional to how much over
-  // Cap visual at 100% of the outer ring for cleanliness
   const overRatio = Math.min(overAmount / target, 1);
   const overDash = outerC * overRatio;
 
@@ -183,10 +177,8 @@ const TargetDonut = ({
   return (
     <div className="donutShell animFade" style={{ position: "relative", width: size, height: size }}>
       <svg width={size} height={size} style={{ overflow: "visible" }}>
-        {/* Inner track */}
         <circle cx={cx} cy={cy} r={innerRadius} stroke="#EAEAEA" strokeWidth={stroke} fill="none" />
 
-        {/* Inner segments (breakdown up to target) */}
         {segments.map((seg) => {
           if (seg.dash <= 0) return null;
           const color = SEGMENT_COLORS[seg.key]?.fill || "#ccc";
@@ -214,10 +206,8 @@ const TargetDonut = ({
           );
         })}
 
-        {/* Outer over-achievement ring — only when over target */}
         {isOver && (
           <>
-            {/* Outer track (faint gold) */}
             <circle
               cx={cx} cy={cy} r={outerRadius}
               stroke="#fde68a"
@@ -225,7 +215,6 @@ const TargetDonut = ({
               fill="none"
               opacity={0.4}
             />
-            {/* Outer fill arc (gold gradient effect via two arcs) */}
             <circle
               cx={cx} cy={cy} r={outerRadius}
               stroke="url(#overGold)"
@@ -237,14 +226,12 @@ const TargetDonut = ({
               transform={rotate}
               style={{ filter: "drop-shadow(0 0 4px rgba(251,191,36,0.6))" }}
             />
-            {/* Gradient definition */}
             <defs>
               <linearGradient id="overGold" x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" stopColor="#f59e0b" />
                 <stop offset="100%" stopColor="#fbbf24" />
               </linearGradient>
             </defs>
-            {/* Small star/sparkle at the end of the over arc */}
             {(() => {
               const angle = -Math.PI / 2 + overRatio * 2 * Math.PI;
               const sx = cx + outerRadius * Math.cos(angle);
@@ -259,7 +246,6 @@ const TargetDonut = ({
         )}
       </svg>
 
-      {/* Center label */}
       <div className="donutCenter">
         {activeKey && activeKey !== "remaining" ? (() => {
           const seg = segments.find(s => s.key === activeKey);
@@ -275,8 +261,7 @@ const TargetDonut = ({
               </div>
             </>
           );
-        })(        ) : isOver ? (
-          /* Over-achievement center */
+        })() : isOver ? (
           <>
             <div className="donutSmall" style={{ color: "#6b7280" }}>Total Orders</div>
             <div className="donutBig donutBigBold" style={{ color: "#111827" }}>
@@ -294,7 +279,6 @@ const TargetDonut = ({
             </div>
           </>
         ) : (
-          /* Normal center */
           <>
             <div className="donutSmall">Total Orders:</div>
             <div className="donutBig donutBigBold">
@@ -673,8 +657,8 @@ const SalesOverviewChart = ({ series, reveal }) => {
               {chartType === "line" ? (
                 <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#6b7280" />
-                  <YAxis tick={{ fontSize: 11 }} stroke="#6b7280" tickFormatter={(v) => fmt(v)} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fontFamily: "'Poppins', 'Inter', sans-serif" }} stroke="#6b7280" />
+                  <YAxis tick={{ fontSize: 11, fontFamily: "'Poppins', 'Inter', sans-serif" }} stroke="#6b7280" tickFormatter={(v) => fmt(v)} />
                   <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#FF5722", strokeWidth: 1 }} />
                   <Line
                     type="monotone"
@@ -688,8 +672,8 @@ const SalesOverviewChart = ({ series, reveal }) => {
               ) : (
                 <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#6b7280" />
-                  <YAxis tick={{ fontSize: 11 }} stroke="#6b7280" tickFormatter={(v) => fmt(v)} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fontFamily: "'Poppins', 'Inter', sans-serif" }} stroke="#6b7280" />
+                  <YAxis tick={{ fontSize: 11, fontFamily: "'Poppins', 'Inter', sans-serif" }} stroke="#6b7280" tickFormatter={(v) => fmt(v)} />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey={activeMetric} fill="#FF5722" radius={[4, 4, 0, 0]}>
                     {data.map((_, idx) => (
@@ -811,14 +795,27 @@ const Dashboard = () => {
   return (
     <div className="page">
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
         *, *::before, *::after { box-sizing: border-box; }
 
         .page {
-          font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+          font-family: 'Poppins', 'Inter', sans-serif;
           padding: 12px 16px;
           display: flex;
           flex-direction: column;
           gap: 10px;
+        }
+
+        /* Cascade Poppins to every element that doesn't override it */
+        .page *,
+        .page input,
+        .page button,
+        .page select,
+        .page table,
+        .page th,
+        .page td {
+          font-family: inherit;
         }
 
         .animCard { animation: cardIn .35s ease-out both; }
@@ -847,7 +844,8 @@ const Dashboard = () => {
 
         .select {
           padding: 6px 10px; border-radius: 8px; border: 1px solid #e5e7eb;
-          font-size: 13px; font-weight: 400; background: #fff; cursor: pointer; transition: border-color .15s;
+          font-size: 13px; font-weight: 400; background: #fff; cursor: pointer;
+          transition: border-color .15s; font-family: inherit;
         }
         .select:hover { border-color: #FF5722; }
         .select:focus { outline: none; border-color: #FF5722; box-shadow: 0 0 0 3px rgba(255,87,34,.12); }
@@ -867,6 +865,7 @@ const Dashboard = () => {
           background: #fff; cursor: pointer; font-size: 13px; font-weight: 500;
           color: #374151; display: flex; align-items: center; gap: 5px;
           transition: all .15s; box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+          font-family: inherit;
         }
         .refreshBtn:hover { background: #fff4f0; border-color: #FF5722; color: #FF5722; }
         .refreshIcon { font-size: 14px; display:inline-block; }
@@ -920,7 +919,7 @@ const Dashboard = () => {
 
         .cardTitle, .cardTitleBig {
           text-align: center; font-size: 15px; font-weight: 600; letter-spacing: .2px;
-          color: #111827; margin-bottom: 10px; white-space: nowrap;
+          color: #111827; margin-bottom: 10px; white-space: nowrap; font-family: inherit;
         }
         @media(max-width:720px) { .cardTitleBig, .cardTitle { font-size: 14px; white-space: normal; } }
 
@@ -942,14 +941,14 @@ const Dashboard = () => {
           position: absolute; inset: 0;
           display: flex; flex-direction: column; align-items: center; justify-content: center;
           text-align: center; white-space: nowrap; pointer-events: none;
+          font-family: 'Poppins', 'Inter', sans-serif;
         }
-        .donutSmall { font-size: 12px; font-weight: 500; color: #374151; }
-        .donutBig { font-size: 28px; font-weight: 600; color: #1f2937; }
+        .donutSmall { font-size: 12px; font-weight: 500; color: #374151; font-family: inherit; }
+        .donutBig { font-size: 28px; font-weight: 600; color: #1f2937; font-family: inherit; }
         .donutBigBold { font-size: 38px !important; font-weight: 700 !important; }
-        .donutRed { font-size: 12px; font-weight: 400; color: #b91c1c; font-style: italic; }
+        .donutRed { font-size: 12px; font-weight: 400; color: #b91c1c; font-style: italic; font-family: inherit; }
         .donutRed * { font-style: inherit; }
 
-        /* Over-achievement badge in center (gold) */
         .donutOverBadge {
           margin-top: 3px;
           background: linear-gradient(135deg, #fbbf24, #f59e0b);
@@ -958,11 +957,11 @@ const Dashboard = () => {
           padding: 2px 10px; border-radius: 20px;
           box-shadow: 0 2px 6px rgba(251,191,36,0.4);
           animation: pulseGold 2s ease-in-out infinite;
-          letter-spacing: .2px;
+          letter-spacing: .2px; font-family: inherit;
         }
         .donutOverBadgeGray {
           color: #6b7280;
-          font-size: 11px; font-weight: 500;
+          font-size: 11px; font-weight: 500; font-family: inherit;
         }
 
         .progressWrap { display: flex; flex-direction: column; gap: 10px; }
@@ -976,10 +975,10 @@ const Dashboard = () => {
           transform: translateX(3px); box-shadow: 0 2px 8px rgba(0,0,0,0.06);
         }
         .progressHead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-        .progressLabel { font-size: 12px; font-weight: 500; color: #111827; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+        .progressLabel { font-size: 12px; font-weight: 500; color: #111827; white-space: nowrap; display: flex; align-items: center; gap: 6px; font-family: inherit; }
         .progressDot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transition: transform .2s; }
         .progressRowActive .progressDot { transform: scale(1.5); }
-        .progressVal { font-size: 12px; font-weight: 600; color: #111827; white-space: nowrap; }
+        .progressVal { font-size: 12px; font-weight: 600; color: #111827; white-space: nowrap; font-family: inherit; }
         .progressPct { font-weight: 500; color: #374151; font-size: 11px; }
         .progressTrack { height: 7px; border-radius: 999px; background: #e5e7eb; overflow: hidden; }
         .progressFill { height: 100%; border-radius: 999px; }
@@ -989,7 +988,7 @@ const Dashboard = () => {
         .dayWiseTableWrap { width: 100%; overflow-x: auto; border-radius: 12px; border: 1px solid #e5e7eb; }
         .tblDayWise {
           width: 100%; border-collapse: separate; border-spacing: 0;
-          background: #fff; min-width: 640px;
+          background: #fff; min-width: 640px; font-family: inherit;
         }
         .tblDayWise th, .tblDayWise td {
           padding: 8px 10px; font-size: 13px; font-weight: 400;
@@ -1024,11 +1023,12 @@ const Dashboard = () => {
           width: 100%; border-collapse: separate; border-spacing: 0;
           background: #f7f7f7; border: 1px solid #ededed;
           border-radius: 10px; overflow: hidden; min-width: 560px; table-layout: fixed;
+          font-family: inherit;
         }
         .tblRefOld th, .tblRefOld td {
           padding: 8px 10px; font-size: 12px; font-weight: 400; color: #374151;
           text-align: center; border-bottom: 1px solid #ededed; border-right: 1px solid #ededed;
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: inherit;
         }
         .tblRefOld th { background: #f0f0f0; font-weight: 600; white-space: normal; line-height: 1.25; }
         .tblRefOld tr:last-child td { border-bottom: none; }
@@ -1064,8 +1064,8 @@ const Dashboard = () => {
           display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 10px;
         }
         .sourcePin { font-size: 10px; }
-        .sourceName { font-size: 11px; font-weight: 500; color: #111827; flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .sourceCount { font-size: 12px; font-weight: 600; color: #111827; white-space: nowrap; flex-shrink: 0; }
+        .sourceName { font-size: 11px; font-weight: 500; color: #111827; flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: inherit; }
+        .sourceCount { font-size: 12px; font-weight: 600; color: #111827; white-space: nowrap; flex-shrink: 0; font-family: inherit; }
 
         /* ---- Sales Overview ---- */
         .salesOverviewHeader { display: flex; justify-content: space-between; align-items: center; position: relative; }
@@ -1074,7 +1074,8 @@ const Dashboard = () => {
         .viewToggle { display: flex; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
         .viewToggleBtn {
           padding: 6px 12px; border: none; background: #fff;
-          font-size: 12px; font-weight: 500; color: #6b7280; cursor: pointer; transition: background .15s, color .15s;
+          font-size: 12px; font-weight: 500; color: #6b7280; cursor: pointer;
+          transition: background .15s, color .15s; font-family: inherit;
         }
         .viewToggleBtn:hover { background: #f9f9f9; color: #374151; }
         .viewToggleActive { background: #FF5722 !important; color: #fff !important; }
@@ -1082,7 +1083,7 @@ const Dashboard = () => {
         .metricChip {
           padding: 5px 12px; border-radius: 20px; border: 1px solid #e5e7eb;
           background: #f9fafb; font-size: 12px; font-weight: 500; color: #6b7280;
-          cursor: pointer; transition: all .15s;
+          cursor: pointer; transition: all .15s; font-family: inherit;
         }
         .metricChip:hover { border-color: #FF5722; color: #FF5722; background: #fff4f0; }
         .metricChipActive { background: #FF5722 !important; color: #fff !important; border-color: #FF5722 !important; }
@@ -1090,7 +1091,8 @@ const Dashboard = () => {
         .chartPlaceholder { padding: 24px; text-align: center; color: #6b7280; font-size: 13px; font-weight: 400; }
         .chartTooltip {
           background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px;
-          box-shadow: 0 4px 12px rgba(0,0,0,.1); font-size: 12px; font-weight: 400; min-width: 180px;
+          box-shadow: 0 4px 12px rgba(0,0,0,.1); font-size: 12px; font-weight: 400;
+          min-width: 180px; font-family: 'Poppins', 'Inter', sans-serif;
         }
         .chartTooltipTitle { font-weight: 600; font-size: 12px; margin-bottom: 6px; color: #111827; border-bottom: 1px solid #eee; padding-bottom: 4px; }
         .chartTooltipRow { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; }

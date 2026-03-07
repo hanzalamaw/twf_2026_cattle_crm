@@ -4,6 +4,8 @@ import * as XLSX from 'xlsx';
 const API = 'http://localhost:5000';
 const PAGE_SIZE = 50;
 
+const HIDDEN_TYPES = ['Cow', 'Goat'];
+
 const COLUMNS = [
   { key: 'customer_id', label: 'Customer ID' },
   { key: 'order_id', label: 'Order ID' },
@@ -98,19 +100,14 @@ const defaultEditRow = () => ({
 
 function validateAmountsRealtime(row) {
   const errors = {};
-
   const total = Number(row.total_amount);
   const received = Number(row.received);
-
   if (row.total_amount !== '' && (Number.isNaN(total) || total < 0)) {
     errors.total_amount = 'Total must be ≥ 0';
   }
-
   if (row.received !== '' && (Number.isNaN(received) || received < 0)) {
     errors.received = 'Received must be ≥ 0';
   }
-
-  // 🚨 Main rule
   if (
     row.total_amount !== '' &&
     row.received !== '' &&
@@ -120,7 +117,6 @@ function validateAmountsRealtime(row) {
   ) {
     errors.total_amount = 'Total cannot be less than received';
   }
-
   return errors;
 }
 
@@ -147,7 +143,6 @@ function validateOrderEdit(row) {
     }
   }
 
-  // -------- AMOUNT VALIDATION --------
   const total = Number(trim(row.total_amount));
   const received = Number(trim(row.received));
   const pending = Number(trim(row.pending));
@@ -155,16 +150,12 @@ function validateOrderEdit(row) {
   if (trim(row.total_amount) !== '' && (Number.isNaN(total) || total < 0)) {
     errors.total_amount = 'Total must be a number ≥ 0';
   }
-
   if (trim(row.received) !== '' && (Number.isNaN(received) || received < 0)) {
     errors.received = 'Received must be a number ≥ 0';
   }
-
   if (trim(row.pending) !== '' && (Number.isNaN(pending) || pending < 0)) {
     errors.pending = 'Pending must be a number ≥ 0';
   }
-
-  // 🚨 IMPORTANT RULE
   if (!Number.isNaN(total) && !Number.isNaN(received)) {
     if (total < received) {
       errors.total_amount = 'Total amount cannot be less than received amount';
@@ -198,14 +189,15 @@ export default function OrderManagement() {
 
   const token = localStorage.getItem('token');
 
+  // Visible type options — never show Cow or Goat
+  const visibleOrderTypes = (filters.order_types || []).filter((t) => !HIDDEN_TYPES.includes(t));
+
   const fetchFilters = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       const url = params.toString() ? `${API}/api/booking/orders/filters?${params.toString()}` : `${API}/api/booking/orders/filters`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
         setFilters(data);
@@ -229,14 +221,14 @@ export default function OrderManagement() {
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
-      const res = await fetch(`${API}/api/booking/orders?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(`${API}/api/booking/orders?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const json = await res.json();
         const data = Array.isArray(json) ? json : json.data;
         const total = typeof json.total === 'number' ? json.total : (data?.length ?? 0);
-        setOrders(Array.isArray(data) ? data : []);
+        // Filter out Cow and Goat rows from the table
+        const filtered = (Array.isArray(data) ? data : []).filter((row) => !HIDDEN_TYPES.includes(row.type));
+        setOrders(filtered);
         setTotalCount(total);
       } else {
         setError('Failed to load orders');
@@ -297,10 +289,7 @@ export default function OrderManagement() {
 
   const handleSaveEdit = async () => {
     const errors = validateOrderEdit(editRow);
-    if (Object.keys(errors).length > 0) {
-      setEditErrors(errors);
-      return;
-    }
+    if (Object.keys(errors).length > 0) { setEditErrors(errors); return; }
     setEditErrors({});
     setSaving(true);
     try {
@@ -312,10 +301,7 @@ export default function OrderManagement() {
       }
       const res = await fetch(`${API}/api/booking/orders/${encodeURIComponent(editRow.order_id)}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload),
       });
       if (res.ok) {
@@ -333,9 +319,7 @@ export default function OrderManagement() {
 
   const handleInvoice = async (customerId) => {
     try {
-      const res = await fetch(`${API}/api/booking/invoice/${encodeURIComponent(customerId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(`${API}/api/booking/invoice/${encodeURIComponent(customerId)}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         alert(data.message || 'Failed to generate invoice');
@@ -364,11 +348,7 @@ export default function OrderManagement() {
       if (res.ok) {
         setCancelConfirm(null);
         fetchOrders();
-        setSelectedIds((prev) => {
-          const next = new Set(prev);
-          next.delete(cancelConfirm.order_id);
-          return next;
-        });
+        setSelectedIds((prev) => { const next = new Set(prev); next.delete(cancelConfirm.order_id); return next; });
       } else {
         const data = await res.json().catch(() => ({}));
         alert(data.message || 'Failed to cancel order');
@@ -392,10 +372,7 @@ export default function OrderManagement() {
 
   const handleExport = async () => {
     try {
-      let toExport = [];
       const ids = Array.from(selectedIds);
-
-      // Fetch ALL orders matching current filters (paginate; server caps at 100 per request)
       const params = new URLSearchParams();
       if (search?.trim()) params.set('search', search.trim());
       if (slot) params.set('slot', slot);
@@ -412,105 +389,53 @@ export default function OrderManagement() {
       do {
         params.set('page', String(pageNum));
         params.set('limit', String(limit));
-        const res = await fetch(`${API}/api/booking/orders?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          alert('Failed to load data for export');
-          return;
-        }
+        const res = await fetch(`${API}/api/booking/orders?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) { alert('Failed to load data for export'); return; }
         const json = await res.json();
         const data = Array.isArray(json) ? json : json.data;
         total = typeof json.total === 'number' ? json.total : 0;
-        const chunk = Array.isArray(data) ? data : [];
+        // Filter out Cow and Goat from export too
+        const chunk = (Array.isArray(data) ? data : []).filter((row) => !HIDDEN_TYPES.includes(row.type));
         allOrders = allOrders.concat(chunk);
         if (chunk.length < limit || allOrders.length >= total) break;
         pageNum += 1;
       } while (true);
 
-      // If checkbox selected → export selected rows only; else export all filtered
-      toExport = ids.length > 0 ? allOrders.filter(r => ids.includes(r.order_id)) : allOrders;
+      const toExport = ids.length > 0 ? allOrders.filter((r) => ids.includes(r.order_id)) : allOrders;
+      if (!toExport.length) { alert('No data to export'); return; }
 
-      if (!toExport.length) {
-        alert('No data to export');
-        return;
-      }
-  
-      // ✅ Excel Export
-      const headers = COLUMNS.map(c => c.label);
-  
-      const rows = toExport.map(row =>
-        COLUMNS.map(col => {
+      const headers = COLUMNS.map((c) => c.label);
+      const rows = toExport.map((row) =>
+        COLUMNS.map((col) => {
           const val = row[col.key];
-
-          if (AMOUNT_KEYS.includes(col.key)) {
-            const n = Number(val);
-            return Number.isFinite(n) ? n : (val ?? '');
-          }
-
+          if (AMOUNT_KEYS.includes(col.key)) { const n = Number(val); return Number.isFinite(n) ? n : (val ?? ''); }
           if (col.key === 'booking_date') return formatDate(val);
-
           if (col.key === 'payment_status') return val || '—';
-
           return val != null ? String(val) : '—';
         })
       );
 
       const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
       const wb = XLSX.utils.book_new();
-  
       XLSX.utils.book_append_sheet(wb, ws, 'Orders');
-  
-      XLSX.writeFile(
-        wb,
-        `orders-export-${new Date().toISOString().slice(0, 10)}.xlsx`
-      );
-  
+      XLSX.writeFile(wb, `orders-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
     } catch (e) {
       console.error(e);
       alert('Export failed');
     }
   };
 
-  const filterRowStyle = {
-    display: 'flex',
-    flexWrap: 'nowrap',
-    gap: '10px',
-    marginBottom: '16px',
-    alignItems: 'flex-end',
-    overflowX: 'auto',
-    minWidth: 0,
-  };
-  const filterFieldStyle = (width) => ({
-    width: width || 96,
-    minWidth: width || 96,
-    flexShrink: 0,
-  });
-
+  const filterRowStyle = { display: 'flex', flexWrap: 'nowrap', gap: '10px', marginBottom: '16px', alignItems: 'flex-end', overflowX: 'auto', minWidth: 0 };
+  const filterFieldStyle = (width) => ({ width: width || 96, minWidth: width || 96, flexShrink: 0 });
   const labelStyle = { display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px', whiteSpace: 'nowrap' };
 
   return (
-    <div style={{
-      padding: '19px',
-      fontFamily: "'Poppins', 'Inter', sans-serif",
-      display: 'flex',
-      flexDirection: 'column',
-      minHeight: 0,
-      height: '100%',
-      overflow: 'hidden',
-      boxSizing: 'border-box',
-    }}>
+    <div style={{ padding: '19px', fontFamily: "'Poppins', 'Inter', sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
-        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', whiteSpace: 'nowrap' }}>
-          Order Management
-        </h2>
+        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', whiteSpace: 'nowrap' }}>Order Management</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <label style={{ ...labelStyle, marginBottom: 0, marginRight: '6px' }}>Year</label>
-          <select
-            value={yearFilter}
-            onChange={(e) => setYearFilter(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px', minWidth: '112px' }}
-          >
+          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px', minWidth: '112px' }}>
             <option value="all">All</option>
             <option value="2026">Year 2026</option>
             <option value="2025">Year 2025</option>
@@ -522,25 +447,11 @@ export default function OrderManagement() {
       <div style={{ ...filterRowStyle, flexShrink: 0 }}>
         <div style={{ flex: '1 1 180px', minWidth: 0 }}>
           <label style={labelStyle}>Search (name, phone, area, address)</label>
-          <input
-            type="text"
-            placeholder="Search..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && fetchOrders()}
-            style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}
-          />
+          <input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && fetchOrders()} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }} />
         </div>
         <div style={filterFieldStyle(88)}>
           <label style={labelStyle}>Cow number</label>
-          <input
-            type="text"
-            placeholder="Cow #"
-            value={cowNumber}
-            onChange={(e) => setCowNumber(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && fetchOrders()}
-            style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}
-          />
+          <input type="text" placeholder="Cow #" value={cowNumber} onChange={(e) => setCowNumber(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && fetchOrders()} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }} />
         </div>
         <div style={filterFieldStyle(104)}>
           <label style={labelStyle}>Slot</label>
@@ -553,7 +464,8 @@ export default function OrderManagement() {
           <label style={labelStyle}>Type</label>
           <select value={orderType} onChange={(e) => setOrderType(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
             <option value="">All</option>
-            {filters.order_types.map((t) => <option key={t} value={t}>{t}</option>)}
+            {/* Cow and Goat hidden — only show allowed types */}
+            {visibleOrderTypes.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         <div style={filterFieldStyle(80)}>
@@ -571,15 +483,9 @@ export default function OrderManagement() {
           </select>
         </div>
         <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-          <button type="button" onClick={fetchOrders} style={{ padding: '6px 13px', height: '29px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            Apply
-          </button>
-          <button type="button" onClick={handleResetFilters} style={{ padding: '6px 13px', height: '29px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            Reset
-          </button>
-          <button type="button" onClick={handleExport} style={{ padding: '6px 13px', height: '29px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            Export
-          </button>
+          <button type="button" onClick={fetchOrders} style={{ padding: '6px 13px', height: '29px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>Apply</button>
+          <button type="button" onClick={handleResetFilters} style={{ padding: '6px 13px', height: '29px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>Reset</button>
+          <button type="button" onClick={handleExport} style={{ padding: '6px 13px', height: '29px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>Export</button>
         </div>
       </div>
 
@@ -587,14 +493,7 @@ export default function OrderManagement() {
         <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', flexShrink: 0, fontSize: '10px' }}>{error}</div>
       )}
 
-      <div style={{
-        flex: 1,
-        minHeight: '304px',
-        overflow: 'auto',
-        border: '1px solid #e0e0e0',
-        borderRadius: '6px',
-        background: '#fff',
-      }}>
+      <div style={{ flex: 1, minHeight: '304px', overflow: 'auto', border: '1px solid #e0e0e0', borderRadius: '6px', background: '#fff' }}>
         {loading ? (
           <div style={{ padding: '32px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading orders...</div>
         ) : (
@@ -612,9 +511,7 @@ export default function OrderManagement() {
             </thead>
             <tbody>
               {orders.length === 0 ? (
-                <tr>
-                  <td colSpan={COLUMNS.length + 2} style={{ padding: '24px', textAlign: 'center', color: '#666' }}>No orders found.</td>
-                </tr>
+                <tr><td colSpan={COLUMNS.length + 2} style={{ padding: '24px', textAlign: 'center', color: '#666' }}>No orders found.</td></tr>
               ) : (
                 orders.map((row) => (
                   <tr key={row.order_id} style={{ borderBottom: '1px solid #eee' }}>
@@ -649,26 +546,9 @@ export default function OrderManagement() {
 
       {!loading && totalCount > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px' }}>
-          <span style={{ fontSize: '13px', color: '#666' }}>
-            Showing {orders.length} of {totalCount} orders
-          </span>
+          <span style={{ fontSize: '13px', color: '#666' }}>Showing {orders.length} of {totalCount} orders</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              style={{
-                padding: '6px 12px',
-                fontSize: '10px',
-                background: page <= 1 ? '#f0f0f0' : '#fff',
-                color: page <= 1 ? '#999' : '#333',
-                border: '1px solid #e0e0e0',
-                borderRadius: '6px',
-                cursor: page <= 1 ? 'not-allowed' : 'pointer',
-              }}
-            >
-              Previous
-            </button>
+            <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={{ padding: '6px 12px', fontSize: '10px', background: page <= 1 ? '#f0f0f0' : '#fff', color: page <= 1 ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page <= 1 ? 'not-allowed' : 'pointer' }}>Previous</button>
             {(() => {
               const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
               const showPages = 5;
@@ -677,51 +557,16 @@ export default function OrderManagement() {
               if (end - start + 1 < showPages) start = Math.max(1, end - showPages + 1);
               const pages = [];
               for (let i = start; i <= end; i++) pages.push(i);
-              return (
-                <>
-                  {pages.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPage(p)}
-                      style={{
-                        minWidth: '32px',
-                        padding: '6px 10px',
-                        fontSize: '10px',
-                        background: p === page ? '#FF5722' : '#fff',
-                        color: p === page ? '#fff' : '#333',
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontWeight: p === page ? 600 : 400,
-                      }}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </>
-              );
+              return pages.map((p) => (
+                <button key={p} type="button" onClick={() => setPage(p)} style={{ minWidth: '32px', padding: '6px 10px', fontSize: '10px', background: p === page ? '#FF5722' : '#fff', color: p === page ? '#fff' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', fontWeight: p === page ? 600 : 400 }}>{p}</button>
+              ));
             })()}
-            <button
-              type="button"
-              disabled={page >= Math.ceil(totalCount / PAGE_SIZE)}
-              onClick={() => setPage((p) => Math.min(Math.ceil(totalCount / PAGE_SIZE) || 1, p + 1))}
-              style={{
-                padding: '6px 12px',
-                fontSize: '10px',
-                background: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#f0f0f0' : '#fff',
-                color: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#999' : '#333',
-                border: '1px solid #e0e0e0',
-                borderRadius: '6px',
-                cursor: page >= Math.ceil(totalCount / PAGE_SIZE) ? 'not-allowed' : 'pointer',
-              }}
-            >
-              Next
-            </button>
+            <button type="button" disabled={page >= Math.ceil(totalCount / PAGE_SIZE)} onClick={() => setPage((p) => Math.min(Math.ceil(totalCount / PAGE_SIZE) || 1, p + 1))} style={{ padding: '6px 12px', fontSize: '10px', background: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#f0f0f0' : '#fff', color: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page >= Math.ceil(totalCount / PAGE_SIZE) ? 'not-allowed' : 'pointer' }}>Next</button>
           </div>
         </div>
       )}
 
+      {/* ── Edit modal ── */}
       {editOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !saving && (setEditErrors({}), setEditOpen(false), setEditPreviousRow(null))}>
           <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(680px, 95vw)', maxHeight: '85vh', overflowY: 'auto', overflowX: 'hidden', boxSizing: 'border-box' }} onClick={(e) => e.stopPropagation()}>
@@ -744,44 +589,24 @@ export default function OrderManagement() {
                       value={editRow[key] ?? ''}
                       onChange={(e) => {
                         const val = e.target.value;
-                      
                         setEditRow((prev) => {
                           const next = { ...prev, [key]: val };
-                      
-                          // Auto-calc pending
                           if (key === 'total_amount') {
                             const total = parseFloat(val) || 0;
                             const received = parseFloat(prev.received) || 0;
                             next.pending = Math.max(0, total - received).toFixed(2);
                           }
-                      
-                          // 🔥 REAL-TIME VALIDATION
                           const realtimeErrors = validateAmountsRealtime(next);
-
-                          // 🔥 Replace only amount-related errors
                           setEditErrors((prev) => {
                             const updated = { ...prev };
-                          
-                            // Remove old amount errors
                             delete updated.total_amount;
                             delete updated.received;
-                          
-                            // Add new ones (if any)
                             return { ...updated, ...realtimeErrors };
                           });
-                      
                           return next;
                         });
                       }}
-                      style={{
-                        width: '100%',
-                        boxSizing: 'border-box',
-                        padding: '6px 10px',
-                        borderRadius: '6px',
-                        border: editErrors[key] ? '1px solid #dc2626' : '1px solid #e0e0e0',
-                        fontSize: '10px',
-                        ...(isReadOnly && { backgroundColor: '#f5f5f5', cursor: 'not-allowed' }),
-                      }}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: editErrors[key] ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px', ...(isReadOnly && { backgroundColor: '#f5f5f5', cursor: 'not-allowed' }) }}
                     />
                     {editErrors[key] && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{editErrors[key]}</div>}
                   </div>
@@ -789,12 +614,7 @@ export default function OrderManagement() {
               })}
               <div style={{ minWidth: 0, gridColumn: '1 / -1' }}>
                 <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>description</label>
-                <textarea
-                  value={editRow.description ?? ''}
-                  onChange={(e) => setEditRow((p) => ({ ...p, description: e.target.value }))}
-                  rows={2}
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px', resize: 'vertical' }}
-                />
+                <textarea value={editRow.description ?? ''} onChange={(e) => setEditRow((p) => ({ ...p, description: e.target.value }))} rows={2} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px', resize: 'vertical' }} />
               </div>
             </div>
             <div style={{ marginTop: '14px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -805,6 +625,7 @@ export default function OrderManagement() {
         </div>
       )}
 
+      {/* ── Cancel confirm modal ── */}
       {cancelConfirm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }}>
           <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '400px' }}>

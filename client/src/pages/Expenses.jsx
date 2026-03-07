@@ -53,10 +53,9 @@ export default function Expenses() {
   const [addDate, setAddDate] = useState('');
   const [addDoneBy, setAddDoneBy] = useState('');
   const [nextExpenseId, setNextExpenseId] = useState('');
-
   const [editDate, setEditDate] = useState('');
   const [editDoneBy, setEditDoneBy] = useState('');
-  
+
   const PAGE_SIZE = 50;
   const { authFetch } = useAuth();
   const token = localStorage.getItem('token');
@@ -93,11 +92,7 @@ export default function Expenses() {
     try {
       const res = await authFetch(`${API}/api/booking/expenses?page=${page}&limit=${PAGE_SIZE}`, { headers: { Authorization: `Bearer ${token}` } });
       let data;
-      try {
-        data = await res.json();
-      } catch (_) {
-        data = {};
-      }
+      try { data = await res.json(); } catch (_) { data = {}; }
       if (res.ok) {
         setExpenses(Array.isArray(data.data) ? data.data : []);
         setTotalCount(typeof data.total === 'number' ? data.total : (Array.isArray(data.data) ? data.data.length : 0));
@@ -113,49 +108,30 @@ export default function Expenses() {
     }
   }, [authFetch, token, page]);
 
-  useEffect(() => {
-    fetchSummary();
-  }, [fetchSummary]);
-  useEffect(() => {
-    fetchExpenses();
-  }, [fetchExpenses]);
+  useEffect(() => { fetchSummary(); }, [fetchSummary]);
+  useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
 
   const openAddModal = async () => {
-    setAddBank('');
-    setAddCash('');
-    setAddDescription('');
-    setAddDate('');
-    setAddDoneBy('');
-    setAddErrors({});
-  
+    setAddBank(''); setAddCash(''); setAddDescription('');
+    setAddDate(''); setAddDoneBy(''); setAddErrors({});
     try {
-      const res = await authFetch(`${API}/api/booking/expenses/next-id`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-  
+      const res = await authFetch(`${API}/api/booking/expenses/next-id`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => ({}));
-  
-      if (res.ok) {
-        setNextExpenseId(data.expense_id);
-      } else {
-        setNextExpenseId('');
-      }
+      setNextExpenseId(res.ok ? data.expense_id : '');
     } catch (e) {
       console.error(e);
       setNextExpenseId('');
     }
-  
     setAddModalOpen(true);
   };
+
   const openEditModal = (row) => {
     setEditExpense(row);
     setEditBank(String(row.bank ?? ''));
     setEditCash(String(row.cash ?? ''));
     setEditDescription(String(row.description ?? ''));
-  
     setEditDate(row.done_at ? row.done_at.split('T')[0] : '');
     setEditDoneBy(String(row.done_by ?? ''));
-  
     setEditErrors({});
   };
 
@@ -182,22 +158,11 @@ export default function Expenses() {
       const res = await authFetch(`${API}/api/booking/expenses/${encodeURIComponent(editExpense.expense_id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          bank,
-          cash,
-          description: editDescription.trim(),
-          done_at: editDate || null,
-          done_by: editDoneBy.trim() || null
-        }),
+        body: JSON.stringify({ bank, cash, description: editDescription.trim(), done_at: editDate || null, done_by: editDoneBy.trim() || null }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setEditExpense(null);
-        fetchSummary();
-        fetchExpenses();
-      } else {
-        setError(data.message || 'Failed to update expense');
-      }
+      if (res.ok) { setEditExpense(null); fetchSummary(); fetchExpenses(); }
+      else setError(data.message || 'Failed to update expense');
     } catch (e) {
       setError('Failed to update expense');
     } finally {
@@ -214,11 +179,8 @@ export default function Expenses() {
         setDeleteConfirmExpense(null);
         if (editExpense?.expense_id === row.expense_id) setEditExpense(null);
         setSelectedIds((prev) => { const next = new Set(prev); next.delete(row.expense_id); return next; });
-        fetchSummary();
-        fetchExpenses();
-      } else {
-        setError(data.message || 'Failed to delete expense');
-      }
+        fetchSummary(); fetchExpenses();
+      } else setError(data.message || 'Failed to delete expense');
     } catch (e) {
       setError('Failed to delete expense');
     } finally {
@@ -249,22 +211,11 @@ export default function Expenses() {
       const res = await authFetch(`${API}/api/booking/expenses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          bank,
-          cash,
-          description: addDescription.trim(),
-          done_at: addDate || null,
-          done_by: addDoneBy.trim() || null
-        }),
+        body: JSON.stringify({ bank, cash, description: addDescription.trim(), done_at: addDate || null, done_by: addDoneBy.trim() || null }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setAddModalOpen(false);
-        fetchSummary();
-        fetchExpenses();
-      } else {
-        setError(data.message || 'Failed to add expense');
-      }
+      if (res.ok) { setAddModalOpen(false); fetchSummary(); fetchExpenses(); }
+      else setError(data.message || 'Failed to add expense');
     } catch (e) {
       setError('Failed to add expense');
     } finally {
@@ -273,17 +224,13 @@ export default function Expenses() {
   };
 
   const handleExport = async () => {
-    // Fetch ALL expenses (paginate; server caps at 100 per request)
     let allExpenses = [];
     const limit = 100;
     let pageNum = 1;
     let total = 0;
     do {
       const res = await authFetch(`${API}/api/booking/expenses?page=${pageNum}&limit=${limit}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) {
-        setError('Failed to load expenses for export');
-        return;
-      }
+      if (!res.ok) { setError('Failed to load expenses for export'); return; }
       const data = await res.json();
       total = typeof data.total === 'number' ? data.total : 0;
       const chunk = Array.isArray(data.data) ? data.data : [];
@@ -292,22 +239,14 @@ export default function Expenses() {
       pageNum += 1;
     } while (true);
 
-    const toExport = selectedIds.size > 0
-      ? allExpenses.filter((e) => selectedIds.has(e.expense_id))
-      : allExpenses;
-    if (toExport.length === 0) {
-      alert(selectedIds.size > 0 ? 'No selected expenses to export.' : 'No expenses to export.');
-      return;
-    }
+    const toExport = selectedIds.size > 0 ? allExpenses.filter((e) => selectedIds.has(e.expense_id)) : allExpenses;
+    if (toExport.length === 0) { alert(selectedIds.size > 0 ? 'No selected expenses to export.' : 'No expenses to export.'); return; }
     const exportedIds = toExport.map((e) => e.expense_id);
     const headers = EXPENSE_COLUMNS.map((c) => c.label);
     const rows = toExport.map((row) =>
       EXPENSE_COLUMNS.map((col) => {
         const val = row[col.key];
-        if (['bank', 'cash', 'total'].includes(col.key)) {
-          const n = Number(val);
-          return Number.isFinite(n) ? n : (val ?? '');
-        }
+        if (['bank', 'cash', 'total'].includes(col.key)) { const n = Number(val); return Number.isFinite(n) ? n : (val ?? ''); }
         if (col.key === 'done_at') return formatDate(val);
         return val != null ? String(val) : '—';
       })
@@ -322,9 +261,7 @@ export default function Expenses() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ count: toExport.length, expense_ids: exportedIds }),
       });
-    } catch (e) {
-      console.error('Export audit failed', e);
-    }
+    } catch (e) { console.error('Export audit failed', e); }
   };
 
   const fullDataTotalBank = summary?.totalBank ?? 0;
@@ -341,6 +278,8 @@ export default function Expenses() {
 
   return (
     <div style={{ padding: '19px', fontFamily: "'Poppins', 'Inter', sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
+
+      {/* ── Top bar ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0, flexWrap: 'wrap', gap: '10px' }}>
         <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#333', flexShrink: 0 }}>Expenses</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
@@ -354,25 +293,45 @@ export default function Expenses() {
         <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', flexShrink: 0, fontSize: '10px' }}>{error}</div>
       )}
 
+      {/* ── Show/hide toggle ── */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', flexShrink: 0 }}>
         <button type="button" onClick={() => setAmountVisible((v) => !v)} title={amountVisible ? 'Hide' : 'Show'} style={{ padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
         </button>
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '13px', marginBottom: '16px', flexShrink: 0, alignItems: 'flex-start' }}>
-        <div style={{ flex: '1 1 200px', minWidth: '180px', padding: '13px 16px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-          <div style={{ fontSize: '10px', color: '#666', marginBottom: '3px' }}>Bank</div>
-          <div style={{ fontSize: '14px', fontWeight: '700', color: '#166534', minHeight: '22px' }}>
-            {amountVisible ? <span>{formatAmount(fullDataTotalBank)}</span> : <span style={{ filter: 'blur(6px)', userSelect: 'none', color: '#999' }}>{formatAmount(fullDataTotalBank)}</span>}
+      {/* ── Summary cards ── */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px', flexShrink: 0, alignItems: 'flex-start' }}>
+        {/* Bank card */}
+        <div style={{ flex: '1 1 160px', minWidth: '160px', padding: '14px 12px', borderRadius: '10px', border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <img src="/icons/pending_payments_amount.png" alt="" style={{ width: '50px', height: '50px', objectFit: 'contain' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
+            <div style={{ fontSize: '11px', fontWeight: '400', color: '#6b7280' }}>Bank</div>
+            <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827', lineHeight: '1.2' }}>
+              {amountVisible
+                ? <span>{formatAmount(fullDataTotalBank)}</span>
+                : <span style={{ filter: 'blur(6px)', userSelect: 'none', display: 'inline-block', minWidth: '120px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', padding: '6px 10px' }}>{formatAmount(fullDataTotalBank)}</span>}
+            </div>
           </div>
         </div>
-        <div style={{ flex: '1 1 200px', minWidth: '180px', padding: '13px 16px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-          <div style={{ fontSize: '10px', color: '#666', marginBottom: '3px' }}>Cash</div>
-          <div style={{ fontSize: '14px', fontWeight: '700', color: '#b91c1c', minHeight: '22px' }}>
-            {amountVisible ? <span>{formatAmount(fullDataTotalCash)}</span> : <span style={{ filter: 'blur(6px)', userSelect: 'none', color: '#999' }}>{formatAmount(fullDataTotalCash)}</span>}
+
+        {/* Cash card */}
+        <div style={{ flex: '1 1 160px', minWidth: '160px', padding: '14px 12px', borderRadius: '10px', border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <img src="/icons/pending_payments_amount.png" alt="" style={{ width: '50px', height: '50px', objectFit: 'contain' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
+            <div style={{ fontSize: '11px', fontWeight: '400', color: '#6b7280' }}>Cash</div>
+            <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827', lineHeight: '1.2' }}>
+              {amountVisible
+                ? <span>{formatAmount(fullDataTotalCash)}</span>
+                : <span style={{ filter: 'blur(6px)', userSelect: 'none', display: 'inline-block', minWidth: '120px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', padding: '6px 10px' }}>{formatAmount(fullDataTotalCash)}</span>}
+            </div>
           </div>
         </div>
+
         <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
           <button type="button" onClick={openAddModal} style={{ padding: '6px 13px', fontSize: '11px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             Add Expense
@@ -380,6 +339,7 @@ export default function Expenses() {
         </div>
       </div>
 
+      {/* ── Table ── */}
       <div style={{ flex: 1, minHeight: '400px', overflow: 'auto' }}>
         <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', background: '#fff', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
@@ -404,6 +364,8 @@ export default function Expenses() {
                       key={row.expense_id}
                       style={{ borderBottom: '1px solid #eee', cursor: 'pointer' }}
                       onClick={(e) => { if (!e.target.closest('input[type="checkbox"]') && !e.target.closest('button')) openEditModal(row); }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#fafafa'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = ''}
                     >
                       <td style={{ padding: '8px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                         <input type="checkbox" checked={selectedIds.has(row.expense_id)} onChange={() => toggleSelect(row.expense_id)} style={{ cursor: 'pointer' }} />
@@ -414,7 +376,9 @@ export default function Expenses() {
                         </td>
                       ))}
                       <td style={{ padding: '8px', textAlign: 'center', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                        <button type="button" onClick={() => setDeleteConfirmExpense(row)} disabled={submitting} title="Delete" style={{ padding: '4px', cursor: submitting ? 'not-allowed' : 'pointer', background: 'none', border: 'none', verticalAlign: 'middle', opacity: submitting ? 0.6 : 1 }}><img src="/icons/delete.png" alt="Delete" style={{ width: '18px', height: '18px', display: 'block' }} /></button>
+                        <button type="button" onClick={() => setDeleteConfirmExpense(row)} disabled={submitting} title="Delete" style={{ padding: '4px', cursor: submitting ? 'not-allowed' : 'pointer', background: 'none', border: 'none', verticalAlign: 'middle', opacity: submitting ? 0.6 : 1 }}>
+                          <img src="/icons/delete.png" alt="Delete" style={{ width: '18px', height: '18px', display: 'block' }} />
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -425,20 +389,12 @@ export default function Expenses() {
         </div>
       </div>
 
+      {/* ── Pagination ── */}
       {!loading && totalCount > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px' }}>
-          <span style={{ fontSize: '13px', color: '#666' }}>
-            Showing {expenses.length} of {totalCount} expenses
-          </span>
+          <span style={{ fontSize: '13px', color: '#666' }}>Showing {expenses.length} of {totalCount} expenses</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              style={{ padding: '6px 12px', fontSize: '10px', background: page <= 1 ? '#f0f0f0' : '#fff', color: page <= 1 ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page <= 1 ? 'not-allowed' : 'pointer' }}
-            >
-              Previous
-            </button>
+            <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={{ padding: '6px 12px', fontSize: '10px', background: page <= 1 ? '#f0f0f0' : '#fff', color: page <= 1 ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page <= 1 ? 'not-allowed' : 'pointer' }}>Previous</button>
             {(() => {
               const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
               const showPages = 5;
@@ -447,40 +403,21 @@ export default function Expenses() {
               if (end - start + 1 < showPages) start = Math.max(1, end - showPages + 1);
               const pages = [];
               for (let i = start; i <= end; i++) pages.push(i);
-              return (
-                <>
-                  {pages.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPage(p)}
-                      style={{ minWidth: '32px', padding: '6px 10px', fontSize: '10px', background: p === page ? '#2563eb' : '#fff', color: p === page ? '#fff' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', fontWeight: p === page ? 600 : 400 }}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </>
-              );
+              return pages.map((p) => (
+                <button key={p} type="button" onClick={() => setPage(p)} style={{ minWidth: '32px', padding: '6px 10px', fontSize: '10px', background: p === page ? '#2563eb' : '#fff', color: p === page ? '#fff' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', fontWeight: p === page ? 600 : 400 }}>{p}</button>
+              ));
             })()}
-            <button
-              type="button"
-              disabled={page >= Math.ceil(totalCount / PAGE_SIZE)}
-              onClick={() => setPage((p) => Math.min(Math.ceil(totalCount / PAGE_SIZE) || 1, p + 1))}
-              style={{ padding: '6px 12px', fontSize: '10px', background: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#f0f0f0' : '#fff', color: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page >= Math.ceil(totalCount / PAGE_SIZE) ? 'not-allowed' : 'pointer' }}
-            >
-              Next
-            </button>
+            <button type="button" disabled={page >= Math.ceil(totalCount / PAGE_SIZE)} onClick={() => setPage((p) => Math.min(Math.ceil(totalCount / PAGE_SIZE) || 1, p + 1))} style={{ padding: '6px 12px', fontSize: '10px', background: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#f0f0f0' : '#fff', color: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page >= Math.ceil(totalCount / PAGE_SIZE) ? 'not-allowed' : 'pointer' }}>Next</button>
           </div>
         </div>
       )}
 
+      {/* ── Delete confirm modal ── */}
       {deleteConfirmExpense && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !submitting && setDeleteConfirmExpense(null)}>
           <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(380px, 95vw)', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '600', color: '#333' }}>Delete expense?</h3>
-            <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#666' }}>
-              Delete expense <strong>{deleteConfirmExpense.expense_id}</strong>? This cannot be undone.
-            </p>
+            <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#666' }}>Delete expense <strong>{deleteConfirmExpense.expense_id}</strong>? This cannot be undone.</p>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => !submitting && setDeleteConfirmExpense(null)} disabled={submitting} style={{ padding: '6px 13px', background: '#e0e0e0', color: '#333', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>Cancel</button>
               <button type="button" onClick={() => handleDelete(deleteConfirmExpense)} disabled={submitting} style={{ padding: '6px 13px', background: '#b91c1c', color: '#fff', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>{submitting ? 'Deleting...' : 'Delete'}</button>
@@ -489,6 +426,7 @@ export default function Expenses() {
         </div>
       )}
 
+      {/* ── Edit modal ── */}
       {editExpense && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !submitting && setEditExpense(null)}>
           <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(420px, 95vw)', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
@@ -516,51 +454,15 @@ export default function Expenses() {
               <input type="text" value={editDescription} onChange={(e) => { setEditDescription(e.target.value); setEditErrors((p) => ({ ...p, edit: undefined })); }} placeholder="e.g. Fuel, stationery" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px' }} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
-
-  {/* Date Field */}
-  <div>
-    <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>
-      Date
-    </label>
-    <input
-      type="date"
-      value={editDate}
-      onChange={(e) => setEditDate(e.target.value)}
-      style={{
-        width: '100%',
-        boxSizing: 'border-box',
-        padding: '6px 10px',
-        borderRadius: '6px',
-        border: '1px solid #e0e0e0',
-        fontSize: '10px',
-        height: '30px'
-      }}
-    />
-  </div>
-
-  {/* Done By Field */}
-  <div>
-    <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>
-      Done By
-    </label>
-    <input
-      type="text"
-      value={editDoneBy}
-      onChange={(e) => setEditDoneBy(e.target.value)}
-      placeholder="Staff name"
-      style={{
-        width: '100%',
-        boxSizing: 'border-box',
-        padding: '6px 10px',
-        borderRadius: '6px',
-        border: '1px solid #e0e0e0',
-        fontSize: '10px',
-        height: '30px'
-      }}
-    />
-  </div>
-
-</div>
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Date</label>
+                <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px', height: '30px' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Done By</label>
+                <input type="text" value={editDoneBy} onChange={(e) => setEditDoneBy(e.target.value)} placeholder="Staff name" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px', height: '30px' }} />
+              </div>
+            </div>
             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => !submitting && setEditExpense(null)} disabled={submitting} style={{ padding: '6px 13px', background: '#e0e0e0', color: '#333', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>Close</button>
               <button type="button" onClick={handleSaveEdit} disabled={submitting || ((parseFloat(editBank) || 0) === 0 && (parseFloat(editCash) || 0) === 0)} style={{ padding: '6px 13px', background: '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>{submitting ? 'Saving...' : 'Save'}</button>
@@ -569,16 +471,12 @@ export default function Expenses() {
         </div>
       )}
 
+      {/* ── Add modal ── */}
       {addModalOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !submitting && setAddModalOpen(false)}>
           <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(420px, 95vw)', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
-          <h3 style={{ margin: '0' , fontSize: '13px', fontWeight: '600' }}>
-  Add Expense
-</h3>
-
-<div style={{ fontSize: '10px', color: '#666', marginBottom: '13px' }}>
-  Expense ID: {nextExpenseId || 'Loading...'}
-</div>
+            <h3 style={{ margin: '0', fontSize: '13px', fontWeight: '600' }}>Add Expense</h3>
+            <div style={{ fontSize: '10px', color: '#666', marginBottom: '13px' }}>Expense ID: {nextExpenseId || 'Loading...'}</div>
             {(addErrors.add || addErrors.addBank || addErrors.addCash) && (
               <div style={{ marginBottom: '10px', padding: '6px', background: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '10px' }}>
                 {addErrors.add}
@@ -597,64 +495,19 @@ export default function Expenses() {
               </div>
             </div>
             <div style={{ marginBottom: '13px' }}>
-  <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>
-    Description (optional)
-  </label>
-  <input
-    type="text"
-    value={addDescription}
-    onChange={(e) => setAddDescription(e.target.value)}
-    placeholder="e.g. Fuel, stationery"
-    style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px' }}
-  />
-</div>
-
-<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
-
-  {/* Date Field */}
-  <div>
-    <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>
-      Date
-    </label>
-    <input
-      type="date"
-      value={addDate}
-      onChange={(e) => setAddDate(e.target.value)}
-      style={{
-        width: '100%',
-        boxSizing: 'border-box',
-        padding: '6px 10px',
-        borderRadius: '6px',
-        border: '1px solid #e0e0e0',
-        fontSize: '10px',
-        height: '30px'
-      }}
-    />
-  </div>
-
-  {/* Done By Field */}
-  <div>
-    <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>
-      Done By
-    </label>
-    <input
-      type="text"
-      value={addDoneBy}
-      onChange={(e) => setAddDoneBy(e.target.value)}
-      placeholder="Staff name"
-      style={{
-        width: '100%',
-        boxSizing: 'border-box',
-        padding: '6px 10px',
-        borderRadius: '6px',
-        border: '1px solid #e0e0e0',
-        fontSize: '10px',
-        height: '30px'
-      }}
-    />
-  </div>
-
-</div>
+              <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Description (optional)</label>
+              <input type="text" value={addDescription} onChange={(e) => setAddDescription(e.target.value)} placeholder="e.g. Fuel, stationery" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px' }} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Date</label>
+                <input type="date" value={addDate} onChange={(e) => setAddDate(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px', height: '30px' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Done By</label>
+                <input type="text" value={addDoneBy} onChange={(e) => setAddDoneBy(e.target.value)} placeholder="Staff name" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px', height: '30px' }} />
+              </div>
+            </div>
             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => !submitting && setAddModalOpen(false)} disabled={submitting} style={{ padding: '6px 13px', background: '#e0e0e0', color: '#333', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>Close</button>
               <button type="button" onClick={handleAddExpense} disabled={submitting || ((parseFloat(addBank) || 0) === 0 && (parseFloat(addCash) || 0) === 0)} style={{ padding: '6px 13px', background: '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>{submitting ? 'Submitting...' : 'Add'}</button>
