@@ -92,29 +92,22 @@ const Login = () => {
       justifyContent: 'center',
       alignItems: 'center',
       minHeight: '100vh',
-      width: '100vw',
+      width: '100%',
       background: '#FFFFFF',
       fontFamily: "'Poppins', 'Inter', sans-serif",
-      padding: '32px 16px',
+      padding: '20px 12px',
       boxSizing: 'border-box',
-      margin: 0,
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      overflow: 'auto'
     }}>
 
       <div style={{
-        position: 'relative',
+        display: 'grid',
         width: '100%',
-        maxWidth: '900px',
-        minHeight: '520px'
+        maxWidth: '720px',
       }}>
 
         {/* Back Card 2 */}
         <div style={{
-          position: 'absolute',
-          inset: 0,
+          gridArea: '1 / 1',
           background: '#FFE4DB',
           borderRadius: '24px',
           transform: 'rotate(2deg) translate(6px, 8px)',
@@ -124,8 +117,7 @@ const Login = () => {
 
         {/* Back Card 1 */}
         <div style={{
-          position: 'absolute',
-          inset: 0,
+          gridArea: '1 / 1',
           background: '#FFEDE6',
           borderRadius: '22px',
           transform: 'rotate(-1.5deg) translate(-5px, -6px)',
@@ -135,16 +127,16 @@ const Login = () => {
 
         {/* Main White Card */}
         <div style={{
+          gridArea: '1 / 1',
           background: '#FFFFFF',
           borderRadius: '20px',
           width: '100%',
-          minHeight: '520px',
           display: 'flex',
           flexDirection: 'row',
           flexWrap: 'wrap',
           overflow: 'hidden',
           position: 'relative',
-          padding: '30px',
+          padding: '24px',
           boxSizing: 'border-box',
           alignItems: 'center',
           zIndex: 2,
@@ -152,20 +144,20 @@ const Login = () => {
         }}>
 
           {/* Inner Login Card */}
-          <div style={{
+          <div className="login-inner-card" style={{
             background: '#FFFFFF',
             borderRadius: '16px',
             boxShadow: '0 8px 30px rgba(0,0,0,0.06)',
-            padding: '35px',
+            padding: '28px',
             width: '100%',
-            maxWidth: '350px',
+            maxWidth: '300px',
             zIndex: 3,
             display: 'flex',
             flexDirection: 'column',
             boxSizing: 'border-box',
             margin: '0 auto'
           }}>
-            <div style={{ marginBottom: '20px' }}>
+            <div style={{ marginBottom: '16px' }}>
               <p style={{ color: '#FF5722', fontSize: '12px', fontWeight: '500', margin: '0 0 4px 0' }}>Your logo</p>
               <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#333', margin: 0 }}>Login</h1>
             </div>
@@ -466,11 +458,10 @@ const Login = () => {
           }
         }
 
-        /* Mobile: tighten card padding and reduce outer padding */
+        /* Mobile: reduce inner card padding */
         @media (max-width: 480px) {
-          /* Outer wrapper padding */
-          div[style*="position: fixed"] {
-            padding: 16px 10px !important;
+          .login-inner-card {
+            padding: 20px 16px !important;
           }
         }
       `}</style>
