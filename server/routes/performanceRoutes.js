@@ -2,6 +2,28 @@
 import { logError } from "../utils/logger.js";
 
 export const registerPerformanceRoutes = (app, db, verifyToken) => {
+  // ---------- Audit log helper (mirrors control.js) ----------
+  const logAuditAction = async (userId, action, entityType, entityId, oldValues, newValues, ipAddress, userAgent) => {
+    try {
+      await db.execute(
+        `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_values, new_values, ip_address, user_agent) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          userId,
+          action,
+          entityType,
+          entityId,
+          oldValues ? JSON.stringify(oldValues) : null,
+          newValues ? JSON.stringify(newValues) : null,
+          ipAddress,
+          userAgent,
+        ]
+      );
+    } catch (error) {
+      logError("PERFORMANCE", "Audit log insert failed", error);
+    }
+  };
+
   // ---------- Performers (performance_targets) ----------
   app.get("/api/performance/performers", verifyToken, async (req, res) => {
     try {
@@ -48,7 +70,17 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
       const [result] = await db.execute(
         `INSERT INTO performance_targets (display_name, user_id, calls_target, leads_target, orders_target)
          VALUES (?, ?, ?, ?, ?)`,
-        [display_name.trim(), user_id, Number(calls_target) || 0, Number(leads_target) || 0, Number(orders_target) || 0]
+        [display_name.trim(), user_id, c, l, o]
+      );
+      await logAuditAction(
+        req.userId,
+        "CREATE_PERFORMER",
+        "performance_targets",
+        result.insertId.toString(),
+        null,
+        { display_name, user_id, calls_target: c, leads_target: l, orders_target: o },
+        req.ip,
+        req.get("user-agent")
       );
       res.status(201).json({ message: "Performer added", performer_id: result.insertId });
     } catch (error) {
@@ -61,6 +93,15 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
     try {
       const id = req.params.id;
       const { display_name, user_id, calls_target, leads_target, orders_target } = req.body;
+
+      // Fetch old record for audit diff
+      const [oldRows] = await db.execute(
+        "SELECT * FROM performance_targets WHERE performer_id = ?",
+        [id]
+      );
+      if (oldRows.length === 0) return res.status(404).json({ message: "Performer not found" });
+      const oldPerformer = oldRows[0];
+
       const updates = [];
       const values = [];
       if (display_name !== undefined) {
@@ -93,24 +134,35 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
       if (updates.length === 0) {
         return res.status(400).json({ message: "No fields to update" });
       }
+
       const isUpdatingTargets = [calls_target, leads_target, orders_target].some((v) => v !== undefined);
       if (isUpdatingTargets) {
-        const [rows] = await db.execute(
-          "SELECT calls_target, leads_target, orders_target FROM performance_targets WHERE performer_id = ?",
-          [id]
-        );
-        if (rows.length === 0) return res.status(404).json({ message: "Performer not found" });
-        const current = rows[0];
-        const c = calls_target !== undefined ? Number(calls_target) || 0 : Number(current.calls_target) || 0;
-        const l = leads_target !== undefined ? Number(leads_target) || 0 : Number(current.leads_target) || 0;
-        const o = orders_target !== undefined ? Number(orders_target) || 0 : Number(current.orders_target) || 0;
+        const c = calls_target !== undefined ? Number(calls_target) || 0 : Number(oldPerformer.calls_target) || 0;
+        const l = leads_target !== undefined ? Number(leads_target) || 0 : Number(oldPerformer.leads_target) || 0;
+        const o = orders_target !== undefined ? Number(orders_target) || 0 : Number(oldPerformer.orders_target) || 0;
         const targetErr = validateTargets(c, l, o);
         if (targetErr) return res.status(400).json({ message: targetErr });
       }
+
       values.push(id);
       await db.execute(
         `UPDATE performance_targets SET ${updates.join(", ")} WHERE performer_id = ?`,
         values
+      );
+
+      const [newRows] = await db.execute(
+        "SELECT * FROM performance_targets WHERE performer_id = ?",
+        [id]
+      );
+      await logAuditAction(
+        req.userId,
+        "UPDATE_PERFORMER",
+        "performance_targets",
+        id,
+        oldPerformer,
+        newRows[0],
+        req.ip,
+        req.get("user-agent")
       );
       res.json({ message: "Performer updated" });
     } catch (error) {
@@ -122,8 +174,26 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
   app.delete("/api/performance/performers/:id", verifyToken, async (req, res) => {
     try {
       const id = req.params.id;
+
+      const [oldRows] = await db.execute(
+        "SELECT * FROM performance_targets WHERE performer_id = ?",
+        [id]
+      );
+      if (oldRows.length === 0) return res.status(404).json({ message: "Performer not found" });
+
       await db.execute("DELETE FROM pms_daily_report WHERE performer_id = ?", [id]);
       await db.execute("DELETE FROM performance_targets WHERE performer_id = ?", [id]);
+
+      await logAuditAction(
+        req.userId,
+        "DELETE_PERFORMER",
+        "performance_targets",
+        id,
+        oldRows[0],
+        null,
+        req.ip,
+        req.get("user-agent")
+      );
       res.json({ message: "Performer deleted" });
     } catch (error) {
       logError("PERFORMANCE", "Delete performer error", error);
@@ -178,10 +248,23 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
       if (existing.length > 0) {
         return res.status(400).json({ message: "A report for this performer and date already exists. Use edit to update." });
       }
+      const c = Number(calls_done) || 0;
+      const l = Number(leads_generated) || 0;
+      const o = Number(orders_confirmed) || 0;
       const [result] = await db.execute(
         `INSERT INTO pms_daily_report (performer_id, date, calls_done, leads_generated, orders_confirmed)
          VALUES (?, ?, ?, ?, ?)`,
-        [performer_id, date, Number(calls_done) || 0, Number(leads_generated) || 0, Number(orders_confirmed) || 0]
+        [performer_id, date, c, l, o]
+      );
+      await logAuditAction(
+        req.userId,
+        "CREATE_DAILY_REPORT",
+        "pms_daily_report",
+        result.insertId.toString(),
+        null,
+        { report_id: result.insertId, performer_id, date: String(date).slice(0, 10), calls_done: c, leads_generated: l, orders_confirmed: o },
+        req.ip,
+        req.get("user-agent")
       );
       res.status(201).json({ message: "Daily report added", report_id: result.insertId });
     } catch (error) {
@@ -194,6 +277,16 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
     try {
       const id = req.params.id;
       const { date, calls_done, leads_generated, orders_confirmed } = req.body;
+
+      // Fetch old record for audit diff — only the 4 relevant fields
+      const [oldRows] = await db.execute(
+        `SELECT report_id, performer_id, DATE_FORMAT(date, '%Y-%m-%d') AS date, calls_done, leads_generated, orders_confirmed
+         FROM pms_daily_report WHERE report_id = ?`,
+        [id]
+      );
+      if (oldRows.length === 0) return res.status(404).json({ message: "Daily report not found" });
+      const oldReport = oldRows[0];
+
       const updates = [];
       const values = [];
       if (date !== undefined) {
@@ -215,10 +308,27 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
       if (updates.length === 0) {
         return res.status(400).json({ message: "No fields to update" });
       }
+
       values.push(id);
       await db.execute(
         `UPDATE pms_daily_report SET ${updates.join(", ")} WHERE report_id = ?`,
         values
+      );
+
+      const [newRows] = await db.execute(
+        `SELECT report_id, performer_id, DATE_FORMAT(date, '%Y-%m-%d') AS date, calls_done, leads_generated, orders_confirmed
+         FROM pms_daily_report WHERE report_id = ?`,
+        [id]
+      );
+      await logAuditAction(
+        req.userId,
+        "UPDATE_DAILY_REPORT",
+        "pms_daily_report",
+        id,
+        oldReport,
+        newRows[0],
+        req.ip,
+        req.get("user-agent")
       );
       res.json({ message: "Daily report updated" });
     } catch (error) {
@@ -229,7 +339,27 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
 
   app.delete("/api/performance/daily-reports/:id", verifyToken, async (req, res) => {
     try {
-      await db.execute("DELETE FROM pms_daily_report WHERE report_id = ?", [req.params.id]);
+      const id = req.params.id;
+
+      const [oldRows] = await db.execute(
+        `SELECT report_id, performer_id, DATE_FORMAT(date, '%Y-%m-%d') AS date, calls_done, leads_generated, orders_confirmed
+         FROM pms_daily_report WHERE report_id = ?`,
+        [id]
+      );
+      if (oldRows.length === 0) return res.status(404).json({ message: "Daily report not found" });
+
+      await db.execute("DELETE FROM pms_daily_report WHERE report_id = ?", [id]);
+
+      await logAuditAction(
+        req.userId,
+        "DELETE_DAILY_REPORT",
+        "pms_daily_report",
+        id,
+        oldRows[0],
+        null,
+        req.ip,
+        req.get("user-agent")
+      );
       res.json({ message: "Daily report deleted" });
     } catch (error) {
       logError("PERFORMANCE", "Delete daily report error", error);

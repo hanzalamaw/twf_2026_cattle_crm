@@ -7,7 +7,6 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
 import { createVerifyToken } from "./middleware/auth.js";
-import { registerRegisterRoutes } from "./routes/register.js";
 import { registerPasswordResetRoutes } from "./routes/passwordReset.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerControlRoutes } from "./routes/control.js";
@@ -367,7 +366,7 @@ const startServer = async () => {
     });
 
     // ---------- Mount other routes ----------
-    registerRegisterRoutes(app, db);
+    
     registerPasswordResetRoutes(app, db);
     registerOAuthRoutes(app, db, JWT_SECRET);
     registerControlRoutes(app, db, verifyToken);
