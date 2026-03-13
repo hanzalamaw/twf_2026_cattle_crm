@@ -137,11 +137,14 @@ export default function Transactions() {
     }
   }, [token]);
 
-  const fetchOrdersSummary = useCallback(async () => {
-    try {
-      const params = new URLSearchParams();
-      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-      appliedTypes.forEach((t) => params.append('order_type', t));
+  const SUMMARY_TYPES = ['Hissa - Premium', 'Hissa - Standard', 'Hissa - Waqf', 'Goat (Hissa)'];
+
+const fetchOrdersSummary = useCallback(async () => {
+  try {
+    const params = new URLSearchParams();
+    if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+    // Always filter summary to only the 4 valid order types
+    SUMMARY_TYPES.forEach((t) => params.append('order_type', t));
       const res = await fetch(`${API}/api/booking/orders/summary?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();

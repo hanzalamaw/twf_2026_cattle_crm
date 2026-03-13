@@ -34,35 +34,36 @@ const REFERENCES = [
 
 const DAYS = ['DAY 1', 'DAY 2', 'DAY 3'];
 
+const EMPTY_FORM = {
+  order_id: '',
+  customer_id: '',
+  contact: '',
+  order_type: '',
+  booking_name: '',
+  shareholder_name: '',
+  cow_number: '',
+  hissa_number: '',
+  alt_contact: '',
+  address: '',
+  area: '',
+  day: '',
+  booking_date: '',
+  total_amount: '',
+  order_source: '',
+  reference: '',
+  description: '',
+  slot: '',
+};
+
 const NewOrder = () => {
   const navigate = useNavigate();
-  const token = localStorage.getItem('token');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [keepFormData, setKeepFormData] = useState(false);
   const [duplicateError, setDuplicateError] = useState(null);
 
-  const [formData, setFormData] = useState({
-    order_id: '',
-    customer_id: '',
-    contact: '',
-    order_type: '',
-    booking_name: '',
-    shareholder_name: '',
-    cow_number: '',
-    hissa_number: '',
-    alt_contact: '',
-    address: '',
-    area: '',
-    day: '',
-    booking_date: '',
-    total_amount: '',
-    order_source: '',
-    reference: '',
-    description: '',
-    slot: '',
-  });
+  const [formData, setFormData] = useState({ ...EMPTY_FORM });
 
   // Generate customer ID when contact changes (with debouncing)
   const generateCustomerIdRef = useCallback(async (contact) => {
@@ -70,12 +71,8 @@ const NewOrder = () => {
       setFormData((prev) => ({ ...prev, customer_id: '' }));
       return;
     }
-
     const currentToken = localStorage.getItem('token');
-    if (!currentToken) {
-      return;
-    }
-
+    if (!currentToken) return;
     try {
       const res = await fetch(`${API}/api/booking/generate-customer-id`, {
         method: 'POST',
@@ -85,7 +82,6 @@ const NewOrder = () => {
         },
         body: JSON.stringify({ contact }),
       });
-
       if (res.ok) {
         const data = await res.json();
         setFormData((prev) => ({ ...prev, customer_id: data.customer_id }));
@@ -95,29 +91,19 @@ const NewOrder = () => {
     }
   }, []);
 
-  // Debounced version - use ref to store timeout
   const debounceTimeoutRef = useRef(null);
   const generateCustomerId = useCallback((contact) => {
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
-    }
-    debounceTimeoutRef.current = setTimeout(() => {
-      generateCustomerIdRef(contact);
-    }, 500);
+    if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    debounceTimeoutRef.current = setTimeout(() => generateCustomerIdRef(contact), 500);
   }, [generateCustomerIdRef]);
 
-  // Generate order ID when order_type changes
   const generateOrderId = useCallback(async (orderType) => {
     if (!orderType) {
       setFormData((prev) => ({ ...prev, order_id: '' }));
       return;
     }
-
     const currentToken = localStorage.getItem('token');
-    if (!currentToken) {
-      return;
-    }
-
+    if (!currentToken) return;
     try {
       const res = await fetch(`${API}/api/booking/generate-order-id`, {
         method: 'POST',
@@ -127,7 +113,6 @@ const NewOrder = () => {
         },
         body: JSON.stringify({ order_type: orderType }),
       });
-
       if (res.ok) {
         const data = await res.json();
         setFormData((prev) => ({ ...prev, order_id: data.order_id }));
@@ -137,29 +122,17 @@ const NewOrder = () => {
     }
   }, []);
 
-  // Get available cow/hissa when order_type or day changes
   const getAvailableCowHissa = useCallback(async (orderType, day, bookingDate) => {
     if (!orderType) {
       setFormData((prev) => ({ ...prev, cow_number: '', hissa_number: '' }));
       return;
     }
-
-    // For Goat (Hissa) - set to '0' and make editable (no duplicate check when both are 0)
-    const editableTypes = ['Goat (Hissa)'];
-    if (editableTypes.includes(orderType)) {
-      setFormData((prev) => ({
-        ...prev,
-        cow_number: '0',
-        hissa_number: '0',
-      }));
+    if (orderType === 'Goat (Hissa)') {
+      setFormData((prev) => ({ ...prev, cow_number: '0', hissa_number: '0' }));
       return;
     }
-
     const currentToken = localStorage.getItem('token');
-    if (!currentToken) {
-      return;
-    }
-
+    if (!currentToken) return;
     try {
       const res = await fetch(`${API}/api/booking/get-available-cow-hissa`, {
         method: 'POST',
@@ -169,28 +142,21 @@ const NewOrder = () => {
         },
         body: JSON.stringify({ order_type: orderType, day: day || null, booking_date: bookingDate || null }),
       });
-
       if (res.ok) {
         const data = await res.json();
-        setFormData((prev) => ({
-          ...prev,
-          cow_number: data.cow_number,
-          hissa_number: data.hissa_number,
-        }));
+        setFormData((prev) => ({ ...prev, cow_number: data.cow_number, hissa_number: data.hissa_number }));
       }
     } catch (err) {
       console.error('Error getting available cow/hissa:', err);
     }
   }, []);
 
-  // Handle contact change
   const handleContactChange = (e) => {
     const value = e.target.value;
     setFormData((prev) => ({ ...prev, contact: value }));
     generateCustomerId(value);
   };
 
-  // Preset total amounts based on order type
   const getPresetAmount = (orderType) => {
     const amountMap = {
       'Hissa - Standard': '25000',
@@ -201,7 +167,6 @@ const NewOrder = () => {
     return amountMap[orderType] || '';
   };
 
-  // When Goat (Hissa) is selected and cow/hissa are both 0, skip duplicate check
   const shouldSkipCowHissaDuplicate = (orderType, cowNumber, hissaNumber) => {
     if (orderType !== 'Goat (Hissa)') return false;
     const c = String(cowNumber ?? '').trim();
@@ -209,49 +174,31 @@ const NewOrder = () => {
     return (c === '0' || c === '') && (h === '0' || h === '');
   };
 
-  // Handle order type change
-  const handleOrderTypeChange = async (e) => {
+  const handleOrderTypeChange = (e) => {
     const value = e.target.value;
     const presetAmount = getPresetAmount(value);
     setFormData((prev) => {
-      // Update state first
       const newData = { ...prev, order_type: value, total_amount: presetAmount };
-      // Then trigger async operations
       generateOrderId(value);
-      // Recalculate cow/hissa with current day value
       getAvailableCowHissa(value, prev.day, prev.booking_date);
       return newData;
     });
   };
 
-  // Handle day change
-  const handleDayChange = async (e) => {
+  const handleDayChange = (e) => {
     const value = e.target.value;
     setFormData((prev) => {
-      // Update state first
       const newData = { ...prev, day: value };
-      // Recalculate cow/hissa when day changes (if order_type is set)
-      if (prev.order_type) {
-        getAvailableCowHissa(prev.order_type, value, prev.booking_date);
-      }
+      if (prev.order_type) getAvailableCowHissa(prev.order_type, value, prev.booking_date);
       return newData;
     });
   };
 
-  // Check if cow/hissa combination already exists
   const checkCowHissaDuplicate = useCallback(async (cowNumber, hissaNumber, orderType, day, bookingDate) => {
-    if (!cowNumber || !hissaNumber || !orderType) {
-      return null;
-    }
-    if (shouldSkipCowHissaDuplicate(orderType, cowNumber, hissaNumber)) {
-      return null;
-    }
-
+    if (!cowNumber || !hissaNumber || !orderType) return null;
+    if (shouldSkipCowHissaDuplicate(orderType, cowNumber, hissaNumber)) return null;
     const currentToken = localStorage.getItem('token');
-    if (!currentToken) {
-      return null;
-    }
-
+    if (!currentToken) return null;
     try {
       const res = await fetch(`${API}/api/booking/check-cow-hissa`, {
         method: 'POST',
@@ -267,7 +214,6 @@ const NewOrder = () => {
           booking_date: bookingDate || null,
         }),
       });
-
       if (res.ok) {
         const data = await res.json();
         return data.exists ? data : null;
@@ -278,43 +224,32 @@ const NewOrder = () => {
     return null;
   }, []);
 
-  // Handle cow number change
   const handleCowNumberChange = (e) => {
-    const value = e.target.value;
-    setFormData((prev) => ({ ...prev, cow_number: value }));
+    setFormData((prev) => ({ ...prev, cow_number: e.target.value }));
     setDuplicateError(null);
   };
 
-  // Handle cow number blur (validate on blur)
   const handleCowNumberBlur = async () => {
     const { cow_number, hissa_number, order_type, day, booking_date } = formData;
     if (cow_number && hissa_number && order_type && !shouldSkipCowHissaDuplicate(order_type, cow_number, hissa_number)) {
       const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day, booking_date);
-      if (duplicate) {
-        setDuplicateError(duplicate);
-      }
+      if (duplicate) setDuplicateError(duplicate);
     }
   };
 
-  // Handle hissa number change
   const handleHissaNumberChange = (e) => {
-    const value = e.target.value;
-    setFormData((prev) => ({ ...prev, hissa_number: value }));
+    setFormData((prev) => ({ ...prev, hissa_number: e.target.value }));
     setDuplicateError(null);
   };
 
-  // Handle hissa number blur (validate on blur)
   const handleHissaNumberBlur = async () => {
     const { cow_number, hissa_number, order_type, day, booking_date } = formData;
     if (cow_number && hissa_number && order_type && !shouldSkipCowHissaDuplicate(order_type, cow_number, hissa_number)) {
       const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day, booking_date);
-      if (duplicate) {
-        setDuplicateError(duplicate);
-      }
+      if (duplicate) setDuplicateError(duplicate);
     }
   };
 
-  // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -322,7 +257,6 @@ const NewOrder = () => {
     setDuplicateError(null);
     setLoading(true);
 
-    // Check for duplicate cow/hissa before submission (skip when Goat (Hissa) with cow/hissa both 0)
     const { cow_number, hissa_number, order_type, day, booking_date } = formData;
     if (cow_number && hissa_number && order_type && !shouldSkipCowHissaDuplicate(order_type, cow_number, hissa_number)) {
       const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day, booking_date);
@@ -354,25 +288,17 @@ const NewOrder = () => {
 
       if (res.ok) {
         setSuccess('Order created successfully!');
-        
+
         if (keepFormData) {
-          // Regenerate order ID, cow/hissa numbers, and keep other fields
+          // Keep all fields — only regenerate the auto-generated ones
           const currentOrderType = formData.order_type;
           const currentDay = formData.day;
-          
-          // Regenerate order ID
           generateOrderId(currentOrderType);
-          
-          // Regenerate cow/hissa numbers
           getAvailableCowHissa(currentOrderType, currentDay, formData.booking_date);
-          
-          // Clear only order_id, cow_number, and hissa_number (they will be regenerated)
-          // Keep all other fields
-          setTimeout(() => {
-            setSuccess('');
-          }, 2000);
+          setTimeout(() => setSuccess(''), 2000);
         } else {
-          // Stay on same page; success message already shown
+          // Full reset — clear everything and let auto-fields regenerate as blank
+          setFormData({ ...EMPTY_FORM });
           setTimeout(() => setSuccess(''), 3000);
         }
       } else {
@@ -448,14 +374,7 @@ const NewOrder = () => {
           flexShrink: 0,
         }}
       >
-        <h2
-          style={{
-            fontSize: '14px',
-            fontWeight: '600',
-            color: '#333',
-            margin: 0,
-          }}
-        >
+        <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#333', margin: 0 }}>
           New Booking Order
         </h2>
         <button
@@ -471,12 +390,8 @@ const NewOrder = () => {
             fontWeight: '500',
             transition: 'all 0.2s',
           }}
-          onMouseOver={(e) => {
-            e.target.style.background = '#F5F5F5';
-          }}
-          onMouseOut={(e) => {
-            e.target.style.background = '#FFFFFF';
-          }}
+          onMouseOver={(e) => { e.target.style.background = '#F5F5F5'; }}
+          onMouseOut={(e) => { e.target.style.background = '#FFFFFF'; }}
         >
           Back to Orders
         </button>
@@ -521,11 +436,8 @@ const NewOrder = () => {
         <div
           style={{
             position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.5)',
+            top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -540,63 +452,30 @@ const NewOrder = () => {
               padding: '20px',
               maxWidth: '500px',
               width: '90%',
-              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+              boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                marginBottom: '16px',
-              }}
-            >
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
               <div
                 style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '50%',
+                  width: '40px', height: '40px', borderRadius: '50%',
                   background: '#FEE2E2',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginRight: '12px',
                 }}
               >
                 <span style={{ fontSize: '20px', color: '#DC2626' }}>⚠️</span>
               </div>
-              <h3
-                style={{
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#1F2937',
-                  margin: 0,
-                }}
-              >
+              <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937', margin: 0 }}>
                 Duplicate Cow/Hissa Combination
               </h3>
             </div>
-            <p
-              style={{
-                fontSize: '11px',
-                color: '#6B7280',
-                marginBottom: '16px',
-                lineHeight: '1.5',
-              }}
-            >
+            <p style={{ fontSize: '11px', color: '#6B7280', marginBottom: '16px', lineHeight: '1.5' }}>
               This cow number and hissa number combination already exists for the selected order type and day.
             </p>
-            <div
-              style={{
-                background: '#F9FAFB',
-                borderRadius: '6px',
-                padding: '12px',
-                marginBottom: '16px',
-              }}
-            >
-              <div style={{ fontSize: '10px', color: '#6B7280', marginBottom: '4px' }}>
-                Existing Order Details:
-              </div>
+            <div style={{ background: '#F9FAFB', borderRadius: '6px', padding: '12px', marginBottom: '16px' }}>
+              <div style={{ fontSize: '10px', color: '#6B7280', marginBottom: '4px' }}>Existing Order Details:</div>
               <div style={{ fontSize: '11px', color: '#1F2937' }}>
                 <div><strong>Order ID:</strong> {duplicateError.order_id}</div>
                 <div><strong>Booking Name:</strong> {duplicateError.booking_name || '—'}</div>
@@ -607,23 +486,12 @@ const NewOrder = () => {
             <button
               onClick={() => setDuplicateError(null)}
               style={{
-                width: '100%',
-                padding: '8px 16px',
-                borderRadius: '6px',
-                border: 'none',
-                background: '#FF5722',
-                color: '#FFFFFF',
-                fontSize: '11px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                transition: 'background 0.2s',
+                width: '100%', padding: '8px 16px', borderRadius: '6px',
+                border: 'none', background: '#FF5722', color: '#FFFFFF',
+                fontSize: '11px', fontWeight: '600', cursor: 'pointer',
               }}
-              onMouseOver={(e) => {
-                e.target.style.background = '#E64A19';
-              }}
-              onMouseOut={(e) => {
-                e.target.style.background = '#FF5722';
-              }}
+              onMouseOver={(e) => { e.target.style.background = '#E64A19'; }}
+              onMouseOut={(e) => { e.target.style.background = '#FF5722'; }}
             >
               Close
             </button>
@@ -637,41 +505,15 @@ const NewOrder = () => {
           <div style={sectionTitleStyle}>Order Information</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '13px' }}>
             <div>
-              <label style={labelStyle}>
-                Order ID <span style={{ color: '#FF5722' }}>*</span>
-              </label>
-              <input
-                type="text"
-                value={formData.order_id}
-                readOnly
-                style={{
-                  ...inputStyle,
-                  background: '#F5F5F5',
-                  cursor: 'not-allowed',
-                  color: '#666',
-                }}
-              />
+              <label style={labelStyle}>Order ID <span style={{ color: '#FF5722' }}>*</span></label>
+              <input type="text" value={formData.order_id} readOnly style={{ ...inputStyle, background: '#F5F5F5', cursor: 'not-allowed', color: '#666' }} />
             </div>
             <div>
-              <label style={labelStyle}>
-                Customer ID <span style={{ color: '#FF5722' }}>*</span>
-              </label>
-              <input
-                type="text"
-                value={formData.customer_id}
-                readOnly
-                style={{
-                  ...inputStyle,
-                  background: '#F5F5F5',
-                  cursor: 'not-allowed',
-                  color: '#666',
-                }}
-              />
+              <label style={labelStyle}>Customer ID <span style={{ color: '#FF5722' }}>*</span></label>
+              <input type="text" value={formData.customer_id} readOnly style={{ ...inputStyle, background: '#F5F5F5', cursor: 'not-allowed', color: '#666' }} />
             </div>
             <div>
-              <label style={labelStyle}>
-                Order Type <span style={{ color: '#FF5722' }}>*</span>
-              </label>
+              <label style={labelStyle}>Order Type <span style={{ color: '#FF5722' }}>*</span></label>
               <select
                 value={formData.order_type}
                 onChange={handleOrderTypeChange}
@@ -681,17 +523,11 @@ const NewOrder = () => {
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
                 <option value="" disabled>Select Order Type</option>
-                {ORDER_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
+                {ORDER_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
               </select>
             </div>
             <div>
-              <label style={labelStyle}>
-                Contact <span style={{ color: '#FF5722' }}>*</span>
-              </label>
+              <label style={labelStyle}>Contact <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="text"
                 value={formData.contact}
@@ -708,9 +544,7 @@ const NewOrder = () => {
               <input
                 type="text"
                 value={formData.alt_contact}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, alt_contact: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, alt_contact: e.target.value }))}
                 placeholder="e.g., 0300-1234567"
                 style={inputStyle}
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
@@ -718,15 +552,11 @@ const NewOrder = () => {
               />
             </div>
             <div>
-              <label style={labelStyle}>
-                Booking Date <span style={{ color: '#FF5722' }}>*</span>
-              </label>
+              <label style={labelStyle}>Booking Date <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="date"
                 value={formData.booking_date}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, booking_date: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, booking_date: e.target.value }))}
                 required
                 style={inputStyle}
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
@@ -734,15 +564,11 @@ const NewOrder = () => {
               />
             </div>
             <div>
-              <label style={labelStyle}>
-                Total Amount <span style={{ color: '#FF5722' }}>*</span>
-              </label>
+              <label style={labelStyle}>Total Amount <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="number"
                 value={formData.total_amount}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, total_amount: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, total_amount: e.target.value }))}
                 required
                 min="0"
                 step="0.01"
@@ -753,77 +579,59 @@ const NewOrder = () => {
               />
             </div>
             <div>
-              <label style={labelStyle}>Order Source</label>
+              <label style={labelStyle}>Order Source <span style={{ color: '#FF5722' }}>*</span></label>
               <select
                 value={formData.order_source}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, order_source: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, order_source: e.target.value }))}
                 style={inputStyle}
+                required
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
-                <option value="" disabled={formData.order_source !== ''}>Select Order Source</option>
-                {ORDER_SOURCES.map((source) => (
-                  <option key={source} value={source}>
-                    {source}
-                  </option>
-                ))}
+                <option value="" disabled>Select Order Source</option>
+                {ORDER_SOURCES.map((source) => <option key={source} value={source}>{source}</option>)}
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Reference</label>
+              <label style={labelStyle}>Reference <span style={{ color: '#FF5722' }}>*</span></label>
               <select
                 value={formData.reference}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, reference: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, reference: e.target.value }))}
                 style={inputStyle}
+                required
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
-                <option value="" disabled={formData.reference !== ''}>Select Reference</option>
-                {REFERENCES.map((ref) => (
-                  <option key={ref} value={ref}>
-                    {ref}
-                  </option>
-                ))}
+                <option value="" disabled>Select Reference</option>
+                {REFERENCES.map((ref) => <option key={ref} value={ref}>{ref}</option>)}
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Slot</label>
+              <label style={labelStyle}>Slot <span style={{ color: '#FF5722' }}>*</span></label>
               <select
                 value={formData.slot}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, slot: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, slot: e.target.value }))}
                 style={inputStyle}
+                required
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
-                <option value="" disabled={formData.slot !== ''}>Select Slot</option>
-                {SLOTS.map((slot) => (
-                  <option key={slot} value={slot}>
-                    {slot}
-                  </option>
-                ))}
+                <option value="" disabled>Select Slot</option>
+                {SLOTS.map((slot) => <option key={slot} value={slot}>{slot}</option>)}
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Day</label>
+              <label style={labelStyle}>Day <span style={{ color: '#FF5722' }}>*</span></label>
               <select
                 value={formData.day}
                 onChange={handleDayChange}
                 style={inputStyle}
+                required
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
-                <option value="" disabled={formData.day !== ''}>Select Day</option>
-                {DAYS.map((day) => (
-                  <option key={day} value={day}>
-                    {day}
-                  </option>
-                ))}
+                <option value="" disabled>Select Day</option>
+                {DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
               </select>
             </div>
           </div>
@@ -834,15 +642,11 @@ const NewOrder = () => {
           <div style={sectionTitleStyle}>Customer Information</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '13px' }}>
             <div>
-              <label style={labelStyle}>
-                Booking Name <span style={{ color: '#FF5722' }}>*</span>
-              </label>
+              <label style={labelStyle}>Booking Name <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="text"
                 value={formData.booking_name}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, booking_name: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, booking_name: e.target.value }))}
                 required
                 placeholder="Enter booking name"
                 style={inputStyle}
@@ -851,15 +655,11 @@ const NewOrder = () => {
               />
             </div>
             <div>
-              <label style={labelStyle}>
-                Shareholder Name <span style={{ color: '#FF5722' }}>*</span>
-              </label>
+              <label style={labelStyle}>Shareholder Name <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="text"
                 value={formData.shareholder_name}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, shareholder_name: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, shareholder_name: e.target.value }))}
                 required
                 placeholder="Enter shareholder name"
                 style={inputStyle}
@@ -868,33 +668,27 @@ const NewOrder = () => {
               />
             </div>
             <div>
-              <label style={labelStyle}>Area</label>
+              <label style={labelStyle}>Area <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="text"
                 value={formData.area}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, area: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, area: e.target.value }))}
                 placeholder="Enter area"
                 style={inputStyle}
+                required
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
-              <label style={labelStyle}>Address</label>
+              <label style={labelStyle}>Address <span style={{ color: '#FF5722' }}>*</span></label>
               <textarea
                 value={formData.address}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, address: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, address: e.target.value }))}
                 placeholder="Enter full address"
                 rows="2"
-                style={{
-                  ...inputStyle,
-                  resize: 'vertical',
-                  fontFamily: 'inherit',
-                }}
+                style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
+                required
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
@@ -902,7 +696,7 @@ const NewOrder = () => {
           </div>
         </div>
 
-        {/* Livestock Information (disabled for Goat (Hissa)) */}
+        {/* Livestock Information */}
         {(() => {
           const isGoatHissa = formData.order_type === 'Goat (Hissa)';
           return (
@@ -919,10 +713,7 @@ const NewOrder = () => {
                     style={inputStyle}
                     disabled={isGoatHissa}
                     onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
-                    onBlur={(e) => {
-                      e.target.style.borderColor = '#e0e0e0';
-                      handleCowNumberBlur();
-                    }}
+                    onBlur={(e) => { e.target.style.borderColor = '#e0e0e0'; handleCowNumberBlur(); }}
                   />
                 </div>
                 <div>
@@ -935,10 +726,7 @@ const NewOrder = () => {
                     style={inputStyle}
                     disabled={isGoatHissa}
                     onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
-                    onBlur={(e) => {
-                      e.target.style.borderColor = '#e0e0e0';
-                      handleHissaNumberBlur();
-                    }}
+                    onBlur={(e) => { e.target.style.borderColor = '#e0e0e0'; handleHissaNumberBlur(); }}
                   />
                 </div>
               </div>
@@ -953,16 +741,10 @@ const NewOrder = () => {
             <label style={labelStyle}>Description</label>
             <textarea
               value={formData.description}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, description: e.target.value }))
-              }
+              onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
               placeholder="Enter any additional notes or description"
               rows="3"
-              style={{
-                ...inputStyle,
-                resize: 'vertical',
-                fontFamily: 'inherit',
-              }}
+              style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
               onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
               onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
             />
@@ -987,56 +769,24 @@ const NewOrder = () => {
             id="keepFormData"
             checked={keepFormData}
             onChange={(e) => setKeepFormData(e.target.checked)}
-            style={{
-              width: '14px',
-              height: '14px',
-              cursor: 'pointer',
-              accentColor: '#FF5722',
-            }}
+            style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: '#FF5722' }}
           />
-          <label
-            htmlFor="keepFormData"
-            style={{
-              fontSize: '10px',
-              color: '#666',
-              cursor: 'pointer',
-              userSelect: 'none',
-            }}
-          >
-            Keep form data after submission (regenerate Order ID, Cow & Hissa numbers)
+          <label htmlFor="keepFormData" style={{ fontSize: '10px', color: '#666', cursor: 'pointer', userSelect: 'none' }}>
+            Keep form data after submission (regenerate Order ID, Cow &amp; Hissa numbers)
           </label>
         </div>
 
         {/* Submit Button */}
-        <div
-          style={{
-            display: 'flex',
-            gap: '10px',
-            justifyContent: 'flex-end',
-            marginTop: '16px',
-            flexShrink: 0,
-          }}
-        >
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px', flexShrink: 0 }}>
           <button
             type="button"
             onClick={() => navigate('/bookings/orders')}
             style={{
-              padding: '6px 13px',
-              borderRadius: '6px',
-              border: '1px solid #e0e0e0',
-              background: '#FFFFFF',
-              color: '#666',
-              fontSize: '11px',
-              cursor: 'pointer',
-              fontWeight: '500',
-              transition: 'all 0.2s',
+              padding: '6px 13px', borderRadius: '6px', border: '1px solid #e0e0e0',
+              background: '#FFFFFF', color: '#666', fontSize: '11px', cursor: 'pointer', fontWeight: '500',
             }}
-            onMouseOver={(e) => {
-              e.target.style.background = '#F5F5F5';
-            }}
-            onMouseOut={(e) => {
-              e.target.style.background = '#FFFFFF';
-            }}
+            onMouseOver={(e) => { e.target.style.background = '#F5F5F5'; }}
+            onMouseOut={(e) => { e.target.style.background = '#FFFFFF'; }}
           >
             Cancel
           </button>
@@ -1044,22 +794,13 @@ const NewOrder = () => {
             type="submit"
             disabled={loading}
             style={{
-              padding: '6px 16px',
-              borderRadius: '6px',
-              border: 'none',
+              padding: '6px 16px', borderRadius: '6px', border: 'none',
               background: loading ? '#94A3B8' : '#FF5722',
-              color: '#FFFFFF',
-              fontSize: '11px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontWeight: '600',
-              transition: 'all 0.2s',
+              color: '#FFFFFF', fontSize: '11px',
+              cursor: loading ? 'not-allowed' : 'pointer', fontWeight: '600',
             }}
-            onMouseOver={(e) => {
-              if (!loading) e.target.style.background = '#E64A19';
-            }}
-            onMouseOut={(e) => {
-              if (!loading) e.target.style.background = '#FF5722';
-            }}
+            onMouseOver={(e) => { if (!loading) e.target.style.background = '#E64A19'; }}
+            onMouseOut={(e) => { if (!loading) e.target.style.background = '#FF5722'; }}
           >
             {loading ? 'Creating...' : 'Create Order'}
           </button>
@@ -1070,4 +811,3 @@ const NewOrder = () => {
 };
 
 export default NewOrder;
-

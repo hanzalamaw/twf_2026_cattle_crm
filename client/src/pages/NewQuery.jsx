@@ -7,8 +7,6 @@ const ORDER_TYPES = [
   'Hissa - Standard',
   'Hissa - Premium',
   'Hissa - Waqf',
-  'Goat',
-  'Cow',
   'Goat (Hissa)',
 ];
 
@@ -34,43 +32,37 @@ const REFERENCES = [
 
 const DAYS = ['DAY 1', 'DAY 2', 'DAY 3'];
 
+const EMPTY_FORM = {
+  lead_id: '',
+  customer_id: '',
+  contact: '',
+  order_type: '',
+  booking_name: '',
+  shareholder_name: '',
+  alt_contact: '',
+  address: '',
+  area: '',
+  day: '',
+  booking_date: '',
+  total_amount: '',
+  order_source: '',
+  reference: '',
+  description: '',
+};
+
 const NewQuery = () => {
   const navigate = useNavigate();
-  const token = localStorage.getItem('token');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [keepFormData, setKeepFormData] = useState(false);
-  const [duplicateError, setDuplicateError] = useState(null);
 
-  const [formData, setFormData] = useState({
-    lead_id: '',
-    customer_id: '',
-    contact: '',
-    order_type: '',
-    booking_name: '',
-    shareholder_name: '',
-    alt_contact: '',
-    address: '',
-    area: '',
-    day: '',
-    booking_date: '',
-    total_amount: '',
-    order_source: '',
-    reference: '',
-    description: '',
-  });
+  const [formData, setFormData] = useState({ ...EMPTY_FORM });
 
-  // ---------- Generate Lead ID (same pattern as order_id: L-0001-2026) ----------
-  const generateLeadIdRef = useCallback(async (orderType) => {
-    if (!orderType) {
-      setFormData((prev) => ({ ...prev, lead_id: '' }));
-      return;
-    }
-
+  // ---------- Generate Lead ID ----------
+  const generateLeadIdRef = useCallback(async () => {
     const currentToken = localStorage.getItem('token');
     if (!currentToken) return;
-
     try {
       const res = await fetch(`${API}/api/leads/generate-lead-id`, {
         method: 'POST',
@@ -80,7 +72,6 @@ const NewQuery = () => {
         },
         body: JSON.stringify({}),
       });
-
       if (res.ok) {
         const data = await res.json();
         setFormData((prev) => ({ ...prev, lead_id: data.lead_id || '' }));
@@ -90,7 +81,7 @@ const NewQuery = () => {
     }
   }, []);
 
-  // ---------- Generate Customer ID (debounced, like NewOrder) ----------
+  // ---------- Generate Customer ID (debounced) ----------
   const generateCustomerIdRef = useCallback(async (contact) => {
     if (!contact || String(contact).trim().length < 3) {
       setFormData((prev) => ({ ...prev, customer_id: '' }));
@@ -124,7 +115,7 @@ const NewQuery = () => {
     debounceTimeoutRef.current = setTimeout(() => generateCustomerIdRef(contact), 500);
   }, [generateCustomerIdRef]);
 
-  // ---------- Preset Total Amount Based on Order Type ----------
+  // ---------- Preset Total Amount ----------
   const getPresetAmount = (orderType) => {
     const amountMap = {
       'Hissa - Standard': '25000',
@@ -141,13 +132,8 @@ const NewQuery = () => {
   const handleOrderTypeChange = (e) => {
     const value = e.target.value;
     const presetAmount = getPresetAmount(value);
-    setFormData((prev) => {
-      // Update state first
-      const newData = { ...prev, order_type: value, total_amount: presetAmount };
-      // Then trigger async operations
-      generateLeadIdRef(value); // Generate Lead ID based on order type
-      return newData;
-    });
+    setFormData((prev) => ({ ...prev, order_type: value, total_amount: presetAmount }));
+    generateLeadIdRef();
   };
 
   const handleContactChange = (e) => {
@@ -161,7 +147,6 @@ const NewQuery = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
-    setDuplicateError(null);
     setLoading(true);
 
     const currentToken = localStorage.getItem('token');
@@ -214,7 +199,19 @@ const NewQuery = () => {
 
       if (res.ok) {
         setSuccess('Lead created successfully!');
-        setFormData((prev) => ({ ...prev, lead_id: '', customer_id: '' }));
+
+        if (keepFormData) {
+          // Keep all fields — only regenerate lead ID and customer ID
+          const currentOrderType = formData.order_type;
+          const currentContact = formData.contact;
+          generateLeadIdRef(currentOrderType);
+          generateCustomerIdRef(currentContact);
+          setTimeout(() => setSuccess(''), 2000);
+        } else {
+          // Full reset — clear all fields
+          setFormData({ ...EMPTY_FORM });
+          setTimeout(() => setSuccess(''), 3000);
+        }
       } else if (res.status === 401) {
         setError('Session expired. Please log in again.');
         setTimeout(() => navigate('/login'), 1500);
@@ -286,15 +283,8 @@ const NewQuery = () => {
           type="button"
           onClick={() => navigate('/bookings/queries')}
           style={{
-            padding: '6px 13px',
-            borderRadius: '6px',
-            border: '1px solid #e0e0e0',
-            background: '#FFFFFF',
-            color: '#666',
-            fontSize: '11px',
-            cursor: 'pointer',
-            fontWeight: '500',
-            transition: 'all 0.2s',
+            padding: '6px 13px', borderRadius: '6px', border: '1px solid #e0e0e0',
+            background: '#FFFFFF', color: '#666', fontSize: '11px', cursor: 'pointer', fontWeight: '500',
           }}
           onMouseOver={(e) => { e.target.style.background = '#F5F5F5'; }}
           onMouseOut={(e) => { e.target.style.background = '#FFFFFF'; }}
@@ -304,33 +294,13 @@ const NewQuery = () => {
       </div>
 
       {error && (
-        <div
-          style={{
-            background: '#FFF5F2',
-            color: '#FF5722',
-            padding: '8px 11px',
-            borderRadius: '6px',
-            marginBottom: '13px',
-            fontSize: '10px',
-            border: '1px solid #FFE0D6',
-          }}
-        >
+        <div style={{ background: '#FFF5F2', color: '#FF5722', padding: '8px 11px', borderRadius: '6px', marginBottom: '13px', fontSize: '10px', border: '1px solid #FFE0D6' }}>
           {error}
         </div>
       )}
 
       {success && (
-        <div
-          style={{
-            background: '#F0FDF4',
-            color: '#166534',
-            padding: '8px 11px',
-            borderRadius: '6px',
-            marginBottom: '13px',
-            fontSize: '10px',
-            border: '1px solid #BBF7D0',
-          }}
-        >
+        <div style={{ background: '#F0FDF4', color: '#166534', padding: '8px 11px', borderRadius: '6px', marginBottom: '13px', fontSize: '10px', border: '1px solid #BBF7D0' }}>
           {success}
         </div>
       )}
@@ -339,43 +309,15 @@ const NewQuery = () => {
         {/* Lead Information */}
         <div style={sectionStyle}>
           <div style={sectionTitleStyle}>Lead Information</div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: '13px',
-            }}
-          >
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '13px' }}>
             <div>
               <label style={labelStyle}>Lead ID <span style={{ color: '#FF5722' }}>*</span></label>
-              <input
-                type="text"
-                value={formData.lead_id}
-                readOnly
-                style={{
-                  ...inputStyle,
-                  background: '#F5F5F5',
-                  cursor: 'not-allowed',
-                  color: '#666',
-                }}
-              />
+              <input type="text" value={formData.lead_id} readOnly style={{ ...inputStyle, background: '#F5F5F5', cursor: 'not-allowed', color: '#666' }} />
             </div>
-
             <div>
               <label style={labelStyle}>Customer ID</label>
-              <input
-                type="text"
-                value={formData.customer_id}
-                readOnly
-                style={{
-                  ...inputStyle,
-                  background: '#F5F5F5',
-                  cursor: 'not-allowed',
-                  color: '#666',
-                }}
-              />
+              <input type="text" value={formData.customer_id} readOnly style={{ ...inputStyle, background: '#F5F5F5', cursor: 'not-allowed', color: '#666' }} />
             </div>
-
             <div>
               <label style={labelStyle}>Order Type <span style={{ color: '#FF5722' }}>*</span></label>
               <select
@@ -387,14 +329,9 @@ const NewQuery = () => {
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
                 <option value="" disabled>Select Order Type</option>
-                {ORDER_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
+                {ORDER_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
               </select>
             </div>
-
             <div>
               <label style={labelStyle}>Contact <span style={{ color: '#FF5722' }}>*</span></label>
               <input
@@ -408,35 +345,30 @@ const NewQuery = () => {
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
             </div>
-
             <div>
               <label style={labelStyle}>Alt. Contact</label>
               <input
                 type="text"
                 value={formData.alt_contact}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, alt_contact: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, alt_contact: e.target.value }))}
                 placeholder="e.g., 0300-1234567"
                 style={inputStyle}
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
             </div>
-
             <div>
               <label style={labelStyle}>Booking Date <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="date"
                 value={formData.booking_date}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, booking_date: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, booking_date: e.target.value }))}
                 required
                 style={inputStyle}
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
             </div>
-
             <div>
               <label style={labelStyle}>Total Amount <span style={{ color: '#FF5722' }}>*</span></label>
               <input
@@ -444,67 +376,53 @@ const NewQuery = () => {
                 min="0"
                 step="1"
                 value={formData.total_amount}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, total_amount: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, total_amount: e.target.value }))}
                 required
                 style={inputStyle}
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
             </div>
-
             <div>
-              <label style={labelStyle}>Order Source</label>
+              <label style={labelStyle}>Order Source <span style={{ color: '#FF5722' }}>*</span></label>
               <select
                 value={formData.order_source}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, order_source: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, order_source: e.target.value }))}
                 style={inputStyle}
+                required
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
                 <option value="" disabled>Select Order Source</option>
-                {ORDER_SOURCES.map((source) => (
-                  <option key={source} value={source}>
-                    {source}
-                  </option>
-                ))}
+                {ORDER_SOURCES.map((source) => <option key={source} value={source}>{source}</option>)}
               </select>
             </div>
-
             <div>
-              <label style={labelStyle}>Reference</label>
+              <label style={labelStyle}>Reference <span style={{ color: '#FF5722' }}>*</span></label>
               <select
                 value={formData.reference}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, reference: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, reference: e.target.value }))}
                 style={inputStyle}
+                required
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
                 <option value="" disabled>Select Reference</option>
-                {REFERENCES.map((ref) => (
-                  <option key={ref} value={ref}>
-                    {ref}
-                  </option>
-                ))}
+                {REFERENCES.map((ref) => <option key={ref} value={ref}>{ref}</option>)}
               </select>
             </div>
-
             <div>
-              <label style={labelStyle}>Day</label>
+              <label style={labelStyle}>Day <span style={{ color: '#FF5722' }}>*</span></label>
               <select
                 value={formData.day}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, day: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, day: e.target.value }))}
                 style={inputStyle}
+                required
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               >
                 <option value="" disabled>Select Day</option>
-                {DAYS.map((day) => (
-                  <option key={day} value={day}>
-                    {day}
-                  </option>
-                ))}
+                {DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
               </select>
             </div>
           </div>
@@ -513,68 +431,57 @@ const NewQuery = () => {
         {/* Customer Information */}
         <div style={sectionStyle}>
           <div style={sectionTitleStyle}>Customer Information</div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: '13px',
-            }}
-          >
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '13px' }}>
             <div>
               <label style={labelStyle}>Booking Name <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="text"
                 value={formData.booking_name}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, booking_name: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, booking_name: e.target.value }))}
                 placeholder="Enter booking name"
                 style={inputStyle}
+                required
                 onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                 onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
             </div>
-
             <div>
-              <label style={labelStyle}>Shareholder Name</label>
+              <label style={labelStyle}>Shareholder Name <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="text"
                 value={formData.shareholder_name}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, shareholder_name: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, shareholder_name: e.target.value }))}
                 placeholder="Enter shareholder name"
                 style={inputStyle}
+                required
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
             </div>
-
             <div>
-              <label style={labelStyle}>Area</label>
+              <label style={labelStyle}>Area <span style={{ color: '#FF5722' }}>*</span></label>
               <input
                 type="text"
                 value={formData.area}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, area: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, area: e.target.value }))}
                 placeholder="Enter area"
                 style={inputStyle}
+                required
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
             </div>
-
             <div style={{ gridColumn: '1 / -1' }}>
-              <label style={labelStyle}>Address</label>
+              <label style={labelStyle}>Address <span style={{ color: '#FF5722' }}>*</span></label>
               <textarea
                 value={formData.address}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, address: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, address: e.target.value }))}
                 placeholder="Enter full address"
                 rows="2"
-                style={{
-                  ...inputStyle,
-                  resize: 'vertical',
-                  fontFamily: 'inherit',
-                }}
+                style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
+                required
+                onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
               />
             </div>
           </div>
@@ -583,32 +490,70 @@ const NewQuery = () => {
         {/* Additional Information */}
         <div style={sectionStyle}>
           <div style={sectionTitleStyle}>Additional Information</div>
-          <textarea
-            value={formData.description}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, description: e.target.value }))
-            }
-            placeholder="Enter any additional notes or description"
-            rows="3"
-            style={inputStyle}
+          <div>
+            <label style={labelStyle}>Description</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+              placeholder="Enter any additional notes or description"
+              rows="3"
+              style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
+              onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+              onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
+            />
+          </div>
+        </div>
+
+        {/* Keep Form Data Option */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '13px',
+            padding: '10px',
+            background: '#F9FAFB',
+            borderRadius: '6px',
+            border: '1px solid #e0e0e0',
+          }}
+        >
+          <input
+            type="checkbox"
+            id="keepFormData"
+            checked={keepFormData}
+            onChange={(e) => setKeepFormData(e.target.checked)}
+            style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: '#FF5722' }}
           />
+          <label htmlFor="keepFormData" style={{ fontSize: '10px', color: '#666', cursor: 'pointer', userSelect: 'none' }}>
+            Keep form data after submission (regenerate Lead ID &amp; Customer ID)
+          </label>
         </div>
 
         {/* Submit Button */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }}>
+          <button
+            type="button"
+            onClick={() => navigate('/bookings/queries')}
+            style={{
+              padding: '6px 13px', borderRadius: '6px', border: '1px solid #e0e0e0',
+              background: '#FFFFFF', color: '#666', fontSize: '11px', cursor: 'pointer', fontWeight: '500',
+            }}
+            onMouseOver={(e) => { e.target.style.background = '#F5F5F5'; }}
+            onMouseOut={(e) => { e.target.style.background = '#FFFFFF'; }}
+          >
+            Cancel
+          </button>
           <button
             type="submit"
             disabled={loading}
             style={{
-              padding: '6px 16px',
-              borderRadius: '6px',
-              border: 'none',
+              padding: '6px 16px', borderRadius: '6px', border: 'none',
               background: loading ? '#94A3B8' : '#FF5722',
-              color: '#FFFFFF',
-              fontSize: '11px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontWeight: '600',
+              color: '#FFFFFF', fontSize: '11px',
+              cursor: loading ? 'not-allowed' : 'pointer', fontWeight: '600',
             }}
+            onMouseOver={(e) => { if (!loading) e.target.style.background = '#E64A19'; }}
+            onMouseOut={(e) => { if (!loading) e.target.style.background = '#FF5722'; }}
           >
             {loading ? 'Creating...' : 'Create Lead'}
           </button>

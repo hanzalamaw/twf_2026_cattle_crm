@@ -1831,7 +1831,7 @@ const Control = () => {
                       <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#333' }}>
                         Cancelled order details
                       </h3>
-                      <div style={{ background: '#FFF5F5', borderRadius: '8px', padding: '16px', maxHeight: '400px', overflow: 'auto' }}>
+                      <div style={{ background: '#FFF5F5', borderRadius: '8px', padding: '16px', Height: '400px', overflow: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                           <thead>
                             <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
@@ -1861,7 +1861,7 @@ const Control = () => {
                       <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#333' }}>
                         Deleted lead details
                       </h3>
-                      <div style={{ background: '#FFF5F5', borderRadius: '8px', padding: '16px', maxHeight: '400px', overflow: 'auto' }}>
+                      <div style={{ background: '#FFF5F5', borderRadius: '8px', padding: '16px', Height: '400px', overflow: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                           <thead>
                             <tr style={{ borderBottom: '2px solid #E0E0E0' }}>

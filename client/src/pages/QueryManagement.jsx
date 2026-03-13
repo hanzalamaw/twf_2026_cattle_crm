@@ -69,6 +69,7 @@ export default function QueryManagement() {
   const [confirmModalLead, setConfirmModalLead] = useState(null);
   const [confirmForm, setConfirmForm] = useState({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
   const [confirmDuplicateError, setConfirmDuplicateError] = useState(null);
+  const [confirmFormErrors, setConfirmFormErrors] = useState({});
   const confirmDuplicateCheckTimeoutRef = useRef(null);
   const [area, setArea] = useState('');
   const [editOpen, setEditOpen] = useState(false);
@@ -255,18 +256,32 @@ export default function QueryManagement() {
   const handleConfirmClick = (lead) => {
     setConfirmModalLead(lead);
     setConfirmDuplicateError(null);
+    setConfirmFormErrors({});
     setConfirmForm({ order_id: '', slot: '', booking_date: formatDate(lead.booking_date) || '', cow_number: '', hissa_number: '' });
   };
 
   const handleConfirmOrder = async () => {
     if (!confirmModalLead) return;
     const lead = confirmModalLead;
-    if (!(confirmForm.order_id || '').trim()) { setError('Order ID is required'); return; }
     const orderType = lead.type || '';
     const day = lead.day || '';
     const bookingDate = (confirmForm.booking_date || '').trim();
     const cow_number = (confirmForm.cow_number || '').trim();
     const hissa_number = (confirmForm.hissa_number || '').trim();
+
+    // Validate all required fields
+    const formErrors = {};
+    if (!(confirmForm.order_id || '').trim()) formErrors.order_id = 'Order ID is required';
+    if (!(confirmForm.slot || '').trim()) formErrors.slot = 'Slot is required';
+    if (!bookingDate) formErrors.booking_date = 'Booking date is required';
+    if (!cow_number) formErrors.cow_number = 'Cow number is required';
+    if (!hissa_number) formErrors.hissa_number = 'Hissa number is required';
+    if (Object.keys(formErrors).length > 0) {
+      setConfirmFormErrors(formErrors);
+      return;
+    }
+    setConfirmFormErrors({});
+
     if (cow_number && hissa_number && orderType && !shouldSkipCowHissaDuplicate(orderType, cow_number, hissa_number)) {
       const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, orderType, day, bookingDate);
       if (duplicate) { setConfirmDuplicateError(duplicate); return; }
@@ -281,9 +296,9 @@ export default function QueryManagement() {
         body: JSON.stringify({
           order_id: (confirmForm.order_id || '').trim(),
           slot: (confirmForm.slot || '').trim() || null,
-          booking_date: (confirmForm.booking_date || '').trim() || null,
-          cow_number: (confirmForm.cow_number || '').trim() || null,
-          hissa_number: (confirmForm.hissa_number || '').trim() || null,
+          booking_date: bookingDate || null,
+          cow_number: cow_number || null,
+          hissa_number: hissa_number || null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -291,6 +306,7 @@ export default function QueryManagement() {
         setConfirmModalLead(null);
         setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
         setConfirmDuplicateError(null);
+        setConfirmFormErrors({});
         setSelectedIds((prev) => { const next = new Set(prev); next.delete(lead.lead_id); return next; });
         fetchLeads();
       } else {
@@ -578,27 +594,30 @@ export default function QueryManagement() {
 
       {/* ── Confirm modal ── */}
       {confirmModalLead && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }} onClick={() => !confirmingLeadId && (setConfirmModalLead(null), setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' }), setConfirmDuplicateError(null))}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }} onClick={() => !confirmingLeadId && (setConfirmModalLead(null), setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' }), setConfirmDuplicateError(null), setConfirmFormErrors({}))}>
           <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '420px', width: '90%' }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Confirm order</h3>
             <p style={{ margin: '0 0 16px 0', color: '#555', fontSize: '13px' }}>Create order from lead &quot;{confirmModalLead.booking_name || confirmModalLead.lead_id}&quot;. Fill or adjust the fields below.</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Order ID</label>
-                <input value={confirmForm.order_id} readOnly placeholder="Auto-generated" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px', background: '#f5f5f5', color: '#555', cursor: 'not-allowed' }} />
+                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Order ID <span style={{ color: '#dc2626' }}>*</span></label>
+                <input value={confirmForm.order_id} readOnly placeholder="Auto-generated" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: confirmFormErrors.order_id ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px', background: '#f5f5f5', color: '#555', cursor: 'not-allowed' }} />
+                {confirmFormErrors.order_id && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.order_id}</div>}
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Slot</label>
-                <select value={confirmForm.slot} onChange={(e) => setConfirmForm((p) => ({ ...p, slot: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Slot <span style={{ color: '#dc2626' }}>*</span></label>
+                <select value={confirmForm.slot} onChange={(e) => { setConfirmForm((p) => ({ ...p, slot: e.target.value })); setConfirmFormErrors((p) => ({ ...p, slot: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: confirmFormErrors.slot ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px' }}>
                   <option value="">Select Slot</option>
                   {SLOTS.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
+                {confirmFormErrors.slot && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.slot}</div>}
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Booking Date</label>
+                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Booking Date <span style={{ color: '#dc2626' }}>*</span></label>
                 <input type="date" value={confirmForm.booking_date} onChange={(e) => {
                   const newDate = e.target.value;
                   setConfirmForm((p) => ({ ...p, booking_date: newDate }));
+                  setConfirmFormErrors((p) => ({ ...p, booking_date: undefined }));
                   if (confirmModalLead && confirmModalLead.type && confirmModalLead.type !== 'Goat (Hissa)' && token) {
                     fetch(`${API}/api/booking/get-available-cow-hissa`, {
                       method: 'POST',
@@ -610,12 +629,13 @@ export default function QueryManagement() {
                       }
                     }).catch(() => {});
                   }
-                }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
+                }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: confirmFormErrors.booking_date ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px' }} />
+                {confirmFormErrors.booking_date && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.booking_date}</div>}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Cow Number</label>
-                  <input value={confirmForm.cow_number} onChange={(e) => { setConfirmForm((p) => ({ ...p, cow_number: e.target.value })); setConfirmDuplicateError(null); }} onBlur={async () => {
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Cow Number <span style={{ color: '#dc2626' }}>*</span></label>
+                  <input value={confirmForm.cow_number} onChange={(e) => { setConfirmForm((p) => ({ ...p, cow_number: e.target.value })); setConfirmDuplicateError(null); setConfirmFormErrors((p) => ({ ...p, cow_number: undefined })); }} onBlur={async () => {
                     if (!confirmModalLead) return;
                     const { cow_number: c, hissa_number: h, booking_date: bd } = confirmForm;
                     const ot = confirmModalLead.type || '';
@@ -624,11 +644,12 @@ export default function QueryManagement() {
                       const dup = await checkCowHissaDuplicate(c, h, ot, d, bd);
                       if (dup) setConfirmDuplicateError(dup);
                     }
-                  }} placeholder="Auto-generated" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
+                  }} placeholder="Auto-generated" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: (confirmFormErrors.cow_number || confirmDuplicateError) ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px' }} />
+                  {confirmFormErrors.cow_number && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.cow_number}</div>}
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Hissa Number</label>
-                  <input value={confirmForm.hissa_number} onChange={(e) => { setConfirmForm((p) => ({ ...p, hissa_number: e.target.value })); setConfirmDuplicateError(null); }} onBlur={async () => {
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Hissa Number <span style={{ color: '#dc2626' }}>*</span></label>
+                  <input value={confirmForm.hissa_number} onChange={(e) => { setConfirmForm((p) => ({ ...p, hissa_number: e.target.value })); setConfirmDuplicateError(null); setConfirmFormErrors((p) => ({ ...p, hissa_number: undefined })); }} onBlur={async () => {
                     if (!confirmModalLead) return;
                     const { cow_number: c, hissa_number: h, booking_date: bd } = confirmForm;
                     const ot = confirmModalLead.type || '';
@@ -637,12 +658,13 @@ export default function QueryManagement() {
                       const dup = await checkCowHissaDuplicate(c, h, ot, d, bd);
                       if (dup) setConfirmDuplicateError(dup);
                     }
-                  }} placeholder="Auto-generated" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
+                  }} placeholder="Auto-generated" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: (confirmFormErrors.hissa_number || confirmDuplicateError) ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px' }} />
+                  {confirmFormErrors.hissa_number && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.hissa_number}</div>}
                 </div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => !confirmingLeadId && (setConfirmModalLead(null), setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' }), setConfirmDuplicateError(null))} disabled={!!confirmingLeadId} style={{ padding: '8px 16px', background: '#f5f5f5', border: 'none', borderRadius: '8px', cursor: confirmingLeadId ? 'not-allowed' : 'pointer' }}>Cancel</button>
+              <button type="button" onClick={() => !confirmingLeadId && (setConfirmModalLead(null), setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' }), setConfirmDuplicateError(null), setConfirmFormErrors({}))} disabled={!!confirmingLeadId} style={{ padding: '8px 16px', background: '#f5f5f5', border: 'none', borderRadius: '8px', cursor: confirmingLeadId ? 'not-allowed' : 'pointer' }}>Cancel</button>
               <button type="button" onClick={handleConfirmOrder} disabled={!!confirmingLeadId} style={{ padding: '8px 16px', background: '#166534', color: '#fff', border: 'none', borderRadius: '8px', cursor: confirmingLeadId ? 'not-allowed' : 'pointer' }}>{confirmingLeadId ? '...' : 'Confirm'}</button>
             </div>
           </div>
@@ -685,13 +707,16 @@ export default function QueryManagement() {
               </div>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
-              {['customer_id', 'phone_number', 'alt_phone', 'type', 'booking_name', 'shareholder_name', 'address', 'area', 'day', 'booking_date', 'total_amount', 'source', 'reference'].map((key) => (
+              {['customer_id', 'phone_number', 'alt_phone', 'type', 'booking_name', 'shareholder_name', 'address', 'area', 'day', 'booking_date', 'total_amount', 'source', 'reference'].map((key) => {
+                const isDisabled = key === 'lead_id' || key === 'customer_id';
+                return (
                 <div key={key}>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>{key.replace(/_/g, ' ')}</label>
-                  <input disabled={key === 'lead_id'} value={editRow[key] ?? ''} onChange={(e) => { setEditRow((p) => ({ ...p, [key]: e.target.value })); if (editErrors[key]) setEditErrors((p) => ({ ...p, [key]: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: editErrors[key] ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px' }} />
+                  <input disabled={isDisabled} value={editRow[key] ?? ''} onChange={(e) => { setEditRow((p) => ({ ...p, [key]: e.target.value })); if (editErrors[key]) setEditErrors((p) => ({ ...p, [key]: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: editErrors[key] ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px', ...(isDisabled && { backgroundColor: '#f5f5f5', cursor: 'not-allowed' }) }} />
                   {editErrors[key] && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{editErrors[key]}</div>}
                 </div>
-              ))}
+                );
+              })}
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>description</label>
                 <textarea value={editRow.description ?? ''} onChange={(e) => setEditRow((p) => ({ ...p, description: e.target.value }))} rows={2} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }} />

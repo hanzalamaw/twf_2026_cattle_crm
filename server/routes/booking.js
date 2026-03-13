@@ -423,9 +423,18 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           order_type,
           booking_name,
           shareholder_name,
-          cow_number,
-          hissa_number,
+          cow_number: cow_number || null,
+          hissa_number: hissa_number || null,
+          alt_contact: alt_contact || null,
+          address: address || null,
+          area: area || null,
+          day: day || null,
+          slot: slot || null,
+          booking_date: booking_date ? toDateOnly(booking_date) : null,
           total_amount: totalAmount,
+          order_source: order_source || null,
+          reference: reference || null,
+          description: description || null,
         },
         ip_address: req.ip,
         user_agent: req.get("user-agent"),
@@ -874,7 +883,23 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
 
       await db.execute("DELETE FROM leads WHERE lead_id = ?", [leadId]);
 
-      const auditDetail = { lead_id: leadId, order_id: orderId, customer_id: lead.customer_id, booking_name: lead.booking_name, shareholder_name: lead.shareholder_name, total_amount: totalAmount };
+      const auditDetail = {
+        lead_id: leadId,
+        order_id: orderId,
+        customer_id: lead.customer_id,
+        contact: lead.contact,
+        order_type: lead.order_type,
+        booking_name: lead.booking_name,
+        shareholder_name: lead.shareholder_name,
+        cow_number: cowNumber,
+        hissa_number: hissaNumber,
+        slot: slotVal,
+        day: lead.day,
+        booking_date: bookingDateVal,
+        total_amount: totalAmount,
+        order_source: lead.order_source || null,
+        reference: lead.reference || null,
+      };
       await writeAuditLog(db, {
         user_id: req.userId,
         action: "CONFIRM_LEAD_ORDER",
@@ -1233,8 +1258,8 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
       const { count, expense_ids } = req.body || {};
       const exportCount = typeof count === "number" && count >= 0 ? count : 0;
       const newValues = { count: exportCount };
-      if (expense_ids && Array.isArray(expense_ids) && expense_ids.length > 0) {
-        newValues.expense_ids = expense_ids;
+      if (Array.isArray(expense_ids) && expense_ids.length > 0) {
+        newValues.expense_ids = expense_ids.length === exportCount && exportCount > 0 ? "all" : expense_ids;
       }
       await writeAuditLog(db, {
         user_id: req.userId,
@@ -1395,8 +1420,8 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
       if (filters && typeof filters === "object" && Object.keys(filters).length > 0) {
         newValues.filters = filters;
       }
-      if (lead_ids && Array.isArray(lead_ids) && lead_ids.length > 0) {
-        newValues.lead_ids = lead_ids;
+      if (Array.isArray(lead_ids) && lead_ids.length > 0) {
+        newValues.lead_ids = lead_ids.length === exportCount && exportCount > 0 ? "all" : lead_ids;
       }
       await writeAuditLog(db, {
         user_id: req.userId,
@@ -1420,12 +1445,12 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
       const { count, filters, order_ids } = req.body || {};
       const exportCount = typeof count === "number" && count >= 0 ? count : 0;
       const newValues = { count: exportCount };
-      if (filters && typeof filters === "object" && Object.keys(filters).length > 0) {
-        newValues.filters = filters;
-      }
-      if (order_ids && Array.isArray(order_ids) && order_ids.length > 0) {
-        newValues.order_ids = order_ids;
-      }
+if (filters && typeof filters === "object" && Object.keys(filters).length > 0) {
+  newValues.filters = filters;
+}
+if (Array.isArray(order_ids) && order_ids.length > 0) {
+  newValues.order_ids = order_ids.length === exportCount && exportCount > 0 ? "all" : order_ids;
+}
       await writeAuditLog(db, {
         user_id: req.userId,
         action: "ORDER_EXPORT",
@@ -1542,32 +1567,49 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
     }
   });
 
-  // Invoice PDF: THE WARSI FARM style - all orders for customer_id in year 2026
+  // Invoice PDF: THE WARSI FARM style - all orders for customer_id, any year
   app.get("/api/booking/invoice/:customerId", verifyToken, async (req, res) => {
     try {
       const { customerId } = req.params;
+
+      // Fetch all orders for this customer (any year), ordered by booking_date then order_id
       const [orders] = await db.execute(
-        `SELECT o.order_id, o.cow_number AS cow, o.hissa_number AS hissa, o.booking_name, o.shareholder_name, o.contact, o.alt_contact, o.address, o.area, o.day, o.order_type AS type, o.booking_date, o.total_amount, o.received_amount, o.pending_amount
-         FROM orders o WHERE o.customer_id = ? AND YEAR(o.booking_date) = 2026 ORDER BY o.booking_date, o.order_id`,
+        `SELECT o.order_id, o.cow_number AS cow, o.hissa_number AS hissa, o.booking_name,
+                o.shareholder_name, o.contact, o.alt_contact, o.address, o.area, o.day,
+                o.order_type AS type, o.booking_date, o.total_amount,
+                o.received_amount, o.pending_amount
+         FROM orders o
+         WHERE o.customer_id = ?
+         ORDER BY o.booking_date, o.order_id`,
         [customerId]
       );
+
       if (orders.length === 0) {
-        await writeAuditLog(db, { user_id: req.userId, action: "INVOICE_NO_ORDERS", entity_type: "invoice", entity_id: customerId, new_values: { reason: "no_orders_2026" }, ip_address: req.ip, user_agent: req.get("user-agent") });
-        return res.status(404).json({ message: "No orders found for this customer in 2026" });
+        await writeAuditLog(db, { user_id: req.userId, action: "INVOICE_NO_ORDERS", entity_type: "invoice", entity_id: customerId, new_values: { reason: "no_orders" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+        return res.status(404).json({ message: "No orders found for this customer" });
       }
+
+      // Generate sequential invoice number: find max from audit_logs for this customer
+      // Format: #I-NNNN-YYYY where YYYY = year of first order's booking_date
+      const firstBookingYear = (() => {
+        const d = orders[0].booking_date;
+        if (!d) return new Date().getFullYear();
+        const yr = new Date(d).getFullYear();
+        return isNaN(yr) ? new Date().getFullYear() : yr;
+      })();
+
+      // Get next invoice sequence number by counting previous INVOICE_GENERATED entries for any customer
+      const [seqRows] = await db.execute(
+        `SELECT COUNT(*) AS cnt FROM audit_logs WHERE action = 'INVOICE_GENERATED'`
+      );
+      const invoiceSeq = (Number(seqRows[0]?.cnt ?? 0) + 1);
+      const invoiceNumber = `#I-${String(invoiceSeq).padStart(4, "0")}-${firstBookingYear}`;
+
       const customer = orders[0];
-      await writeAuditLog(db, {
-        user_id: req.userId,
-        action: "INVOICE_GENERATED",
-        entity_type: "invoice",
-        entity_id: customerId,
-        new_values: { customer_id: customerId, order_count: orders.length },
-        ip_address: req.ip,
-        user_agent: req.get("user-agent"),
-      });
-      const invoiceNumber = `#I-${String(orders.length).padStart(4, "0")}-2026`;
       const bookingDateStr = toDateOnly(customer.booking_date) || "";
       const issuedDate = toDateOnly(new Date()) || new Date().toISOString().split("T")[0];
+
+      // Grand totals across all orders
       let grandTotal = 0;
       let grandReceived = 0;
       let grandPending = 0;
@@ -1576,169 +1618,274 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
         grandReceived += Number(row.received_amount || 0);
         grandPending += Number(row.pending_amount || 0);
       }
-      const fmt = (n) => Math.round(Number(n)).toLocaleString("en-PK");
 
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "INVOICE_GENERATED",
+        entity_type: "invoice",
+        entity_id: customerId,
+        new_values: { customer_id: customerId, invoice_number: invoiceNumber, order_count: orders.length, grand_total: grandTotal, grand_received: grandReceived, grand_pending: grandPending },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+
+      const fmt = (n) => Math.round(Number(n || 0)).toLocaleString("en-PK");
+
+      // Serve inline so it opens in browser tab (not forced download)
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="Invoice-${invoiceNumber.replace("#", "")}-${customerId}.pdf"`);
+
       const doc = new PDFDocument({ margin: 50, size: "A4", autoFirstPage: true });
       doc.pipe(res);
 
-      const pageW = doc.page.width - 100;
-      const pageHeight = doc.page.height;
-      const left = 50;
-      const right = doc.page.width - 50;
+      // ── Layout constants ──────────────────────────────────────────────────────
+      const left   = 50;
+      const right  = doc.page.width - 50;          // 545
+      const pageW  = right - left;                  // 495
+      const pageH  = doc.page.height;               // 841.89
+      const gray   = "#888888";
+      const footerZoneTop  = pageH - 48;
+      const contentBottom  = footerZoneTop - 8;
 
-      const footerZoneTop = pageHeight - 48;
-      const contentBottom = footerZoneTop - 4;
-
-      const wrapLines = (text, width, fontSize) => {
-        doc.font("Helvetica").fontSize(fontSize);
-        const words = String(text).split(/\s+/);
+      // ── Helper: word-wrap text at given font size ─────────────────────────────
+      const wrapText = (text, maxW, font, size) => {
+        doc.font(font).fontSize(size);
+        const words = String(text || "").split(/\s+/);
         const lines = [];
         let line = "";
         for (const w of words) {
-          const tryLine = line ? `${line} ${w}` : w;
-          if (doc.widthOfString(tryLine) <= width) line = tryLine;
-          else {
-            if (line) lines.push(line);
-            line = w;
-          }
+          const candidate = line ? `${line} ${w}` : w;
+          if (doc.widthOfString(candidate) <= maxW) { line = candidate; }
+          else { if (line) lines.push(line); line = w; }
         }
         if (line) lines.push(line);
         return lines;
       };
 
-      const textClip = (str, x, y, opts) => {
-        const h = opts.height || 200;
-        doc.text(str, x, y, { ...opts, height: h });
-      };
+      // ── HEADER ────────────────────────────────────────────────────────────────
+      // "THE WARSI FARM" top-left, "INVOICE" top-right
+      doc.fontSize(18).font("Helvetica-Bold").fillColor("#000000")
+         .text("THE WARSI FARM", left, 50, { lineBreak: false });
 
-      const gray = "#888888";
+      doc.fontSize(14).font("Helvetica-Bold")
+         .text("INVOICE", left, 50, { width: pageW, align: "right", lineBreak: false });
 
-      // --- Header ---
-      doc.fontSize(18).font("Helvetica-Bold").text("THE WARSI FARM", left, 50);
-      doc.fontSize(14).font("Helvetica-Bold").text("INVOICE", right - 150, 50, { width: 150, align: "right" });
-      doc.fontSize(10).font("Helvetica").text(invoiceNumber, right - 150, 66, { width: 150, align: "right" });
-      doc.strokeColor(gray).lineWidth(0.5).moveTo(left, 82).lineTo(right, 82).stroke().strokeColor("#000000").lineWidth(1);
+      // Invoice number right-aligned, below INVOICE label
+      doc.fontSize(10).font("Helvetica").fillColor("#333333")
+         .text(invoiceNumber, left, 67, { width: pageW, align: "right", lineBreak: false });
+      doc.fillColor("#000000");
 
-      const col1Right = left + 160;
-      const col2Left = left + 180;
-      const col2Right = right - 190;
-      const col3Left = right - 180;
-      const blockTop = 88;
-      const blockBottom = 162;
-      const sectionPad = 14;
+      // Horizontal rule below header
+      doc.strokeColor(gray).lineWidth(0.5)
+         .moveTo(left, 82).lineTo(right, 82).stroke()
+         .strokeColor("#000000").lineWidth(1);
 
-      const billedLeft = col2Left + sectionPad;
-      const billedWidth = col2Right - billedLeft;
-      const fromLeft = col3Left + sectionPad;
-      const fromWidth = right - fromLeft;
+      // ── INFO BLOCK (3 columns) ────────────────────────────────────────────────
+      // Col 1: Booking Date / Issued Date  (left edge → left+160)
+      // Col 2: Billed to                   (left+180 → right-180)
+      // Col 3: From                         (right-180 → right)
+      const blockTop    = 90;
+      const blockBottom = 165;
+      const col2Left    = left + 160;
+      const col3Left    = right - 175;
+      const col2Pad     = col2Left + 10;
+      const col3Pad     = col3Left + 10;
+      const col2Width   = col3Left - col2Pad - 4;
+      const col3Width   = right - col3Pad;
 
-      doc.fontSize(10).font("Helvetica-Bold").text("Booking Date", left, blockTop);
-      doc.font("Helvetica").text(bookingDateStr || "—", left, blockTop + 13);
-      doc.font("Helvetica-Bold").text("Issued Date", left, blockTop + 30);
-      doc.font("Helvetica").text(issuedDate, left, blockTop + 43);
+      // Col 1 — dates
+      doc.fontSize(10).font("Helvetica-Bold").fillColor("#000000")
+         .text("Booking Date", left, blockTop);
+      doc.font("Helvetica").fontSize(10)
+         .text(bookingDateStr || "—", left, blockTop + 14);
+      doc.font("Helvetica-Bold")
+         .text("Issued Date", left, blockTop + 32);
+      doc.font("Helvetica")
+         .text(issuedDate, left, blockTop + 46);
 
-      // Billed to: Bold heading only; then Full Name (not bold), Phone (not bold), Address (not bold)
-      doc.fontSize(10).font("Helvetica-Bold").text("Billed to", billedLeft, blockTop);
-      doc.font("Helvetica");
-      const fullName = (customer.shareholder_name || customer.booking_name || "—").trim();
-      doc.text(fullName, billedLeft, blockTop + 14, { width: billedWidth, height: 16 });
-      doc.text(customer.contact || "—", billedLeft, blockTop + 30, { width: billedWidth, height: 14 });
-      const billedAddr = [customer.address, customer.area].filter(Boolean).join(", ") || "";
-      if (billedAddr) doc.text(billedAddr, billedLeft, blockTop + 46, { width: billedWidth, height: 20 });
-
-      // From section: left-aligned with padding left
-      doc.font("Helvetica-Bold").text("From", fromLeft, blockTop);
-      doc.font("Helvetica").text("The Warsi Farm", fromLeft, blockTop + 14);
-      doc.text("B-655, F.B.A Block # 13,", fromLeft, blockTop + 28);
-      doc.text("Gulberg, Karachi", fromLeft, blockTop + 42);
-
-      doc.strokeColor(gray).lineWidth(0.5);
-      doc.moveTo(col2Left, blockTop).lineTo(col2Left, blockBottom).stroke();
-      doc.moveTo(col3Left, blockTop).lineTo(col3Left, blockBottom).stroke();
-      doc.strokeColor("#000000").lineWidth(1);
-
-      let y = 165;
-      doc.strokeColor(gray).lineWidth(0.5).moveTo(left, y).lineTo(right, y).stroke().strokeColor("#000000").lineWidth(1);
-      y += 12;
-
-      doc.fontSize(10).font("Helvetica-Bold");
-      doc.text("Service", left, y);
-      doc.text("Qty", right - 180, y, { width: 50, align: "center" });
-      doc.text("Total Amount", right - 120, y, { width: 120, align: "right" });
-      y += 14;
-
+      // Col 2 — Billed to
+      doc.font("Helvetica-Bold").fontSize(10)
+         .text("Billed to", col2Pad, blockTop);
       doc.font("Helvetica").fontSize(10);
+      const billName = (customer.shareholder_name || customer.booking_name || "—").trim();
+      doc.text(billName,          col2Pad, blockTop + 14, { width: col2Width, lineBreak: false });
+      doc.text(customer.contact || "—", col2Pad, blockTop + 28, { width: col2Width, lineBreak: false });
+      const billAddr = [customer.address, customer.area].filter(Boolean).join(", ");
+      if (billAddr) doc.text(billAddr, col2Pad, blockTop + 42, { width: col2Width, lineBreak: false });
+
+      // Col 3 — From
+      doc.font("Helvetica-Bold").fontSize(10)
+         .text("From", col3Pad, blockTop);
+      doc.font("Helvetica").fontSize(10)
+         .text("The Warsi Farm",         col3Pad, blockTop + 14, { width: col3Width, lineBreak: false })
+         .text("B-655, F.B.A Block # 13,", col3Pad, blockTop + 28, { width: col3Width, lineBreak: false })
+         .text("Gulberg, Karachi",         col3Pad, blockTop + 42, { width: col3Width, lineBreak: false });
+
+      // Vertical dividers between the 3 columns
+      doc.strokeColor(gray).lineWidth(0.5)
+         .moveTo(col2Left, blockTop).lineTo(col2Left, blockBottom).stroke()
+         .moveTo(col3Left, blockTop).lineTo(col3Left, blockBottom).stroke()
+         .strokeColor("#000000").lineWidth(1);
+
+      // ── SERVICE TABLE ─────────────────────────────────────────────────────────
+      let y = blockBottom + 4;
+
+      // Table top rule
+      doc.strokeColor(gray).lineWidth(0.5)
+         .moveTo(left, y).lineTo(right, y).stroke()
+         .strokeColor("#000000").lineWidth(1);
+      y += 10;
+
+      // Table header row — 5 columns: Service | Qty | Total | Paid | Due
+      const qtyX   = right - 280;
+      const totX   = right - 210;
+      const totW   = 70;
+      const paidX  = right - 130;
+      const paidW  = 65;
+      const dueX   = right - 60;
+      const dueW   = 60;
+      const qtyW   = 30;
+      const svcW   = qtyX - left - 8;
+
+      doc.fontSize(10).font("Helvetica-Bold").fillColor("#000000");
+      doc.text("Service", left,  y, { width: svcW,  lineBreak: false });
+      doc.text("Qty",     qtyX,  y, { width: qtyW,  align: "center", lineBreak: false });
+      doc.text("Total",   totX,  y, { width: totW,  align: "center", lineBreak: false });
+      doc.text("Paid",    paidX, y, { width: paidW, align: "center", lineBreak: false });
+      doc.text("Due",     dueX,  y, { width: dueW,  align: "center", lineBreak: false });
+      y += 16;
+
+      // Table body — one row per order
+      doc.font("Helvetica").fontSize(10).fillColor("#000000");
       for (const row of orders) {
+        // If near bottom of page, add new page
+        if (y + 40 > contentBottom) {
+          doc.addPage();
+          y = 50;
+        }
+
         const serviceTitle = row.type || "Booking";
         const serviceSub = `Cow No: ${row.cow || "—"} | Hissa No: ${row.hissa || "—"} • ${row.day || "—"}`;
-        textClip(serviceTitle, left, y, { width: pageW - 200, height: 14 });
+
+        const rowStartY = y;
+
+        // Service title (bold)
+        doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000")
+           .text(serviceTitle, left, y, { width: svcW, lineBreak: false });
+        y += 13;
+
+        // Sub-line (regular, muted)
+        doc.font("Helvetica").fontSize(9).fillColor("#444444")
+           .text(serviceSub, left, y, { width: svcW, lineBreak: false });
+        doc.fillColor("#000000");
         y += 12;
-        textClip(serviceSub, left, y, { width: pageW - 200, height: 14 });
-        doc.text("1", right - 180, y - 12, { width: 50, align: "center" });
-        doc.text(`PKR ${fmt(row.total_amount)}`, right - 120, y - 12, { width: 120, align: "right" });
-        y += 16;
+
+        // Qty, Total, Paid, Due — all center-aligned, aligned to title line
+        doc.font("Helvetica").fontSize(10).fillColor("#000000");
+        doc.text("1",                               qtyX,  rowStartY, { width: qtyW,  align: "center", lineBreak: false });
+        doc.text(`PKR ${fmt(row.total_amount)}`,    totX,  rowStartY, { width: totW,  align: "center", lineBreak: false });
+
+        // Paid — green
+        doc.font("Helvetica").fontSize(10).fillColor("#166534")
+           .text(`PKR ${fmt(row.received_amount)}`, paidX, rowStartY, { width: paidW, align: "center", lineBreak: false });
+
+        // Due — red
+        doc.font("Helvetica").fontSize(10).fillColor("#b91c1c")
+           .text(`PKR ${fmt(row.pending_amount)}`,  dueX,  rowStartY, { width: dueW,  align: "center", lineBreak: false });
+
+        doc.fillColor("#000000");
+        y += 4; // row gap
       }
 
-      y += 4;
-      doc.strokeColor(gray).lineWidth(0.5).moveTo(left, y).lineTo(right, y).stroke().strokeColor("#000000").lineWidth(1);
-      y += 10;
-
-      // --- Calculation summary: HALF WIDTH, RIGHT SIDE ONLY (not full page) ---
-      const summaryWidth = Math.floor(pageW / 2);
-      const summaryLeft = right - summaryWidth;
-      const sumLineLeft = summaryLeft;
-      const sumLineRight = right;
-      const labelW = 100;
-      const valW = 100;
-      const valX = right - valW;
-
-      doc.font("Helvetica-Bold").text("Subtotal:", sumLineLeft, y, { width: labelW, align: "right" });
-      doc.text(`PKR ${fmt(grandTotal)}`, valX, y, { width: valW, align: "right" });
-      y += 11;
-      doc.strokeColor("#999999").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
-      y += 6;
-      doc.font("Helvetica").text("Shipping:", sumLineLeft, y, { width: labelW, align: "right" });
-      doc.text("Free", valX, y, { width: valW, align: "right" });
-      y += 11;
-      doc.strokeColor("#999999").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
-      y += 6;
-      doc.font("Helvetica-Bold").text("Total:", sumLineLeft, y, { width: labelW, align: "right" });
-      doc.text(`PKR ${fmt(grandTotal)}`, valX, y, { width: valW, align: "right" });
-      y += 11;
-      doc.strokeColor("#999999").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
-      y += 8;
-
-      doc.fillColor("#166534").font("Helvetica-Bold").text("Amount Paid:", sumLineLeft, y, { width: labelW, align: "right" });
-      doc.text(`PKR ${fmt(grandReceived)}`, valX, y, { width: valW, align: "right" });
-      y += 11;
-      doc.strokeColor("#166534").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
-      y += 10;
-      doc.fillColor("#b91c1c").font("Helvetica-Bold").text("Amount Due:", sumLineLeft, y, { width: labelW, align: "right" });
-      doc.text(`PKR ${fmt(grandPending)}`, valX, y, { width: valW, align: "right" });
-      y += 11;
-      doc.strokeColor("#b91c1c").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
-      doc.fillColor("#000000");
-      y += 18;
-
-      doc.font("Helvetica-Bold").fontSize(10).text("PAYMENT INFO", left, y);
-      y += 10;
-      doc.font("Helvetica").fontSize(9);
-      doc.text("ACCOUNT NAME (HBL)", left, y);
-      doc.text("BRANCH", left + 140, y);
-      doc.text("IBAN", left + 280, y);
-      doc.text("ACCOUNT NO", left + 400, y);
-      y += 11;
-      doc.text("TW TRADERS", left, y);
-      doc.text("ZIAUDDIN SHAHEED ROA", left + 140, y);
-      doc.text("PK10HABB0016787900655603", left + 280, y, { width: 110 });
-      doc.text("16787900655603", left + 400, y);
-      y += 18;
-
-      doc.font("Helvetica-Bold").fontSize(10).text("TERMS & CONDITIONS", left, y);
+      // Table bottom rule
+      doc.strokeColor(gray).lineWidth(0.5)
+         .moveTo(left, y).lineTo(right, y).stroke()
+         .strokeColor("#000000").lineWidth(1);
       y += 12;
-      doc.font("Helvetica").fontSize(8);
+
+      // ── SUMMARY (right half, like the PDF) ───────────────────────────────────
+      // Layout: label right-aligned in left portion, value right-aligned at far right
+      // Matches PDF: "Subtotal:" ... "PKR 23,000"
+      const sumBlockLeft  = right - 230;   // left edge of summary block
+      const sumLabelRight = right - 110;   // right edge of label column
+      const sumLabelW     = sumLabelRight - sumBlockLeft;
+      const sumValX       = right - 108;   // start of value column
+      const sumValW       = 108;
+
+      const drawSummaryRow = (label, value, labelFont, labelColor, ruleColor) => {
+        doc.font(labelFont).fontSize(10).fillColor(labelColor)
+           .text(label, sumBlockLeft, y, { width: sumLabelW, align: "right", lineBreak: false });
+        doc.font(labelFont).fontSize(10).fillColor(labelColor)
+           .text(value, sumValX, y, { width: sumValW, align: "right", lineBreak: false });
+        doc.fillColor("#000000");
+        y += 13;
+        doc.strokeColor(ruleColor || "#cccccc").lineWidth(0.5)
+           .moveTo(sumBlockLeft, y).lineTo(right, y).stroke()
+           .strokeColor("#000000").lineWidth(1);
+        y += 5;
+      };
+
+      drawSummaryRow("Subtotal:",  `PKR ${fmt(grandTotal)}`,    "Helvetica-Bold", "#000000", "#cccccc");
+      drawSummaryRow("Delivery:",  "Free",                       "Helvetica",      "#000000", "#cccccc");
+      drawSummaryRow("Total:",     `PKR ${fmt(grandTotal)}`,    "Helvetica-Bold", "#000000", "#cccccc");
+
+      // Amount Paid — green
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#166534")
+         .text("Amount Paid:", sumBlockLeft, y, { width: sumLabelW, align: "right", lineBreak: false });
+      doc.text(`PKR ${fmt(grandReceived)}`, sumValX, y, { width: sumValW, align: "right", lineBreak: false });
+      doc.fillColor("#000000");
+      y += 13;
+      doc.strokeColor("#166534").lineWidth(0.5)
+         .moveTo(sumBlockLeft, y).lineTo(right, y).stroke()
+         .strokeColor("#000000").lineWidth(1);
+      y += 5;
+
+      // Amount Due — red
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#b91c1c")
+         .text("Amount Due:", sumBlockLeft, y, { width: sumLabelW, align: "right", lineBreak: false });
+      doc.text(`PKR ${fmt(grandPending)}`, sumValX, y, { width: sumValW, align: "right", lineBreak: false });
+      doc.fillColor("#000000");
+      y += 13;
+      doc.strokeColor("#b91c1c").lineWidth(0.5)
+         .moveTo(sumBlockLeft, y).lineTo(right, y).stroke()
+         .strokeColor("#000000").lineWidth(1);
+      y += 16;
+
+      // ── PAYMENT INFO ──────────────────────────────────────────────────────────
+      if (y + 60 > contentBottom) { doc.addPage(); y = 50; }
+
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000")
+         .text("PAYMENT INFO", left, y);
+      y += 12;
+
+      // Header row
+      const pi1 = left;
+      const pi2 = left + 130;
+      const pi3 = left + 275;
+      const pi4 = left + 400;
+
+      doc.font("Helvetica-Bold").fontSize(9).fillColor("#555555");
+      doc.text("ACCOUNT NAME (HBL)", pi1, y, { lineBreak: false });
+      doc.text("BRANCH",              pi2, y, { lineBreak: false });
+      doc.text("IBAN",                pi3, y, { lineBreak: false });
+      doc.text("ACCOUNT NO",          pi4, y, { lineBreak: false });
+      y += 12;
+
+      // Values
+      doc.font("Helvetica").fontSize(9).fillColor("#000000");
+      doc.text("TW TRADERS",                   pi1, y, { lineBreak: false });
+      doc.text("ZIAUDDIN SHAHEED ROA",         pi2, y, { lineBreak: false });
+      doc.text("PK10HABB0016787900655603",      pi3, y, { width: 120, lineBreak: false });
+      doc.text("16787900655603",                pi4, y, { lineBreak: false });
+      y += 18;
+
+      // ── TERMS & CONDITIONS ────────────────────────────────────────────────────
+      if (y + 30 > contentBottom) { doc.addPage(); y = 50; }
+
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000")
+         .text("TERMS & CONDITIONS", left, y);
+      y += 12;
+
       const terms = [
         "Livestock bookings must be paid in full at the time of purchase. For Qurbani orders, full payment is required at least 7 days before Eid.",
         "Accepted payment methods: Cash, Bank Transfer, Easypaisa, JazzCash, or Online Checkout.",
@@ -1746,25 +1893,26 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
         "Ensure accurate delivery information and availability at the time of delivery. Any delays caused due to incorrect information or unavailability at delivery address will not be compensated.",
         "THE WARSI FARM is not liable for delays or issues caused by unforeseen circumstances like natural disasters, transport strikes, or technical faults.",
       ];
-      const lineHeight = 11;
-      const termGap = 4;
+      doc.font("Helvetica").fontSize(8).fillColor("#000000");
       for (let i = 0; i < terms.length; i++) {
-        const lines = wrapLines(`${i + 1}. ${terms[i]}`, pageW, 8);
+        const lines = wrapText(`${i + 1}. ${terms[i]}`, pageW, "Helvetica", 8);
         for (const line of lines) {
-          if (y + lineHeight > contentBottom) break;
-          doc.text(line, left, y, { width: pageW, height: lineHeight + 2 });
-          y += lineHeight;
+          if (y + 10 > contentBottom) break;
+          doc.text(line, left, y, { lineBreak: false });
+          y += 11;
         }
-        y += termGap;
+        y += 3;
       }
 
-      // Footer: The Warsi Farm left (unchanged); phone | website on same line, right-aligned
+      // ── FOOTER ───────────────────────────────────────────────────────────────
       const footerY = footerZoneTop + 2;
-      doc.strokeColor(gray).lineWidth(0.5).moveTo(left, footerZoneTop - 4).lineTo(right, footerZoneTop - 4).stroke().strokeColor("#000000").lineWidth(1);
-      doc.font("Helvetica").fontSize(9);
+      doc.strokeColor(gray).lineWidth(0.5)
+         .moveTo(left, footerZoneTop - 4).lineTo(right, footerZoneTop - 4).stroke()
+         .strokeColor("#000000").lineWidth(1);
+      doc.font("Helvetica").fontSize(9).fillColor("#000000");
       doc.text("The Warsi Farm", left, footerY, { lineBreak: false });
-      const footerRightStr = "(0331 & 0332) - 9911466  |  thewarsifarm.com";
-      doc.text(footerRightStr, right - doc.widthOfString(footerRightStr), footerY, { lineBreak: false });
+      const footerRight = "0331-4211466  |  0332-4211466  |  thewarsifarm.com";
+      doc.text(footerRight, right - doc.widthOfString(footerRight), footerY, { lineBreak: false });
 
       doc.end();
     } catch (error) {
@@ -1774,4 +1922,3 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
     }
   });
 };
-

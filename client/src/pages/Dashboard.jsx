@@ -780,7 +780,7 @@ const Dashboard = () => {
     Number.isFinite(Number(DEV_PREVIEW_TOTAL_ORDERS)) && DEV_PREVIEW_TOTAL_ORDERS !== null
       ? Number(DEV_PREVIEW_TOTAL_ORDERS)
       : achievedReal;
-  const targetTotal = Number(targetData?.target?.targetTotal || 2000);
+      const targetTotal = year === "all" ? 3500 : Number(targetData?.target?.targetTotal || 2000);
 
   const breakdownFromApi = Array.isArray(targetData?.breakdown) ? targetData.breakdown : [];
   const apiMap = new Map(breakdownFromApi.map((b) => [String(b.key), b]));
