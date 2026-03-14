@@ -44,6 +44,7 @@ export default function PerformanceDashboard() {
   const [error, setError] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [showDateModal, setShowDateModal] = useState(false);
 
   const hdrs = () => ({ Authorization: `Bearer ${token}` });
 
@@ -95,17 +96,93 @@ export default function PerformanceDashboard() {
       <style>{`
         .pd-tr:hover { background: #f9fafb !important; }
         .pd-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important; border-color: #d1d5db !important; }
+
+        @media (max-width: 767px) {
+          .pd-header-row        { margin-right: 44px !important; }
+          .pd-overall-grid      { grid-template-columns: 1fr !important; gap: 12px !important; }
+          .pd-kpi-grid          { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+          .pd-kpi-card          { padding: 8px 10px !important; }
+          .pd-kpi-value         { font-size: 14px !important; }
+          .pd-table-section     { display: none !important; }
+          .pd-team-mobile       { display: flex !important; }
+          .pd-individual-grid   { grid-template-columns: 1fr !important; gap: 10px !important; }
+
+          /* Date modal — bottom sheet on mobile */
+          .pd-date-modal-wrap   { align-items: flex-end !important; padding: 0 !important; }
+          .pd-date-modal-box    {
+            border-radius: 20px 20px 0 0 !important;
+            width: 100vw !important;
+            max-width: 100vw !important;
+            padding: 20px 20px 40px !important;
+          }
+          .pd-date-drag         { display: block !important; }
+          .pd-date-modal-inputs { grid-template-columns: 1fr !important; gap: 12px !important; }
+          .pd-date-modal-actions button { flex: 1 !important; padding: 13px !important; font-size: 13px !important; border-radius: 10px !important; }
+        }
       `}</style>
 
-      <div style={s.headerRow}>
+      {/* ── Header ── */}
+      <div className="pd-header-row" style={s.headerRow}>
         <h1 style={s.title}>Performance Dashboard</h1>
-        <div style={s.filtersWrap}>
-          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={s.dateInput} title="From" />
-          <span style={{ color: '#9ca3af', fontSize: 10 }}>to</span>
-          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={s.dateInput} title="To" />
-          <button type="button" style={s.btnSecondary} onClick={() => navigate('/performance/admin')}>Admin</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Active filter chip */}
+          {(fromDate || toDate) && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 8px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, fontSize: 10, color: '#1D4ED8', fontWeight: 500 }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              {fromDate && toDate ? `${fromDate} → ${toDate}` : fromDate ? `From ${fromDate}` : `Until ${toDate}`}
+              <button type="button" onClick={() => { setFromDate(''); setToDate(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1D4ED8', padding: 0, display: 'flex', lineHeight: 1, fontSize: 13 }}>×</button>
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowDateModal(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', fontSize: 11, fontWeight: 500, background: '#fff', color: '#374151', border: '1px solid #e5e7eb', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Filter by Date
+          </button>
         </div>
       </div>
+
+      {/* ── Date range modal ── */}
+      {showDateModal && (
+        <div className="pd-date-modal-wrap" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }} onClick={() => setShowDateModal(false)}>
+          <div className="pd-date-modal-box" style={{ background: '#fff', borderRadius: 12, padding: '20px 20px 24px', width: '100%', maxWidth: 360, boxShadow: '0 10px 40px rgba(0,0,0,0.18)', border: '1px solid #e5e7eb' }} onClick={(e) => e.stopPropagation()}>
+            <div className="pd-date-drag" style={{ display: 'none', width: 40, height: 4, background: '#e0e0e0', borderRadius: 2, margin: '0 auto 16px' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>Filter by Date</div>
+                <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>Show stats for a specific period</div>
+              </div>
+              <button type="button" onClick={() => setShowDateModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, color: '#9ca3af', cursor: 'pointer', lineHeight: 1 }}>×</button>
+            </div>
+            <div className="pd-date-modal-inputs" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 10, fontWeight: 600, color: '#6b7280', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.4px' }}>From</label>
+                <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 11, color: '#111827', background: '#fafafa', outline: 'none' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 10, fontWeight: 600, color: '#6b7280', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.4px' }}>To</label>
+                <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 11, color: '#111827', background: '#fafafa', outline: 'none' }} />
+              </div>
+            </div>
+            <div className="pd-date-modal-actions" style={{ display: 'flex', gap: 8 }}>
+              <button type="button"
+                onClick={() => { setFromDate(''); setToDate(''); setShowDateModal(false); }}
+                style={{ flex: 1, padding: '8px', fontSize: 11, fontWeight: 500, background: '#f3f4f6', color: '#374151', border: '1px solid #e5e7eb', borderRadius: 7, cursor: 'pointer' }}>
+                Clear
+              </button>
+              <button type="button"
+                onClick={() => setShowDateModal(false)}
+                style={{ flex: 1, padding: '8px', fontSize: 11, fontWeight: 600, background: '#2563eb', color: '#fff', border: 'none', borderRadius: 7, cursor: 'pointer' }}>
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && <div style={s.alert}>{error}</div>}
 
@@ -113,10 +190,10 @@ export default function PerformanceDashboard() {
         <div style={{ padding: 32, textAlign: 'center', color: '#6b7280', fontSize: 11 }}>Loading stats…</div>
       ) : stats ? (
         <>
-          {/* Overall Achievement */}
+          {/* ── Overall Achievement ── */}
           <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #f1f1f1', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', padding: '14px 16px', marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', marginBottom: 12, letterSpacing: 0.2 }}>Overall Achievement</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+            <div className="pd-overall-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
               {[
                 { label: 'Calls', done: totals.calls_done, target: totals.calls_target, p: overallPcts.calls },
                 { label: 'Leads', done: totals.leads_generated, target: totals.leads_target, p: overallPcts.leads },
@@ -137,8 +214,8 @@ export default function PerformanceDashboard() {
             </div>
           </div>
 
-          {/* KPI Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 10, marginBottom: 16 }}>
+          {/* ── KPI Cards ── */}
+          <div className="pd-kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 10, marginBottom: 16 }}>
             {[
               { label: 'Total Calls', value: totals.calls_done },
               { label: 'Calls Target', value: totals.calls_target },
@@ -147,14 +224,14 @@ export default function PerformanceDashboard() {
               { label: 'Total Orders', value: totals.orders_confirmed },
               { label: 'Orders Target', value: totals.orders_target },
             ].map((c) => (
-              <div key={c.label} className="pd-card" style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', transition: 'transform .15s, box-shadow .15s, border-color .15s', cursor: 'default' }}>
+              <div key={c.label} className="pd-card pd-kpi-card" style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', transition: 'transform .15s, box-shadow .15s, border-color .15s', cursor: 'default' }}>
                 <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2, fontWeight: 400 }}>{c.label}</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#111827', lineHeight: 1.3, fontFamily: "'JetBrains Mono','Consolas',monospace" }}>{fmt(c.value)}</div>
+                <div className="pd-kpi-value" style={{ fontSize: 16, fontWeight: 700, color: '#111827', lineHeight: 1.3, fontFamily: "'JetBrains Mono','Consolas',monospace" }}>{fmt(c.value)}</div>
               </div>
             ))}
           </div>
 
-          {/* Top Performer Highlight */}
+          {/* ── Top Performer ── */}
           {topPerformer && performers.length > 1 && (
             <div style={{ background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', borderRadius: 8, border: '1px solid #fde68a', padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 16 }}>&#9733;</span>
@@ -168,8 +245,8 @@ export default function PerformanceDashboard() {
             </div>
           )}
 
-          {/* Per-Performer Detail Table */}
-          <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', overflow: 'hidden', marginBottom: 16 }}>
+          {/* ── Desktop: Team Breakdown Table ── */}
+          <div className="pd-table-section" style={{ background: '#fff', borderRadius: 8, border: '1px solid #e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', overflow: 'hidden', marginBottom: 16 }}>
             <div style={{ padding: '10px 14px', borderBottom: '1px solid #e5e7eb', background: '#f9fafb' }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: '#111827', letterSpacing: 0.2 }}>Team Performance Breakdown</span>
             </div>
@@ -234,11 +311,52 @@ export default function PerformanceDashboard() {
             </div>
           </div>
 
-          {/* Per-Performer Cards */}
+          {/* ── Mobile: Team Breakdown Cards (hidden on desktop) ── */}
+          <div className="pd-team-mobile" style={{ display: 'none', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', letterSpacing: 0.2 }}>Team Performance Breakdown</div>
+            {performers.length === 0 ? (
+              <div style={{ padding: '24px 0', textAlign: 'center', color: '#9ca3af', fontSize: 12 }}>No performers or no data in this period.</div>
+            ) : performers.map((p, i) => {
+              const cp = pct(p.calls_done, p.calls_target);
+              const lp = pct(p.leads_generated, p.leads_target);
+              const op = pct(p.orders_confirmed, p.orders_target);
+              return (
+                <div key={p.performer_id} style={{ background: '#fff', borderRadius: 12, border: '1.5px solid #e5e7eb', padding: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+                  {/* Card header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: '#111827' }}>{p.display_name}</div>
+                    <span style={{ fontSize: 10, color: '#6b7280', background: '#f3f4f6', borderRadius: 6, padding: '2px 7px', fontWeight: 500 }}>#{i + 1}</span>
+                  </div>
+
+                  {/* 3 metric rows */}
+                  {[
+                    { label: 'Calls', done: p.calls_done, target: p.calls_target, pv: cp },
+                    { label: 'Leads', done: p.leads_generated, target: p.leads_target, pv: lp },
+                    { label: 'Orders', done: p.orders_confirmed, target: p.orders_target, pv: op },
+                  ].map((m) => (
+                    <div key={m.label} style={{ marginBottom: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, color: '#6b7280', fontWeight: 500 }}>{m.label}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 10, color: '#374151', fontFamily: "'JetBrains Mono','Consolas',monospace" }}>
+                            {fmt(m.done)} / {fmt(m.target)}
+                          </span>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: pctColor(m.pv), background: pctBg(m.pv), padding: '1px 6px', borderRadius: 8 }}>{m.pv}%</span>
+                        </div>
+                      </div>
+                      <ProgressBar value={Number(m.done) || 0} max={Number(m.target) || 0} height={6} />
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Individual Performance Cards ── */}
           {performers.length > 0 && (
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', marginBottom: 10, letterSpacing: 0.2 }}>Individual Performance</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+              <div className="pd-individual-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
                 {performers.map((p) => {
                   const cp = pct(p.calls_done, p.calls_target);
                   const lp = pct(p.leads_generated, p.leads_target);

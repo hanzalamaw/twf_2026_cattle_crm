@@ -8,8 +8,10 @@ const fmt = (n) => Number(n || 0).toLocaleString('en-PK');
 const Modal = ({ show, onClose, title, children }) => {
   if (!show) return null;
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 440, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', border: '1px solid #e5e7eb' }} onClick={(e) => e.stopPropagation()}>
+    <div className="pa-modal-wrap" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }} onClick={onClose}>
+      <div className="pa-modal-box" style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 440, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', border: '1px solid #e5e7eb' }} onClick={(e) => e.stopPropagation()}>
+        {/* Mobile drag handle */}
+        <div className="pa-drag-handle" style={{ display: 'none', width: 40, height: 4, background: '#e0e0e0', borderRadius: 2, margin: '12px auto 0' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #e5e7eb' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{title}</span>
           <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, color: '#6b7280', cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
@@ -80,10 +82,7 @@ export default function PerformanceAdmin() {
     return { totalTargetCalls, totalTargetLeads, totalTargetOrders, latestDate, reportCount: dailyReports.length };
   }, [performers, dailyReports]);
 
-  const linkedUserIds = useMemo(
-    () => new Set(performers.map((p) => p.user_id)),
-    [performers]
-  );
+  const linkedUserIds = useMemo(() => new Set(performers.map((p) => p.user_id)), [performers]);
 
   const fmtDate = (d) => {
     if (!d) return '—';
@@ -139,13 +138,7 @@ export default function PerformanceAdmin() {
 
   const openAddDaily = () => {
     setEditingReport(null);
-    setDailyForm({
-      performer_id: performers[0]?.performer_id || '',
-      date: todayLocalDateString(),
-      calls_done: '',
-      leads_generated: '',
-      orders_confirmed: '',
-    });
+    setDailyForm({ performer_id: performers[0]?.performer_id || '', date: todayLocalDateString(), calls_done: '', leads_generated: '', orders_confirmed: '' });
     setShowDailyModal(true);
   };
   const openEditReport = (r) => { setEditingReport(r); setDailyForm({ performer_id: r.performer_id, date: String(r.date).slice(0, 10), calls_done: r.calls_done ?? '', leads_generated: r.leads_generated ?? '', orders_confirmed: r.orders_confirmed ?? '' }); setShowDailyModal(true); };
@@ -222,11 +215,45 @@ export default function PerformanceAdmin() {
       <style>{`
         .pa-tr:hover { background: #f9fafb !important; }
         .pa-act:hover { text-decoration: underline; }
+
+        @media (max-width: 767px) {
+
+          /* Header */
+          .pa-header-row       { margin-right: 44px !important; }
+
+          /* Summary grid — 2 col */
+          .pa-summary-grid     { grid-template-columns: 1fr 1fr !important; gap: 8px !important; margin-bottom: 12px !important; }
+          .pa-summary-card     { padding: 8px 10px !important; }
+          .pa-summary-value    { font-size: 13px !important; }
+
+          /* Section heads */
+          .pa-section-head     { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; }
+          .pa-section-head-right { width: 100% !important; }
+          .pa-section-head-right select { flex: 1 !important; }
+
+          /* Hide desktop table, show mobile cards */
+          .pa-table-wrap       { display: none !important; }
+          .pa-mobile-cards     { display: flex !important; }
+
+          /* Modals — bottom sheet */
+          .pa-modal-wrap       { align-items: flex-end !important; padding: 0 !important; }
+          .pa-modal-box        {
+            border-radius: 20px 20px 0 0 !important;
+            width: 100vw !important;
+            max-width: 100vw !important;
+            max-height: 92dvh !important;
+          }
+          .pa-drag-handle      { display: block !important; }
+          .pa-form-grid-3      { grid-template-columns: 1fr !important; }
+          .pa-form-grid-2      { grid-template-columns: 1fr !important; }
+          .pa-form-actions     { gap: 10px !important; }
+          .pa-form-actions button { flex: 1 !important; padding: 13px !important; font-size: 13px !important; border-radius: 10px !important; }
+          .pa-modal-input      { font-size: 13px !important; padding: 10px 12px !important; border-radius: 8px !important; }
+        }
       `}</style>
 
-      <div style={s.headerRow}>
+      <div className="pa-header-row" style={s.headerRow}>
         <h1 style={s.title}>Performance Admin</h1>
-        <button type="button" style={s.btnSecondary} onClick={() => navigate('/performance/dashboard')}>View Dashboard</button>
       </div>
 
       {error && <div style={s.alert('error')}>{error}</div>}
@@ -237,40 +264,31 @@ export default function PerformanceAdmin() {
       ) : (
         <>
           {/* Summary cards */}
-          <div style={s.summaryRow}>
-            <div style={s.summaryCard}>
-              <div style={s.summaryLabel}>Total Performers</div>
-              <div style={s.summaryValue}>{performers.length}</div>
-            </div>
-            <div style={s.summaryCard}>
-              <div style={s.summaryLabel}>Combined Calls Target</div>
-              <div style={s.summaryValue}>{fmt(summaryStats.totalTargetCalls)}</div>
-            </div>
-            <div style={s.summaryCard}>
-              <div style={s.summaryLabel}>Combined Leads Target</div>
-              <div style={s.summaryValue}>{fmt(summaryStats.totalTargetLeads)}</div>
-            </div>
-            <div style={s.summaryCard}>
-              <div style={s.summaryLabel}>Combined Orders Target</div>
-              <div style={s.summaryValue}>{fmt(summaryStats.totalTargetOrders)}</div>
-            </div>
-            <div style={s.summaryCard}>
-              <div style={s.summaryLabel}>Daily Reports</div>
-              <div style={s.summaryValue}>{fmt(summaryStats.reportCount)}</div>
-            </div>
-            <div style={s.summaryCard}>
-              <div style={s.summaryLabel}>Latest Report</div>
-              <div style={{ ...s.summaryValue, fontSize: 13 }}>{summaryStats.latestDate ? fmtDate(summaryStats.latestDate) : '—'}</div>
-            </div>
+          <div className="pa-summary-grid" style={s.summaryRow}>
+            {[
+              { label: 'Total Performers', value: performers.length },
+              { label: 'Combined Calls Target', value: fmt(summaryStats.totalTargetCalls) },
+              { label: 'Combined Leads Target', value: fmt(summaryStats.totalTargetLeads) },
+              { label: 'Combined Orders Target', value: fmt(summaryStats.totalTargetOrders) },
+              { label: 'Daily Reports', value: fmt(summaryStats.reportCount) },
+              { label: 'Latest Report', value: summaryStats.latestDate ? fmtDate(summaryStats.latestDate) : '—', small: true },
+            ].map(({ label, value, small }) => (
+              <div key={label} className="pa-summary-card" style={s.summaryCard}>
+                <div style={s.summaryLabel}>{label}</div>
+                <div className="pa-summary-value" style={{ ...s.summaryValue, ...(small ? { fontSize: 13 } : {}) }}>{value}</div>
+              </div>
+            ))}
           </div>
 
-          {/* Performers */}
+          {/* ── Performers section ── */}
           <div style={s.section}>
-            <div style={s.sectionHead}>
+            <div className="pa-section-head" style={s.sectionHead}>
               <h2 style={s.sectionTitle}>Performers & Targets</h2>
               <button type="button" style={s.btnPrimary} onClick={openAddPerformer}>+ Add Performer</button>
             </div>
-            <div style={{ overflowX: 'auto' }}>
+
+            {/* Desktop table */}
+            <div className="pa-table-wrap" style={{ overflowX: 'auto' }}>
               <table style={s.table}>
                 <thead>
                   <tr>
@@ -303,13 +321,48 @@ export default function PerformanceAdmin() {
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile performer cards */}
+            <div className="pa-mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: 10, padding: '10px 12px' }}>
+              {performers.length === 0 ? (
+                <div style={{ padding: '24px 0', textAlign: 'center', color: '#9ca3af', fontSize: 12 }}>No performers yet. Tap "+ Add Performer" to get started.</div>
+              ) : performers.map((p, i) => (
+                <div key={p.performer_id} style={{ background: '#fff', borderRadius: 12, border: '1.5px solid #e5e7eb', padding: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>{p.display_name}</div>
+                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                        {p.username || [p.first_name, p.last_name].filter(Boolean).join(' ') || `User #${p.user_id}`}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 10, color: '#6b7280', background: '#f3f4f6', borderRadius: 6, padding: '2px 7px', fontWeight: 500 }}>#{i + 1}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px 8px', marginBottom: 12 }}>
+                    {[
+                      { label: 'Calls', val: fmt(p.calls_target), color: '#2563eb' },
+                      { label: 'Leads', val: fmt(p.leads_target), color: '#7c3aed' },
+                      { label: 'Orders', val: fmt(p.orders_target), color: '#059669' },
+                    ].map(({ label, val, color }) => (
+                      <div key={label} style={{ background: '#f9fafb', borderRadius: 8, padding: '7px 8px', textAlign: 'center' }}>
+                        <div style={{ fontSize: 9, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 2 }}>{label}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: "'JetBrains Mono','Consolas',monospace" }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, paddingTop: 10, borderTop: '1px solid #f3f4f6' }}>
+                    <button type="button" onClick={() => openEditPerformer(p)} style={{ flex: 1, padding: '9px', background: '#EFF6FF', border: '1px solid #2563eb', borderRadius: 8, color: '#2563eb', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Edit</button>
+                    <button type="button" onClick={() => deletePerformer(p.performer_id)} style={{ flex: 1, padding: '9px', background: '#FEF2F2', border: '1px solid #dc2626', borderRadius: 8, color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* Daily Reports */}
+          {/* ── Daily Reports section ── */}
           <div style={s.section}>
-            <div style={s.sectionHead}>
+            <div className="pa-section-head" style={s.sectionHead}>
               <h2 style={s.sectionTitle}>Daily Calling & Stats</h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="pa-section-head-right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <select value={dailyFilterPerformer} onChange={(e) => setDailyFilterPerformer(e.target.value)} style={s.select}>
                   <option value="">All performers</option>
                   {performers.map((p) => <option key={p.performer_id} value={p.performer_id}>{p.display_name}</option>)}
@@ -317,7 +370,9 @@ export default function PerformanceAdmin() {
                 <button type="button" style={{ ...s.btnPrimary, opacity: performers.length ? 1 : 0.5 }} onClick={openAddDaily} disabled={!performers.length}>+ Add Report</button>
               </div>
             </div>
-            <div style={{ overflowX: 'auto' }}>
+
+            {/* Desktop table */}
+            <div className="pa-table-wrap" style={{ overflowX: 'auto' }}>
               <table style={s.table}>
                 <thead>
                   <tr>
@@ -350,18 +405,51 @@ export default function PerformanceAdmin() {
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile daily report cards */}
+            <div className="pa-mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: 10, padding: '10px 12px' }}>
+              {dailyReports.length === 0 ? (
+                <div style={{ padding: '24px 0', textAlign: 'center', color: '#9ca3af', fontSize: 12 }}>No daily reports found.</div>
+              ) : dailyReports.map((r, i) => (
+                <div key={r.report_id} style={{ background: '#fff', borderRadius: 12, border: '1.5px solid #e5e7eb', padding: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#111827' }}>{r.display_name}</div>
+                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{fmtDate(r.date)}</div>
+                    </div>
+                    <span style={{ fontSize: 10, color: '#6b7280', background: '#f3f4f6', borderRadius: 6, padding: '2px 7px', fontWeight: 500 }}>#{i + 1}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px 8px', marginBottom: 12 }}>
+                    {[
+                      { label: 'Calls', val: fmt(r.calls_done), color: '#2563eb' },
+                      { label: 'Leads', val: fmt(r.leads_generated), color: '#7c3aed' },
+                      { label: 'Orders', val: fmt(r.orders_confirmed), color: '#059669' },
+                    ].map(({ label, val, color }) => (
+                      <div key={label} style={{ background: '#f9fafb', borderRadius: 8, padding: '7px 8px', textAlign: 'center' }}>
+                        <div style={{ fontSize: 9, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 2 }}>{label}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: "'JetBrains Mono','Consolas',monospace" }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, paddingTop: 10, borderTop: '1px solid #f3f4f6' }}>
+                    <button type="button" onClick={() => openEditReport(r)} style={{ flex: 1, padding: '9px', background: '#EFF6FF', border: '1px solid #2563eb', borderRadius: 8, color: '#2563eb', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Edit</button>
+                    <button type="button" onClick={() => deleteReport(r.report_id)} style={{ flex: 1, padding: '9px', background: '#FEF2F2', border: '1px solid #dc2626', borderRadius: 8, color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </>
       )}
 
-      {/* Add/Edit Performer Modal */}
+      {/* ── Add/Edit Performer Modal ── */}
       <Modal show={showPerformerModal} onClose={() => setShowPerformerModal(false)} title={editingPerformer ? 'Edit Performer' : 'Add Performer'}>
         <form onSubmit={submitPerformer} style={{ padding: 16 }}>
           {formField('Display Name *',
-            <input type="text" style={inputStyle} value={performerForm.display_name} onChange={(e) => setPerformerForm((f) => ({ ...f, display_name: e.target.value }))} placeholder="e.g. Sales Rep 1" required disabled={!!editingPerformer} />
+            <input className="pa-modal-input" type="text" style={inputStyle} value={performerForm.display_name} onChange={(e) => setPerformerForm((f) => ({ ...f, display_name: e.target.value }))} placeholder="e.g. Sales Rep 1" required disabled={!!editingPerformer} />
           )}
           {formField('Linked User *',
-            <select style={inputStyle} value={performerForm.user_id} onChange={(e) => setPerformerForm((f) => ({ ...f, user_id: e.target.value }))} required disabled={!!editingPerformer}>
+            <select className="pa-modal-input" style={inputStyle} value={performerForm.user_id} onChange={(e) => setPerformerForm((f) => ({ ...f, user_id: e.target.value }))} required disabled={!!editingPerformer}>
               <option value="">Select user</option>
               {users.map((u) => {
                 const isLinked = linkedUserIds.has(u.user_id);
@@ -369,44 +457,43 @@ export default function PerformanceAdmin() {
                 if (isLinked && !isCurrent) return null;
                 return (
                   <option key={u.user_id} value={u.user_id}>
-                    {u.username}
-                    {u.first_name || u.last_name ? ` (${[u.first_name, u.last_name].filter(Boolean).join(' ')})` : ''}
+                    {u.username}{u.first_name || u.last_name ? ` (${[u.first_name, u.last_name].filter(Boolean).join(' ')})` : ''}
                   </option>
                 );
               })}
             </select>
           )}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-            {formField('Calls Target', <input type="number" min="0" style={inputStyle} value={performerForm.calls_target} onChange={(e) => setPerformerForm((f) => ({ ...f, calls_target: e.target.value }))} />)}
-            {formField('Leads Target', <input type="number" min="0" style={inputStyle} value={performerForm.leads_target} onChange={(e) => setPerformerForm((f) => ({ ...f, leads_target: e.target.value }))} />)}
-            {formField('Orders Target', <input type="number" min="0" style={inputStyle} value={performerForm.orders_target} onChange={(e) => setPerformerForm((f) => ({ ...f, orders_target: e.target.value }))} />)}
+          <div className="pa-form-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+            {formField('Calls Target', <input className="pa-modal-input" type="number" min="0" style={inputStyle} value={performerForm.calls_target} onChange={(e) => setPerformerForm((f) => ({ ...f, calls_target: e.target.value }))} />)}
+            {formField('Leads Target', <input className="pa-modal-input" type="number" min="0" style={inputStyle} value={performerForm.leads_target} onChange={(e) => setPerformerForm((f) => ({ ...f, leads_target: e.target.value }))} />)}
+            {formField('Orders Target', <input className="pa-modal-input" type="number" min="0" style={inputStyle} value={performerForm.orders_target} onChange={(e) => setPerformerForm((f) => ({ ...f, orders_target: e.target.value }))} />)}
           </div>
           <div style={{ fontSize: 9, color: '#9ca3af', marginBottom: 12 }}>Calls target {'>'} Leads target {'>'} Orders target</div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 12, borderTop: '1px solid #f3f4f6' }}>
+          <div className="pa-form-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 12, borderTop: '1px solid #f3f4f6' }}>
             <button type="button" style={s.btnSecondary} onClick={() => setShowPerformerModal(false)}>Cancel</button>
             <button type="submit" style={s.btnPrimary}>{editingPerformer ? 'Update' : 'Add Performer'}</button>
           </div>
         </form>
       </Modal>
 
-      {/* Add/Edit Daily Report Modal */}
+      {/* ── Add/Edit Daily Report Modal ── */}
       <Modal show={showDailyModal} onClose={() => setShowDailyModal(false)} title={editingReport ? 'Edit Daily Report' : 'Add Daily Report'}>
         <form onSubmit={submitDaily} style={{ padding: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div className="pa-form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {formField('Performer *',
-              <select style={inputStyle} value={dailyForm.performer_id} onChange={(e) => setDailyForm((f) => ({ ...f, performer_id: e.target.value }))} required disabled={!!editingReport}>
+              <select className="pa-modal-input" style={inputStyle} value={dailyForm.performer_id} onChange={(e) => setDailyForm((f) => ({ ...f, performer_id: e.target.value }))} required disabled={!!editingReport}>
                 <option value="">Select performer</option>
                 {performers.map((p) => <option key={p.performer_id} value={p.performer_id}>{p.display_name}</option>)}
               </select>
             )}
-            {formField('Date *', <input type="date" style={inputStyle} value={dailyForm.date} onChange={(e) => setDailyForm((f) => ({ ...f, date: e.target.value }))} required />)}
+            {formField('Date *', <input className="pa-modal-input" type="date" style={inputStyle} value={dailyForm.date} onChange={(e) => setDailyForm((f) => ({ ...f, date: e.target.value }))} required />)}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-            {formField('Calls Done', <input type="number" min="0" style={inputStyle} value={dailyForm.calls_done} onChange={(e) => setDailyForm((f) => ({ ...f, calls_done: e.target.value }))} />)}
-            {formField('Leads Generated', <input type="number" min="0" style={inputStyle} value={dailyForm.leads_generated} onChange={(e) => setDailyForm((f) => ({ ...f, leads_generated: e.target.value }))} />)}
-            {formField('Orders Confirmed', <input type="number" min="0" style={inputStyle} value={dailyForm.orders_confirmed} onChange={(e) => setDailyForm((f) => ({ ...f, orders_confirmed: e.target.value }))} />)}
+          <div className="pa-form-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+            {formField('Calls Done', <input className="pa-modal-input" type="number" min="0" style={inputStyle} value={dailyForm.calls_done} onChange={(e) => setDailyForm((f) => ({ ...f, calls_done: e.target.value }))} />)}
+            {formField('Leads Generated', <input className="pa-modal-input" type="number" min="0" style={inputStyle} value={dailyForm.leads_generated} onChange={(e) => setDailyForm((f) => ({ ...f, leads_generated: e.target.value }))} />)}
+            {formField('Orders Confirmed', <input className="pa-modal-input" type="number" min="0" style={inputStyle} value={dailyForm.orders_confirmed} onChange={(e) => setDailyForm((f) => ({ ...f, orders_confirmed: e.target.value }))} />)}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 12, borderTop: '1px solid #f3f4f6' }}>
+          <div className="pa-form-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 12, borderTop: '1px solid #f3f4f6' }}>
             <button type="button" style={s.btnSecondary} onClick={() => setShowDailyModal(false)}>Cancel</button>
             <button type="submit" style={s.btnPrimary}>{editingReport ? 'Update' : 'Add Report'}</button>
           </div>

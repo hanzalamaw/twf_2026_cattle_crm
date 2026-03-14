@@ -99,7 +99,7 @@ const Login = () => {
       boxSizing: 'border-box',
     }}>
 
-      <div style={{
+      <div className="login-grid" style={{
         display: 'grid',
         width: '100%',
         maxWidth: '720px',
@@ -451,17 +451,23 @@ const Login = () => {
           to { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
 
-        /* Tablet: hide image panel below 700px */
+        /* Hide image panel below 700px */
         @media (max-width: 700px) {
           .login-image-panel {
             display: none !important;
           }
         }
 
-        /* Mobile: reduce inner card padding */
+        /* Mobile: fluid width on every phone, taller via padding */
         @media (max-width: 480px) {
+          .login-grid {
+            width: calc(100vw - 48px) !important;
+            max-width: 340px !important;
+          }
           .login-inner-card {
-            padding: 20px 16px !important;
+            max-width: 100% !important;
+            padding: 32px 20px 44px !important;
+            box-shadow: none !important;
           }
         }
       `}</style>

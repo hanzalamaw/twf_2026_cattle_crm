@@ -3,31 +3,36 @@ import * as XLSX from 'xlsx';
 
 const API = 'http://localhost:5000';
 const PAGE_SIZE = 50;
-
 const HIDDEN_TYPES = ['Cow', 'Goat'];
 
 const COLUMNS = [
-  { key: 'lead_id', label: 'Lead ID' },
-  { key: 'customer_id', label: 'Customer ID' },
-  { key: 'booking_name', label: 'Booking Name' },
+  { key: 'lead_id',          label: 'Lead ID'          },
+  { key: 'customer_id',      label: 'Customer ID'      },
+  { key: 'booking_name',     label: 'Booking Name'     },
   { key: 'shareholder_name', label: 'Shareholder Name' },
-  { key: 'phone_number', label: 'Phone Number' },
-  { key: 'alt_phone', label: 'Alt. Phone' },
-  { key: 'address', label: 'Address' },
-  { key: 'area', label: 'Area' },
-  { key: 'day', label: 'Day' },
-  { key: 'type', label: 'Type' },
-  { key: 'booking_date', label: 'Booking Date' },
-  { key: 'total_amount', label: 'Total Amount' },
-  { key: 'source', label: 'Source' },
-  { key: 'reference', label: 'Reference' },
-  { key: 'description', label: 'Description' },
-  { key: 'created_at', label: 'Created' },
+  { key: 'phone_number',     label: 'Phone Number'     },
+  { key: 'alt_phone',        label: 'Alt. Phone'       },
+  { key: 'address',          label: 'Address'          },
+  { key: 'area',             label: 'Area'             },
+  { key: 'day',              label: 'Day'              },
+  { key: 'type',             label: 'Type'             },
+  { key: 'booking_date',     label: 'Booking Date'     },
+  { key: 'total_amount',     label: 'Total Amount'     },
+  { key: 'source',           label: 'Source'           },
+  { key: 'reference',        label: 'Reference'        },
+  { key: 'description',      label: 'Description'      },
+  { key: 'created_at',       label: 'Created'          },
 ];
 
 const AMOUNT_KEYS = ['total_amount'];
-
 const SLOTS = ['SLOT 1', 'SLOT 2', 'SLOT 3', 'SLOT GOAT', 'SLOT WAQF'];
+
+const TYPE_COLORS = {
+  'Hissa - Premium':  { bg: '#fff4f0', color: '#FF5722' },
+  'Hissa - Standard': { bg: '#e8f4ff', color: '#2196F3' },
+  'Hissa - Waqf':     { bg: '#edfbee', color: '#4CAF50' },
+  'Goat (Hissa)':     { bg: '#fff8e8', color: '#FF9800' },
+};
 
 function formatAmount(val) {
   if (val == null || val === '') return '—';
@@ -35,21 +40,21 @@ function formatAmount(val) {
   if (Number.isNaN(n)) return String(val);
   return Math.round(n).toLocaleString('en-PK');
 }
-
 function formatDate(val) {
   if (val == null || val === '') return '—';
   const s = String(val);
-  if (s.includes('T')) return s.split('T')[0];
-  return s;
+  return s.includes('T') ? s.split('T')[0] : s;
 }
-
 function formatCreated(val) {
   if (val == null || val === '') return '—';
-  try {
-    return new Date(val).toLocaleString();
-  } catch {
-    return String(val);
-  }
+  try { return new Date(val).toLocaleString(); } catch { return String(val); }
+}
+function cellVal(col, row) {
+  const val = row[col.key];
+  if (AMOUNT_KEYS.includes(col.key)) return formatAmount(val);
+  if (col.key === 'booking_date') return formatDate(val);
+  if (col.key === 'created_at') return formatCreated(val);
+  return val != null ? String(val) : '—';
 }
 
 export default function QueryManagement() {
@@ -78,30 +83,24 @@ export default function QueryManagement() {
   const [editErrors, setEditErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const token = localStorage.getItem('token');
-
-  // Visible type options — never show Cow or Goat
   const visibleOrderTypes = (filters.order_types || []).filter((t) => !HIDDEN_TYPES.includes(t));
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
   const fetchFilters = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-      const url = params.toString() ? `${API}/api/booking/leads/filters?${params.toString()}` : `${API}/api/booking/leads/filters`;
+      const url = `${API}/api/booking/leads/filters${params.toString() ? `?${params}` : ''}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) {
-        const data = await res.json();
-        setFilters(data);
-      }
-    } catch (e) {
-      console.error(e);
-    }
+      if (res.ok) { const data = await res.json(); setFilters(data); }
+    } catch (e) { console.error(e); }
   }, [token, yearFilter]);
 
   const fetchLeads = useCallback(async () => {
-    setLoading(true);
-    setError('');
+    setLoading(true); setError('');
     try {
       const params = new URLSearchParams();
       if (search.trim()) params.set('search', search.trim());
@@ -112,23 +111,16 @@ export default function QueryManagement() {
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
-      const res = await fetch(`${API}/api/booking/leads?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/api/booking/leads?${params}`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const json = await res.json();
         const data = Array.isArray(json) ? json : json.data;
         const total = typeof json.total === 'number' ? json.total : (data?.length ?? 0);
-        // Filter out Cow and Goat rows from the table
-        const filtered = (Array.isArray(data) ? data : []).filter((row) => !HIDDEN_TYPES.includes(row.type));
-        setLeads(filtered);
-        setTotalCount(total);
-      } else {
-        setError('Failed to load queries');
-      }
-    } catch (e) {
-      setError('Failed to load queries');
-    } finally {
-      setLoading(false);
-    }
+        const filtered = (Array.isArray(data) ? data : []).filter((r) => !HIDDEN_TYPES.includes(r.type));
+        setLeads(filtered); setTotalCount(total);
+      } else { setError('Failed to load queries'); }
+    } catch (e) { setError('Failed to load queries'); }
+    finally { setLoading(false); }
   }, [token, search, orderType, day, reference, area, yearFilter, page]);
 
   useEffect(() => { fetchFilters(); }, [fetchFilters]);
@@ -137,634 +129,566 @@ export default function QueryManagement() {
 
   useEffect(() => {
     if (!confirmModalLead || !token) return;
-    const lead = confirmModalLead;
-    const orderType = lead.type || '';
-    const day = lead.day || '';
-    const dateStr = formatDate(lead.booking_date) || '';
-    setConfirmForm((prev) => ({ ...prev, booking_date: dateStr }));
-
-    const generateOrderId = async () => {
-      if (!orderType) return;
+    const ot = confirmModalLead.type || '';
+    const d = confirmModalLead.day || '';
+    const ds = formatDate(confirmModalLead.booking_date) || '';
+    setConfirmForm((p) => ({ ...p, booking_date: ds }));
+    const genOrder = async () => {
+      if (!ot) return;
       try {
-        const res = await fetch(`${API}/api/booking/generate-order-id`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ order_type: orderType }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setConfirmForm((prev) => ({ ...prev, order_id: data.order_id || '' }));
-        }
+        const res = await fetch(`${API}/api/booking/generate-order-id`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: ot }) });
+        if (res.ok) { const d2 = await res.json(); setConfirmForm((p) => ({ ...p, order_id: d2.order_id || '' })); }
       } catch (e) { console.error(e); }
     };
-    const getAvailableCowHissa = async () => {
-      if (!orderType) return;
-      if (orderType === 'Goat (Hissa)') {
-        setConfirmForm((prev) => ({ ...prev, cow_number: '0', hissa_number: '0' }));
-        return;
-      }
+    const getCowHissa = async () => {
+      if (!ot) return;
+      if (ot === 'Goat (Hissa)') { setConfirmForm((p) => ({ ...p, cow_number: '0', hissa_number: '0' })); return; }
       try {
-        const res = await fetch(`${API}/api/booking/get-available-cow-hissa`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ order_type: orderType, day: day || null, booking_date: dateStr || null }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setConfirmForm((prev) => ({ ...prev, cow_number: data.cow_number || '', hissa_number: data.hissa_number || '' }));
-        }
+        const res = await fetch(`${API}/api/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: ot, day: d || null, booking_date: ds || null }) });
+        if (res.ok) { const d2 = await res.json(); setConfirmForm((p) => ({ ...p, cow_number: d2.cow_number || '', hissa_number: d2.hissa_number || '' })); }
       } catch (e) { console.error(e); }
     };
-    generateOrderId();
-    getAvailableCowHissa();
+    genOrder(); getCowHissa();
   }, [confirmModalLead, token]);
 
-  const toggleSelect = (leadId) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(leadId)) next.delete(leadId);
-      else next.add(leadId);
-      return next;
-    });
+  const toggleSelect = (id) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleSelectAll = () => selectedIds.size === leads.length ? setSelectedIds(new Set()) : setSelectedIds(new Set(leads.map((r) => r.lead_id)));
+  const handleResetFilters = () => { setSearch(''); setOrderType(''); setDay(''); setReference(''); setArea(''); setYearFilter('2026'); setSelectedIds(new Set()); setError(''); };
+
+  const shouldSkip = (ot, c, h) => {
+    if (ot !== 'Goat (Hissa)') return false;
+    const cv = String(c ?? '').trim(); const hv = String(h ?? '').trim();
+    return (cv === '0' || cv === '') && (hv === '0' || hv === '');
   };
 
-  const toggleSelectAll = () => {
-    if (selectedIds.size === leads.length) setSelectedIds(new Set());
-    else setSelectedIds(new Set(leads.map((r) => r.lead_id)));
-  };
-
-  const handleResetFilters = () => {
-    setSearch('');
-    setOrderType('');
-    setDay('');
-    setReference('');
-    setArea('');
-    setYearFilter('2026');
-    setSelectedIds(new Set());
-    setError('');
-  };
-
-  const shouldSkipCowHissaDuplicate = (orderType, cowNumber, hissaNumber) => {
-    if (orderType !== 'Goat (Hissa)') return false;
-    const c = String(cowNumber ?? '').trim();
-    const h = String(hissaNumber ?? '').trim();
-    return (c === '0' || c === '') && (h === '0' || h === '');
-  };
-
-  const checkCowHissaDuplicate = useCallback(async (cowNumber, hissaNumber, orderType, day, bookingDate) => {
-    if (!cowNumber || !hissaNumber || !orderType) return null;
-    if (shouldSkipCowHissaDuplicate(orderType, cowNumber, hissaNumber)) return null;
-    if (!token) return null;
+  const checkDup = useCallback(async (c, h, ot, d, bd) => {
+    if (!c || !h || !ot || !token || shouldSkip(ot, c, h)) return null;
     try {
-      const res = await fetch(`${API}/api/booking/check-cow-hissa`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ cow_number: cowNumber, hissa_number: hissaNumber, order_type: orderType, day: day || null, booking_date: bookingDate || null }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return data.exists ? data : null;
-      }
+      const res = await fetch(`${API}/api/booking/check-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ cow_number: c, hissa_number: h, order_type: ot, day: d || null, booking_date: bd || null }) });
+      if (res.ok) { const d2 = await res.json(); return d2.exists ? d2 : null; }
     } catch (e) { console.error(e); }
     return null;
   }, [token]);
 
   useEffect(() => {
     if (!confirmModalLead || !token) return;
-    const { cow_number, hissa_number, booking_date } = confirmForm;
-    const orderType = confirmModalLead.type || '';
-    const day = confirmModalLead.day || '';
-    if (!(cow_number || '').trim() || !(hissa_number || '').trim() || !orderType || shouldSkipCowHissaDuplicate(orderType, cow_number, hissa_number)) {
-      setConfirmDuplicateError(null);
-      return;
-    }
+    const { cow_number: c, hissa_number: h, booking_date: bd } = confirmForm;
+    const ot = confirmModalLead.type || ''; const d = confirmModalLead.day || '';
+    if (!(c || '').trim() || !(h || '').trim() || !ot || shouldSkip(ot, c, h)) { setConfirmDuplicateError(null); return; }
     if (confirmDuplicateCheckTimeoutRef.current) clearTimeout(confirmDuplicateCheckTimeoutRef.current);
     confirmDuplicateCheckTimeoutRef.current = setTimeout(async () => {
-      const dup = await checkCowHissaDuplicate((cow_number || '').trim(), (hissa_number || '').trim(), orderType, day, (booking_date || '').trim() || null);
-      if (dup) setConfirmDuplicateError(dup);
-      else setConfirmDuplicateError(null);
-      confirmDuplicateCheckTimeoutRef.current = null;
+      const dup = await checkDup((c || '').trim(), (h || '').trim(), ot, d, (bd || '').trim() || null);
+      setConfirmDuplicateError(dup || null);
     }, 400);
-    return () => {
-      if (confirmDuplicateCheckTimeoutRef.current) {
-        clearTimeout(confirmDuplicateCheckTimeoutRef.current);
-        confirmDuplicateCheckTimeoutRef.current = null;
-      }
-    };
-  }, [confirmForm.cow_number, confirmForm.hissa_number, confirmForm.booking_date, confirmModalLead, token, checkCowHissaDuplicate]);
+    return () => { if (confirmDuplicateCheckTimeoutRef.current) clearTimeout(confirmDuplicateCheckTimeoutRef.current); };
+  }, [confirmForm.cow_number, confirmForm.hissa_number, confirmForm.booking_date, confirmModalLead, token, checkDup]);
 
   const handleConfirmClick = (lead) => {
-    setConfirmModalLead(lead);
+    setConfirmModalLead(lead); setConfirmDuplicateError(null); setConfirmFormErrors({});
+    setConfirmForm({ order_id: '', slot: '', booking_date: formatDate(lead.booking_date) || '', cow_number: '', hissa_number: '' });
+  };
+
+  const closeConfirmModal = () => {
+    if (confirmingLeadId) return;
+    setConfirmModalLead(null);
+    setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
     setConfirmDuplicateError(null);
     setConfirmFormErrors({});
-    setConfirmForm({ order_id: '', slot: '', booking_date: formatDate(lead.booking_date) || '', cow_number: '', hissa_number: '' });
   };
 
   const handleConfirmOrder = async () => {
     if (!confirmModalLead) return;
-    const lead = confirmModalLead;
-    const orderType = lead.type || '';
-    const day = lead.day || '';
-    const bookingDate = (confirmForm.booking_date || '').trim();
-    const cow_number = (confirmForm.cow_number || '').trim();
-    const hissa_number = (confirmForm.hissa_number || '').trim();
-
-    // Validate all required fields
-    const formErrors = {};
-    if (!(confirmForm.order_id || '').trim()) formErrors.order_id = 'Order ID is required';
-    if (!(confirmForm.slot || '').trim()) formErrors.slot = 'Slot is required';
-    if (!bookingDate) formErrors.booking_date = 'Booking date is required';
-    if (!cow_number) formErrors.cow_number = 'Cow number is required';
-    if (!hissa_number) formErrors.hissa_number = 'Hissa number is required';
-    if (Object.keys(formErrors).length > 0) {
-      setConfirmFormErrors(formErrors);
-      return;
-    }
+    const lead = confirmModalLead; const ot = lead.type || ''; const d = lead.day || '';
+    const bd = (confirmForm.booking_date || '').trim();
+    const c = (confirmForm.cow_number || '').trim();
+    const h = (confirmForm.hissa_number || '').trim();
+    const fe = {};
+    if (!(confirmForm.order_id || '').trim()) fe.order_id = 'Order ID is required';
+    if (!(confirmForm.slot || '').trim()) fe.slot = 'Slot is required';
+    if (!bd) fe.booking_date = 'Booking date is required';
+    if (!c) fe.cow_number = 'Cow number is required';
+    if (!h) fe.hissa_number = 'Hissa number is required';
+    if (Object.keys(fe).length > 0) { setConfirmFormErrors(fe); return; }
     setConfirmFormErrors({});
-
-    if (cow_number && hissa_number && orderType && !shouldSkipCowHissaDuplicate(orderType, cow_number, hissa_number)) {
-      const duplicate = await checkCowHissaDuplicate(cow_number, hissa_number, orderType, day, bookingDate);
-      if (duplicate) { setConfirmDuplicateError(duplicate); return; }
+    if (c && h && ot && !shouldSkip(ot, c, h)) {
+      const dup = await checkDup(c, h, ot, d, bd);
+      if (dup) { setConfirmDuplicateError(dup); return; }
     }
-    setConfirmDuplicateError(null);
-    setConfirmingLeadId(lead.lead_id);
-    setError('');
+    setConfirmDuplicateError(null); setConfirmingLeadId(lead.lead_id); setError('');
     try {
       const res = await fetch(`${API}/api/booking/leads/${encodeURIComponent(lead.lead_id)}/confirm-order`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          order_id: (confirmForm.order_id || '').trim(),
-          slot: (confirmForm.slot || '').trim() || null,
-          booking_date: bookingDate || null,
-          cow_number: cow_number || null,
-          hissa_number: hissa_number || null,
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ order_id: (confirmForm.order_id || '').trim(), slot: (confirmForm.slot || '').trim() || null, booking_date: bd || null, cow_number: c || null, hissa_number: h || null })
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.order_id) {
         setConfirmModalLead(null);
         setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
-        setConfirmDuplicateError(null);
-        setConfirmFormErrors({});
-        setSelectedIds((prev) => { const next = new Set(prev); next.delete(lead.lead_id); return next; });
+        setConfirmDuplicateError(null); setConfirmFormErrors({});
+        setSelectedIds((p) => { const n = new Set(p); n.delete(lead.lead_id); return n; });
         fetchLeads();
-      } else {
-        setError(data.message || 'Failed to confirm order');
-      }
-    } catch (e) {
-      setError('Failed to confirm order');
-    } finally {
-      setConfirmingLeadId(null);
-    }
+      } else setError(data.message || 'Failed to confirm order');
+    } catch (e) { setError('Failed to confirm order'); }
+    finally { setConfirmingLeadId(null); }
   };
 
   const handleEditLead = (row) => {
-    const initial = {
-      lead_id: row.lead_id,
-      customer_id: row.customer_id ?? '',
-      phone_number: row.phone_number ?? '',
-      alt_phone: row.alt_phone ?? '',
-      type: row.type ?? '',
-      booking_name: row.booking_name ?? '',
-      shareholder_name: row.shareholder_name ?? '',
-      address: row.address ?? '',
-      area: row.area ?? '',
-      day: row.day ?? '',
-      booking_date: formatDate(row.booking_date),
-      total_amount: row.total_amount ?? '',
-      source: row.source ?? '',
-      reference: row.reference ?? '',
-      description: row.description ?? '',
+    const init = {
+      lead_id: row.lead_id, customer_id: row.customer_id ?? '', phone_number: row.phone_number ?? '',
+      alt_phone: row.alt_phone ?? '', type: row.type ?? '', booking_name: row.booking_name ?? '',
+      shareholder_name: row.shareholder_name ?? '', address: row.address ?? '', area: row.area ?? '',
+      day: row.day ?? '', booking_date: formatDate(row.booking_date), total_amount: row.total_amount ?? '',
+      source: row.source ?? '', reference: row.reference ?? '', description: row.description ?? ''
     };
-    setEditPreviousRow(initial);
-    setEditRow({ ...initial });
-    setEditErrors({});
-    setEditOpen(true);
+    setEditPreviousRow(init); setEditRow({ ...init }); setEditErrors({}); setEditOpen(true);
   };
 
-  const validateLeadEdit = (row) => {
-    const err = {};
-    const trim = (v) => (v == null ? '' : String(v).trim());
+  const validateEdit = (row) => {
+    const err = {}; const trim = (v) => (v == null ? '' : String(v).trim());
     if (!trim(row.booking_name)) err.booking_name = 'Booking name is required';
     if (!trim(row.shareholder_name)) err.shareholder_name = 'Shareholder name is required';
-    const phone = trim(row.phone_number);
-    if (!phone) err.phone_number = 'Phone number is required';
-    else if (!/^[\d\s\-+()]{7,20}$/.test(phone)) err.phone_number = 'Enter a valid phone number (7–20 digits/symbols)';
-    const dateStr = trim(row.booking_date);
-    if (dateStr) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) err.booking_date = 'Date must be YYYY-MM-DD';
-      else if (Number.isNaN(new Date(dateStr).getTime())) err.booking_date = 'Invalid date';
+    const ph = trim(row.phone_number);
+    if (!ph) err.phone_number = 'Phone number is required';
+    else if (!/^[\d\s\-+()]{7,20}$/.test(ph)) err.phone_number = 'Enter a valid phone number (7–20 digits/symbols)';
+    const ds = trim(row.booking_date);
+    if (ds) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ds)) err.booking_date = 'Date must be YYYY-MM-DD';
+      else if (Number.isNaN(new Date(ds).getTime())) err.booking_date = 'Invalid date';
     }
-    const total = trim(row.total_amount);
-    if (total !== '') {
-      const n = Number(total);
-      if (Number.isNaN(n) || n < 0) err.total_amount = 'Must be a number ≥ 0';
-    }
-    if (trim(row.phone_number).length > 20) err.phone_number = err.phone_number || 'Phone number too long';
-    if (trim(row.booking_name).length > 100) err.booking_name = err.booking_name || 'Booking name too long';
-    if (trim(row.shareholder_name).length > 100) err.shareholder_name = err.shareholder_name || 'Shareholder name too long';
+    const tot = trim(row.total_amount);
+    if (tot !== '') { const n = Number(tot); if (Number.isNaN(n) || n < 0) err.total_amount = 'Must be a number ≥ 0'; }
     return err;
   };
 
   const handleSaveEdit = async () => {
     if (!editRow) return;
-    const err = validateLeadEdit(editRow);
+    const err = validateEdit(editRow);
     if (Object.keys(err).length > 0) { setEditErrors(err); return; }
-    setEditErrors({});
-    setSaving(true);
+    setEditErrors({}); setSaving(true);
     try {
-      const payload = { ...editRow };
-      delete payload.lead_id;
+      const payload = { ...editRow }; delete payload.lead_id;
       if (payload.booking_date) payload.booking_date = String(payload.booking_date).split('T')[0] || payload.booking_date;
       const res = await fetch(`${API}/api/booking/leads/${encodeURIComponent(editRow.lead_id)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
+        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload)
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setEditOpen(false);
-        setEditRow(null);
-        setEditPreviousRow(null);
-        fetchLeads();
-      } else {
-        setEditErrors({ submit: data.message || 'Failed to update lead' });
-      }
-    } catch (e) {
-      setEditErrors({ submit: 'Failed to update lead' });
-    } finally {
-      setSaving(false);
-    }
+      if (res.ok) { setEditOpen(false); setEditRow(null); setEditPreviousRow(null); fetchLeads(); }
+      else setEditErrors({ submit: data.message || 'Failed to update lead' });
+    } catch (e) { setEditErrors({ submit: 'Failed to update lead' }); }
+    finally { setSaving(false); }
   };
 
   const handleDeleteLead = async () => {
     if (!deleteConfirm) return;
-    const leadId = deleteConfirm.lead_id;
-    setDeleteConfirm(null);
+    const id = deleteConfirm.lead_id; setDeleteConfirm(null);
     try {
-      const res = await fetch(`${API}/api/booking/leads/${encodeURIComponent(leadId)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/api/booking/leads/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setSelectedIds((prev) => { const next = new Set(prev); next.delete(leadId); return next; });
-        fetchLeads();
-      } else {
-        setError(data.message || 'Failed to delete lead');
-      }
-    } catch (e) {
-      setError('Failed to delete lead');
-    }
+      if (res.ok) { setSelectedIds((p) => { const n = new Set(p); n.delete(id); return n; }); fetchLeads(); }
+      else setError(data.message || 'Failed to delete lead');
+    } catch (e) { setError('Failed to delete lead'); }
   };
 
   const handleExport = async () => {
-    const ids = Array.from(selectedIds);
-    let allLeads = [];
-    const limit = 100;
-    let pageNum = 1;
-    let total = 0;
+    const ids = Array.from(selectedIds); let allLeads = []; const limit = 100; let pageNum = 1; let total = 0;
     do {
       const params = new URLSearchParams();
-      if (search.trim()) params.set('search', search.trim());
-      if (orderType) params.set('order_type', orderType);
-      if (day) params.set('day', day);
-      if (reference) params.set('reference', reference);
-      if (area) params.set('area', area);
-      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-      params.set('page', String(pageNum));
-      params.set('limit', String(limit));
-      const res = await fetch(`${API}/api/booking/leads?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (search.trim()) params.set('search', search.trim()); if (orderType) params.set('order_type', orderType);
+      if (day) params.set('day', day); if (reference) params.set('reference', reference);
+      if (area) params.set('area', area); if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+      params.set('page', String(pageNum)); params.set('limit', String(limit));
+      const res = await fetch(`${API}/api/booking/leads?${params}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) { setError('Failed to load queries for export'); return; }
-      const json = await res.json();
-      const data = Array.isArray(json) ? json : json.data;
+      const json = await res.json(); const data = Array.isArray(json) ? json : json.data;
       total = typeof json.total === 'number' ? json.total : 0;
-      const chunk = (Array.isArray(data) ? data : []).filter((row) => !HIDDEN_TYPES.includes(row.type));
+      const chunk = (Array.isArray(data) ? data : []).filter((r) => !HIDDEN_TYPES.includes(r.type));
       allLeads = allLeads.concat(chunk);
       if (chunk.length < limit || allLeads.length >= total) break;
-      pageNum += 1;
+      pageNum++;
     } while (true);
-
     const toExport = ids.length ? allLeads.filter((r) => ids.includes(r.lead_id)) : allLeads;
-    if (toExport.length === 0) { alert('Select at least one row to export, or leave none selected to export all.'); return; }
+    if (!toExport.length) { alert('Select at least one row to export, or leave none selected to export all.'); return; }
     const headers = COLUMNS.map((c) => c.label);
-    const rows = toExport.map((row) =>
-      COLUMNS.map((col) => {
-        const val = row[col.key];
-        if (AMOUNT_KEYS.includes(col.key)) { const n = Number(val); return Number.isFinite(n) ? n : (val ?? ''); }
-        if (col.key === 'booking_date') return formatDate(val);
-        if (col.key === 'created_at') return formatCreated(val);
-        return val != null ? String(val) : '—';
-      })
-    );
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    const wb = XLSX.utils.book_new();
+    const rows = toExport.map((row) => COLUMNS.map((col) => {
+      const val = row[col.key];
+      if (AMOUNT_KEYS.includes(col.key)) { const n = Number(val); return Number.isFinite(n) ? n : (val ?? ''); }
+      if (col.key === 'booking_date') return formatDate(val);
+      if (col.key === 'created_at') return formatCreated(val);
+      return val != null ? String(val) : '—';
+    }));
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]); const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Queries');
     XLSX.writeFile(wb, `queries-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
     try {
-      const activeFilters = {};
-      if (search?.trim()) activeFilters.search = search.trim();
-      if (area) activeFilters.area = area;
-      if (orderType) activeFilters.order_type = orderType;
-      if (day) activeFilters.day = day;
-      if (reference) activeFilters.reference = reference;
-      if (yearFilter) activeFilters.year = yearFilter;
-      const payload = {
-        count: toExport.length,
-        ...(Object.keys(activeFilters).length > 0 && { filters: activeFilters }),
-        ...(ids.length > 0 && { lead_ids: ids }),
-      };
+      const af = {};
+      if (search?.trim()) af.search = search.trim(); if (area) af.area = area;
+      if (orderType) af.order_type = orderType; if (day) af.day = day;
+      if (reference) af.reference = reference; if (yearFilter) af.year = yearFilter;
       await fetch(`${API}/api/booking/leads/export-audit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ count: toExport.length, ...(Object.keys(af).length > 0 && { filters: af }), ...(ids.length > 0 && { lead_ids: ids }) })
       });
     } catch (e) { console.error('Export audit failed', e); }
   };
 
-  const filterRowStyle = { display: 'flex', flexWrap: 'nowrap', gap: '10px', marginBottom: '16px', alignItems: 'flex-end', overflowX: 'auto', minWidth: 0 };
-  const filterFieldStyle = (width) => ({ width: width || 96, minWidth: width || 96, flexShrink: 0 });
-  const labelStyle = { display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px', whiteSpace: 'nowrap' };
+  const miStyle = (hasErr) => ({
+    width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px',
+    border: hasErr ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px'
+  });
 
+  /* ─── render ─── */
   return (
-    <div style={{ padding: '19px', fontFamily: "'Poppins', 'Inter', sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
-        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', whiteSpace: 'nowrap' }}>Query Management</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <label style={{ ...labelStyle, marginBottom: 0, marginRight: '6px' }}>Year</label>
-          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px', minWidth: '112px' }}>
-            <option value="all">All</option>
-            <option value="2026">Year 2026</option>
-            <option value="2025">Year 2025</option>
-            <option value="2024">Before 2025</option>
-          </select>
-        </div>
-      </div>
+    <>
+      <style>{`
+        @media (max-width: 767px) {
+          .qm-root               { padding: 12px 12px 24px !important; overflow: auto !important; }
+          .qm-header             { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; margin-bottom: 12px !important; }
+          .qm-header h2          { font-size: 16px !important; }
+          .qm-filter-desktop     { display: none !important; }
+          .qm-filter-toggle-row  { display: flex !important; }
+          .qm-filter-mobile-panel{ display: block !important; }
+          .qm-table-wrap         { display: none !important; }
+          .qm-cards              { display: flex !important; }
+          .qm-pagination         { flex-direction: column !important; align-items: flex-start !important; }
+          .qm-modal-box          { padding: 16px !important; border-radius: 12px !important; width: calc(100vw - 32px) !important; max-height: 90dvh !important; overflow-y: auto; }
+          .qm-cow-grid           { grid-template-columns: 1fr !important; }
+          .qm-edit-grid          { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
 
-      <div style={{ ...filterRowStyle, flexShrink: 0 }}>
-        <div style={{ flex: '1 1 180px', minWidth: 0 }}>
-          <label style={labelStyle}>Search (name, phone, area, address)</label>
-          <input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && fetchLeads()} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }} />
-        </div>
-        <div style={filterFieldStyle(88)}>
-          <label style={labelStyle}>Area</label>
-          <select value={area} onChange={(e) => setArea(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
-            <option value="">All</option>
-            {filters.areas?.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
-        </div>
-        <div style={filterFieldStyle(104)}>
-          <label style={labelStyle}>Type</label>
-          <select value={orderType} onChange={(e) => setOrderType(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
-            <option value="">All</option>
-            {/* Cow and Goat hidden — only show allowed types */}
-            {visibleOrderTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div style={filterFieldStyle(80)}>
-          <label style={labelStyle}>Day</label>
-          <select value={day} onChange={(e) => setDay(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
-            <option value="">All</option>
-            {filters.days?.map((d) => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </div>
-        <div style={filterFieldStyle(88)}>
-          <label style={labelStyle}>Reference</label>
-          <select value={reference} onChange={(e) => setReference(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
-            <option value="">All</option>
-            {filters.references?.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-          <button type="button" onClick={fetchLeads} style={{ padding: '6px 13px', height: '29px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>Apply</button>
-          <button type="button" onClick={handleResetFilters} style={{ padding: '6px 13px', height: '29px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>Reset</button>
-          <button type="button" onClick={handleExport} style={{ padding: '6px 13px', height: '29px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>Export</button>
-        </div>
-      </div>
+      <div className="qm-root" style={{ padding: '19px', fontFamily: "'Poppins','Inter',sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
 
-      {error && (
-        <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', flexShrink: 0, fontSize: '10px' }}>{error}</div>
-      )}
+        {/* Header */}
+        <div className="qm-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
+          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', whiteSpace: 'nowrap' }}>Query Management</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label style={{ fontSize: '10px', color: '#666', whiteSpace: 'nowrap' }}>Year</label>
+            <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px', minWidth: '112px' }}>
+              <option value="all">All</option>
+              <option value="2026">Year 2026</option>
+              <option value="2025">Year 2025</option>
+              <option value="2024">Before 2025</option>
+            </select>
+          </div>
+        </div>
 
-      <div style={{ flex: 1, minHeight: '304px', overflow: 'auto', border: '1px solid #e0e0e0', borderRadius: '6px', background: '#fff' }}>
-        {loading ? (
-          <div style={{ padding: '32px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading queries...</div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', tableLayout: 'auto' }}>
-            <thead>
-              <tr style={{ background: '#f5f5f5' }}>
-                <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap', width: '40px' }}>
-                  <input type="checkbox" checked={leads.length > 0 && selectedIds.size === leads.length} onChange={toggleSelectAll} style={{ cursor: 'pointer' }} />
-                </th>
-                <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap', width: '120px' }}>Confirm Order</th>
-                {COLUMNS.map((col) => (
-                  <th key={col.key} style={{ padding: '10px 8px', textAlign: 'left', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap' }}>{col.label}</th>
-                ))}
-                <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {leads.length === 0 ? (
-                <tr><td colSpan={COLUMNS.length + 3} style={{ padding: '24px', textAlign: 'center', color: '#666' }}>No queries found.</td></tr>
-              ) : (
-                leads.map((row) => (
+        {/* Desktop filter bar */}
+        <div className="qm-filter-desktop" style={{ display: 'flex', flexWrap: 'nowrap', gap: '10px', marginBottom: '16px', alignItems: 'flex-end', overflowX: 'auto', minWidth: 0, flexShrink: 0 }}>
+          <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Search (name, phone, area, address)</label>
+            <input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && fetchLeads()}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }} />
+          </div>
+          {[
+            { label: 'Area', val: area, set: setArea, opts: filters.areas || [], w: 88 },
+            { label: 'Type', val: orderType, set: setOrderType, opts: visibleOrderTypes, w: 104 },
+            { label: 'Day',  val: day,  set: setDay,  opts: filters.days || [], w: 80 },
+            { label: 'Reference', val: reference, set: setReference, opts: filters.references || [], w: 88 },
+          ].map(({ label, val, set, opts, w }) => (
+            <div key={label} style={{ width: w, minWidth: w, flexShrink: 0 }}>
+              <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px', whiteSpace: 'nowrap' }}>{label}</label>
+              <select value={val} onChange={(e) => set(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
+                <option value="">All</option>
+                {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+            <button type="button" onClick={fetchLeads} style={{ padding: '6px 13px', height: '29px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Apply</button>
+            <button type="button" onClick={handleResetFilters} style={{ padding: '6px 13px', height: '29px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Reset</button>
+            <button type="button" onClick={handleExport} style={{ padding: '6px 13px', height: '29px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Export</button>
+          </div>
+        </div>
+
+        {/* Mobile: search + filters toggle */}
+        <div className="qm-filter-toggle-row" style={{ display: 'none', gap: '8px', marginBottom: '8px', flexShrink: 0, alignItems: 'center' }}>
+          <input type="text" placeholder="Search…" value={search}
+            onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && fetchLeads()}
+            style={{ flex: 1, padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
+          <button type="button" onClick={() => setMobileFiltersOpen((v) => !v)}
+            style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${mobileFiltersOpen ? '#FF5722' : '#e0e0e0'}`, background: mobileFiltersOpen ? '#fff4f0' : '#fff', color: mobileFiltersOpen ? '#FF5722' : '#555', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            ⚙ Filters
+          </button>
+          <button type="button" onClick={handleExport}
+            style={{ padding: '9px 12px', borderRadius: '8px', background: '#7c3aed', color: '#fff', border: 'none', fontSize: '13px', cursor: 'pointer' }}>
+            Export
+          </button>
+        </div>
+
+        {/* Mobile filter panel */}
+        <div className="qm-filter-mobile-panel" style={{ display: 'none' }}>
+          {mobileFiltersOpen && (
+            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {[
+                { label: 'Area', val: area, set: setArea, opts: filters.areas || [] },
+                { label: 'Type', val: orderType, set: setOrderType, opts: visibleOrderTypes },
+                { label: 'Day',  val: day,  set: setDay,  opts: filters.days || [] },
+                { label: 'Reference', val: reference, set: setReference, opts: filters.references || [] },
+              ].map(({ label, val, set, opts }) => (
+                <div key={label}>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>{label}</label>
+                  <select value={val} onChange={(e) => set(e.target.value)} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }}>
+                    <option value="">All</option>
+                    {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button type="button" onClick={() => { fetchLeads(); setMobileFiltersOpen(false); }}
+                  style={{ flex: 1, padding: '10px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>Apply</button>
+                <button type="button" onClick={() => { handleResetFilters(); setMobileFiltersOpen(false); }}
+                  style={{ flex: 1, padding: '10px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '8px', fontSize: '13px', cursor: 'pointer' }}>Reset</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {error && <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', flexShrink: 0, fontSize: '10px' }}>{error}</div>}
+
+        {/* Desktop table */}
+        <div className="qm-table-wrap" style={{ flex: 1, minHeight: '304px', overflow: 'auto', border: '1px solid #e0e0e0', borderRadius: '6px', background: '#fff' }}>
+          {loading ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading queries...</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', tableLayout: 'auto' }}>
+              <thead>
+                <tr style={{ background: '#f5f5f5' }}>
+                  <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap', width: '40px' }}>
+                    <input type="checkbox" checked={leads.length > 0 && selectedIds.size === leads.length} onChange={toggleSelectAll} style={{ cursor: 'pointer' }} />
+                  </th>
+                  <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap', width: '120px' }}>Confirm Order</th>
+                  {COLUMNS.map((col) => (
+                    <th key={col.key} style={{ padding: '10px 8px', textAlign: 'left', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap' }}>{col.label}</th>
+                  ))}
+                  <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leads.length === 0 ? (
+                  <tr><td colSpan={COLUMNS.length + 3} style={{ padding: '24px', textAlign: 'center', color: '#666' }}>No queries found.</td></tr>
+                ) : leads.map((row) => (
                   <tr key={row.lead_id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
-                      <input type="checkbox" checked={selectedIds.has(row.lead_id)} onChange={() => toggleSelect(row.lead_id)} style={{ cursor: 'pointer' }} />
-                    </td>
+                    <td style={{ padding: '8px', whiteSpace: 'nowrap' }}><input type="checkbox" checked={selectedIds.has(row.lead_id)} onChange={() => toggleSelect(row.lead_id)} style={{ cursor: 'pointer' }} /></td>
                     <td style={{ padding: '8px', whiteSpace: 'nowrap', textAlign: 'center' }}>
-                      <button type="button" onClick={() => handleConfirmClick(row)} disabled={confirmingLeadId === row.lead_id} style={{ padding: '6px 12px', fontSize: '12px', fontWeight: '600', background: confirmingLeadId === row.lead_id ? '#e0e0e0' : '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: confirmingLeadId === row.lead_id ? 'not-allowed' : 'pointer' }}>
+                      <button type="button" onClick={() => handleConfirmClick(row)} disabled={confirmingLeadId === row.lead_id}
+                        style={{ padding: '6px 12px', fontSize: '12px', fontWeight: '600', background: confirmingLeadId === row.lead_id ? '#e0e0e0' : '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: confirmingLeadId === row.lead_id ? 'not-allowed' : 'pointer' }}>
                         {confirmingLeadId === row.lead_id ? '...' : 'Confirm'}
                       </button>
                     </td>
                     {COLUMNS.map((col) => (
-                      <td key={col.key} style={{ padding: '8px', whiteSpace: 'nowrap' }}>
-                        {AMOUNT_KEYS.includes(col.key) ? formatAmount(row[col.key]) : col.key === 'booking_date' ? formatDate(row[col.key]) : col.key === 'created_at' ? formatCreated(row[col.key]) : (row[col.key] != null ? String(row[col.key]) : '—')}
-                      </td>
+                      <td key={col.key} style={{ padding: '8px', whiteSpace: 'nowrap' }}>{cellVal(col, row)}</td>
                     ))}
                     <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
                       <button type="button" onClick={() => handleEditLead(row)} title="Edit" style={{ marginRight: '8px', padding: '4px', cursor: 'pointer', background: 'none', border: 'none', verticalAlign: 'middle' }}><img src="/icons/edit.png" alt="Edit" style={{ width: '15px', height: '15px', display: 'block' }} /></button>
                       <button type="button" onClick={() => setDeleteConfirm(row)} title="Delete" style={{ padding: '4px', cursor: 'pointer', background: 'none', border: 'none', verticalAlign: 'middle' }}><img src="/icons/delete.png" alt="Delete" style={{ width: '18px', height: '18px', display: 'block' }} /></button>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Mobile card list */}
+        <div className="qm-cards" style={{ display: 'none', flexDirection: 'column', gap: '10px', flex: 1, overflowY: 'auto' }}>
+          {loading ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>Loading queries…</div>
+          ) : leads.length === 0 ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>No queries found.</div>
+          ) : leads.map((row) => {
+            const tc = TYPE_COLORS[row.type] || { bg: '#f3f4f6', color: '#374151' };
+            const sel = selectedIds.has(row.lead_id);
+            return (
+              <div key={row.lead_id} style={{ background: '#fff', borderRadius: '12px', border: `1.5px solid ${sel ? '#FF5722' : '#e5e7eb'}`, padding: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+                {/* Top */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '10px', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input type="checkbox" checked={sel} onChange={() => toggleSelect(row.lead_id)} style={{ cursor: 'pointer', accentColor: '#FF5722', width: '15px', height: '15px', flexShrink: 0, marginTop: '2px' }} />
+                    <div>
+                      <div style={{ fontWeight: '700', fontSize: '13px', color: '#111827', lineHeight: 1.2 }}>{row.booking_name || '—'}</div>
+                      <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>{row.lead_id}</div>
+                    </div>
+                  </div>
+                  <span style={{ background: tc.bg, color: tc.color, fontSize: '10px', fontWeight: '600', padding: '3px 8px', borderRadius: '20px', whiteSpace: 'nowrap', flexShrink: 0 }}>{row.type || '—'}</span>
+                </div>
+                {/* Info grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px 16px', marginBottom: '10px' }}>
+                  {[
+                    { label: 'Phone',       val: row.phone_number },
+                    { label: 'Shareholder', val: row.shareholder_name },
+                    { label: 'Day',         val: row.day },
+                    { label: 'Date',        val: formatDate(row.booking_date) },
+                    { label: 'Amount',      val: formatAmount(row.total_amount) },
+                    { label: 'Reference',   val: row.reference },
+                    { label: 'Source',      val: row.source },
+                    { label: 'Area',        val: row.area },
+                  ].map(({ label, val }) => (
+                    <div key={label}>
+                      <div style={{ fontSize: '9px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: '1px' }}>{label}</div>
+                      <div style={{ fontSize: '12px', fontWeight: '500', color: '#111827' }}>{val || '—'}</div>
+                    </div>
+                  ))}
+                </div>
+                {row.address && (
+                  <div style={{ fontSize: '11px', color: '#6b7280', paddingTop: '8px', borderTop: '1px solid #f3f4f6', marginBottom: '10px' }}>
+                    📍 {row.address}
+                  </div>
+                )}
+                {/* Card actions */}
+                <div style={{ display: 'flex', gap: '8px', paddingTop: '10px', borderTop: '1px solid #f3f4f6' }}>
+                  <button type="button" onClick={() => handleConfirmClick(row)} disabled={confirmingLeadId === row.lead_id}
+                    style={{ flex: 1, padding: '9px', background: confirmingLeadId === row.lead_id ? '#d1d5db' : '#166534', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: confirmingLeadId === row.lead_id ? 'not-allowed' : 'pointer' }}>
+                    {confirmingLeadId === row.lead_id ? '…' : '✓ Confirm Order'}
+                  </button>
+                  <button type="button" onClick={() => handleEditLead(row)}
+                    style={{ padding: '9px 12px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                    <img src="/icons/edit.png" alt="Edit" style={{ width: '16px', height: '16px', display: 'block' }} />
+                  </button>
+                  <button type="button" onClick={() => setDeleteConfirm(row)}
+                    style={{ padding: '9px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                    <img src="/icons/delete.png" alt="Delete" style={{ width: '16px', height: '16px', display: 'block' }} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Confirm modal */}
+        {confirmModalLead && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: '16px' }} onClick={closeConfirmModal}>
+            <div className="qm-modal-box" style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '420px', width: '90%' }} onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Confirm order</h3>
+              <p style={{ margin: '0 0 16px 0', color: '#555', fontSize: '13px' }}>Create order from lead &quot;{confirmModalLead.booking_name || confirmModalLead.lead_id}&quot;.</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Order ID <span style={{ color: '#dc2626' }}>*</span></label>
+                  <input value={confirmForm.order_id} readOnly placeholder="Auto-generated" style={{ ...miStyle(confirmFormErrors.order_id), background: '#f5f5f5', cursor: 'not-allowed', color: '#555' }} />
+                  {confirmFormErrors.order_id && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.order_id}</div>}
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Slot <span style={{ color: '#dc2626' }}>*</span></label>
+                  <select value={confirmForm.slot} onChange={(e) => { setConfirmForm((p) => ({ ...p, slot: e.target.value })); setConfirmFormErrors((p) => ({ ...p, slot: undefined })); }} style={miStyle(confirmFormErrors.slot)}>
+                    <option value="">Select Slot</option>
+                    {SLOTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  {confirmFormErrors.slot && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.slot}</div>}
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Booking Date <span style={{ color: '#dc2626' }}>*</span></label>
+                  <input type="date" value={confirmForm.booking_date} onChange={(e) => {
+                    const nd = e.target.value;
+                    setConfirmForm((p) => ({ ...p, booking_date: nd }));
+                    setConfirmFormErrors((p) => ({ ...p, booking_date: undefined }));
+                    if (confirmModalLead?.type && confirmModalLead.type !== 'Goat (Hissa)' && token) {
+                      fetch(`${API}/api/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: confirmModalLead.type, day: confirmModalLead.day || null, booking_date: nd || null }) })
+                        .then((r) => r.ok ? r.json() : {})
+                        .then((d2) => { if (d2 && (d2.cow_number != null || d2.hissa_number != null)) setConfirmForm((p) => ({ ...p, cow_number: d2.cow_number || '', hissa_number: d2.hissa_number || '' })); })
+                        .catch(() => {});
+                    }
+                  }} style={miStyle(confirmFormErrors.booking_date)} />
+                  {confirmFormErrors.booking_date && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.booking_date}</div>}
+                </div>
+                <div className="qm-cow-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Cow Number <span style={{ color: '#dc2626' }}>*</span></label>
+                    <input value={confirmForm.cow_number}
+                      onChange={(e) => { setConfirmForm((p) => ({ ...p, cow_number: e.target.value })); setConfirmDuplicateError(null); setConfirmFormErrors((p) => ({ ...p, cow_number: undefined })); }}
+                      onBlur={async () => { if (!confirmModalLead) return; const { cow_number: c, hissa_number: h, booking_date: bd } = confirmForm; const ot = confirmModalLead.type || ''; const d = confirmModalLead.day || ''; if (c && h && ot && !shouldSkip(ot, c, h)) { const dup = await checkDup(c, h, ot, d, bd); if (dup) setConfirmDuplicateError(dup); } }}
+                      placeholder="Auto-generated" style={miStyle(confirmFormErrors.cow_number || confirmDuplicateError)} />
+                    {confirmFormErrors.cow_number && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.cow_number}</div>}
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Hissa Number <span style={{ color: '#dc2626' }}>*</span></label>
+                    <input value={confirmForm.hissa_number}
+                      onChange={(e) => { setConfirmForm((p) => ({ ...p, hissa_number: e.target.value })); setConfirmDuplicateError(null); setConfirmFormErrors((p) => ({ ...p, hissa_number: undefined })); }}
+                      onBlur={async () => { if (!confirmModalLead) return; const { cow_number: c, hissa_number: h, booking_date: bd } = confirmForm; const ot = confirmModalLead.type || ''; const d = confirmModalLead.day || ''; if (c && h && ot && !shouldSkip(ot, c, h)) { const dup = await checkDup(c, h, ot, d, bd); if (dup) setConfirmDuplicateError(dup); } }}
+                      placeholder="Auto-generated" style={miStyle(confirmFormErrors.hissa_number || confirmDuplicateError)} />
+                    {confirmFormErrors.hissa_number && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.hissa_number}</div>}
+                  </div>
+                </div>
+                {confirmDuplicateError && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '10px', fontSize: '12px', color: '#991b1b' }}>
+                    ⚠️ Duplicate: Order {confirmDuplicateError.order_id} already uses this cow/hissa combination.
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={closeConfirmModal} disabled={!!confirmingLeadId} style={{ padding: '8px 16px', background: '#f5f5f5', border: 'none', borderRadius: '8px', cursor: confirmingLeadId ? 'not-allowed' : 'pointer', fontSize: '13px' }}>Cancel</button>
+                <button type="button" onClick={handleConfirmOrder} disabled={!!confirmingLeadId} style={{ padding: '8px 16px', background: '#166534', color: '#fff', border: 'none', borderRadius: '8px', cursor: confirmingLeadId ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: '600' }}>{confirmingLeadId ? '…' : 'Confirm'}</button>
+              </div>
+            </div>
+          </div>
         )}
+
+        {/* Edit modal */}
+        {editOpen && editRow && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={() => !saving && (setEditOpen(false), setEditRow(null), setEditPreviousRow(null))}>
+            <div className="qm-modal-box" style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(680px, 95vw)', maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Edit Lead</h3>
+              {(editErrors.submit || Object.keys(editErrors).some((k) => k !== 'submit' && editErrors[k])) && (
+                <div style={{ marginBottom: '10px', padding: '8px', background: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '12px' }}>{editErrors.submit || 'Please fix the errors below.'}</div>
+              )}
+              <div className="qm-edit-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
+                {['customer_id', 'phone_number', 'alt_phone', 'type', 'booking_name', 'shareholder_name', 'address', 'area', 'day', 'booking_date', 'total_amount', 'source', 'reference'].map((key) => {
+                  const isDisabled = key === 'lead_id' || key === 'customer_id';
+                  return (
+                    <div key={key}>
+                      <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>{key.replace(/_/g, ' ')}</label>
+                      <input disabled={isDisabled} value={editRow[key] ?? ''}
+                        onChange={(e) => { setEditRow((p) => ({ ...p, [key]: e.target.value })); if (editErrors[key]) setEditErrors((p) => ({ ...p, [key]: undefined })); }}
+                        style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: editErrors[key] ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px', ...(isDisabled && { backgroundColor: '#f5f5f5', cursor: 'not-allowed' }) }} />
+                      {editErrors[key] && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{editErrors[key]}</div>}
+                    </div>
+                  );
+                })}
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>description</label>
+                  <textarea value={editRow.description ?? ''} onChange={(e) => setEditRow((p) => ({ ...p, description: e.target.value }))} rows={2} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
+                </div>
+              </div>
+              <div style={{ marginTop: '14px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setEditOpen(false)} disabled={saving} style={{ padding: '6px 14px', fontSize: '13px', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>
+                <button type="button" onClick={handleSaveEdit} disabled={saving} style={{ padding: '6px 14px', fontSize: '13px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Save'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete confirm modal */}
+        {deleteConfirm && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: '16px' }}>
+            <div className="qm-modal-box" style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '400px', width: '100%' }}>
+              <p style={{ margin: '0 0 16px 0', fontSize: '14px' }}>Delete this lead permanently? This cannot be undone.</p>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setDeleteConfirm(null)} style={{ padding: '8px 16px', background: '#f5f5f5', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
+                <button type="button" onClick={handleDeleteLead} style={{ padding: '8px 16px', background: '#c62828', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {!loading && totalCount > 0 && (
+          <div className="qm-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px', flexShrink: 0 }}>
+            <span style={{ fontSize: '13px', color: '#666' }}>Showing {leads.length} of {totalCount} queries</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={{ padding: '6px 12px', fontSize: '10px', background: page <= 1 ? '#f0f0f0' : '#fff', color: page <= 1 ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page <= 1 ? 'not-allowed' : 'pointer' }}>Previous</button>
+              {(() => {
+                const sp = 5; let start = Math.max(1, page - Math.floor(sp / 2)); let end = Math.min(totalPages, start + sp - 1);
+                if (end - start + 1 < sp) start = Math.max(1, end - sp + 1);
+                const pages = []; for (let i = start; i <= end; i++) pages.push(i);
+                return pages.map((p) => (
+                  <button key={p} type="button" onClick={() => setPage(p)} style={{ minWidth: '32px', padding: '6px 10px', fontSize: '10px', background: p === page ? '#FF5722' : '#fff', color: p === page ? '#fff' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', fontWeight: p === page ? 600 : 400 }}>{p}</button>
+                ));
+              })()}
+              <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} style={{ padding: '6px 12px', fontSize: '10px', background: page >= totalPages ? '#f0f0f0' : '#fff', color: page >= totalPages ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page >= totalPages ? 'not-allowed' : 'pointer' }}>Next</button>
+            </div>
+          </div>
+        )}
+
       </div>
-
-      {/* ── Confirm modal ── */}
-      {confirmModalLead && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }} onClick={() => !confirmingLeadId && (setConfirmModalLead(null), setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' }), setConfirmDuplicateError(null), setConfirmFormErrors({}))}>
-          <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '420px', width: '90%' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Confirm order</h3>
-            <p style={{ margin: '0 0 16px 0', color: '#555', fontSize: '13px' }}>Create order from lead &quot;{confirmModalLead.booking_name || confirmModalLead.lead_id}&quot;. Fill or adjust the fields below.</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Order ID <span style={{ color: '#dc2626' }}>*</span></label>
-                <input value={confirmForm.order_id} readOnly placeholder="Auto-generated" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: confirmFormErrors.order_id ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px', background: '#f5f5f5', color: '#555', cursor: 'not-allowed' }} />
-                {confirmFormErrors.order_id && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.order_id}</div>}
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Slot <span style={{ color: '#dc2626' }}>*</span></label>
-                <select value={confirmForm.slot} onChange={(e) => { setConfirmForm((p) => ({ ...p, slot: e.target.value })); setConfirmFormErrors((p) => ({ ...p, slot: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: confirmFormErrors.slot ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px' }}>
-                  <option value="">Select Slot</option>
-                  {SLOTS.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-                {confirmFormErrors.slot && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.slot}</div>}
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Booking Date <span style={{ color: '#dc2626' }}>*</span></label>
-                <input type="date" value={confirmForm.booking_date} onChange={(e) => {
-                  const newDate = e.target.value;
-                  setConfirmForm((p) => ({ ...p, booking_date: newDate }));
-                  setConfirmFormErrors((p) => ({ ...p, booking_date: undefined }));
-                  if (confirmModalLead && confirmModalLead.type && confirmModalLead.type !== 'Goat (Hissa)' && token) {
-                    fetch(`${API}/api/booking/get-available-cow-hissa`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                      body: JSON.stringify({ order_type: confirmModalLead.type, day: confirmModalLead.day || null, booking_date: newDate || null }),
-                    }).then((res) => res.ok ? res.json() : {}).then((data) => {
-                      if (data && (data.cow_number != null || data.hissa_number != null)) {
-                        setConfirmForm((p) => ({ ...p, cow_number: data.cow_number || '', hissa_number: data.hissa_number || '' }));
-                      }
-                    }).catch(() => {});
-                  }
-                }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: confirmFormErrors.booking_date ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px' }} />
-                {confirmFormErrors.booking_date && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.booking_date}</div>}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Cow Number <span style={{ color: '#dc2626' }}>*</span></label>
-                  <input value={confirmForm.cow_number} onChange={(e) => { setConfirmForm((p) => ({ ...p, cow_number: e.target.value })); setConfirmDuplicateError(null); setConfirmFormErrors((p) => ({ ...p, cow_number: undefined })); }} onBlur={async () => {
-                    if (!confirmModalLead) return;
-                    const { cow_number: c, hissa_number: h, booking_date: bd } = confirmForm;
-                    const ot = confirmModalLead.type || '';
-                    const d = confirmModalLead.day || '';
-                    if (c && h && ot && !shouldSkipCowHissaDuplicate(ot, c, h)) {
-                      const dup = await checkCowHissaDuplicate(c, h, ot, d, bd);
-                      if (dup) setConfirmDuplicateError(dup);
-                    }
-                  }} placeholder="Auto-generated" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: (confirmFormErrors.cow_number || confirmDuplicateError) ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px' }} />
-                  {confirmFormErrors.cow_number && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.cow_number}</div>}
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Hissa Number <span style={{ color: '#dc2626' }}>*</span></label>
-                  <input value={confirmForm.hissa_number} onChange={(e) => { setConfirmForm((p) => ({ ...p, hissa_number: e.target.value })); setConfirmDuplicateError(null); setConfirmFormErrors((p) => ({ ...p, hissa_number: undefined })); }} onBlur={async () => {
-                    if (!confirmModalLead) return;
-                    const { cow_number: c, hissa_number: h, booking_date: bd } = confirmForm;
-                    const ot = confirmModalLead.type || '';
-                    const d = confirmModalLead.day || '';
-                    if (c && h && ot && !shouldSkipCowHissaDuplicate(ot, c, h)) {
-                      const dup = await checkCowHissaDuplicate(c, h, ot, d, bd);
-                      if (dup) setConfirmDuplicateError(dup);
-                    }
-                  }} placeholder="Auto-generated" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: (confirmFormErrors.hissa_number || confirmDuplicateError) ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px' }} />
-                  {confirmFormErrors.hissa_number && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.hissa_number}</div>}
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => !confirmingLeadId && (setConfirmModalLead(null), setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' }), setConfirmDuplicateError(null), setConfirmFormErrors({}))} disabled={!!confirmingLeadId} style={{ padding: '8px 16px', background: '#f5f5f5', border: 'none', borderRadius: '8px', cursor: confirmingLeadId ? 'not-allowed' : 'pointer' }}>Cancel</button>
-              <button type="button" onClick={handleConfirmOrder} disabled={!!confirmingLeadId} style={{ padding: '8px 16px', background: '#166534', color: '#fff', border: 'none', borderRadius: '8px', cursor: confirmingLeadId ? 'not-allowed' : 'pointer' }}>{confirmingLeadId ? '...' : 'Confirm'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Duplicate warning modal ── */}
-      {confirmDuplicateError && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1002 }} onClick={() => setConfirmDuplicateError(null)}>
-          <div style={{ background: '#fff', borderRadius: '8px', padding: '20px', maxWidth: '500px', width: '90%', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '12px' }}>
-                <span style={{ fontSize: '20px', color: '#DC2626' }}>⚠️</span>
-              </div>
-              <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937', margin: 0 }}>Duplicate Cow/Hissa Combination</h3>
-            </div>
-            <p style={{ fontSize: '11px', color: '#6B7280', marginBottom: '16px', lineHeight: '1.5' }}>This cow number and hissa number combination already exists for the selected order type and day.</p>
-            <div style={{ background: '#F9FAFB', borderRadius: '6px', padding: '12px', marginBottom: '16px' }}>
-              <div style={{ fontSize: '10px', color: '#6B7280', marginBottom: '4px' }}>Existing Order Details:</div>
-              <div style={{ fontSize: '11px', color: '#1F2937' }}>
-                <div><strong>Order ID:</strong> {confirmDuplicateError.order_id}</div>
-                <div><strong>Booking Name:</strong> {confirmDuplicateError.booking_name || '—'}</div>
-                <div><strong>Shareholder:</strong> {confirmDuplicateError.shareholder_name || '—'}</div>
-                <div><strong>Contact:</strong> {confirmDuplicateError.contact || '—'}</div>
-              </div>
-            </div>
-            <button type="button" onClick={() => setConfirmDuplicateError(null)} style={{ width: '100%', padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#FF5722', color: '#fff', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Close</button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Edit modal ── */}
-      {editOpen && editRow && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !saving && (setEditOpen(false), setEditRow(null), setEditPreviousRow(null))}>
-          <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(680px, 95vw)', maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Edit Lead</h3>
-            {(editErrors.submit || Object.keys(editErrors).some((k) => k !== 'submit' && editErrors[k])) && (
-              <div style={{ marginBottom: '10px', padding: '8px', background: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '12px' }}>
-                {editErrors.submit || 'Please fix the errors below.'}
-              </div>
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
-              {['customer_id', 'phone_number', 'alt_phone', 'type', 'booking_name', 'shareholder_name', 'address', 'area', 'day', 'booking_date', 'total_amount', 'source', 'reference'].map((key) => {
-                const isDisabled = key === 'lead_id' || key === 'customer_id';
-                return (
-                <div key={key}>
-                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>{key.replace(/_/g, ' ')}</label>
-                  <input disabled={isDisabled} value={editRow[key] ?? ''} onChange={(e) => { setEditRow((p) => ({ ...p, [key]: e.target.value })); if (editErrors[key]) setEditErrors((p) => ({ ...p, [key]: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: editErrors[key] ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '13px', ...(isDisabled && { backgroundColor: '#f5f5f5', cursor: 'not-allowed' }) }} />
-                  {editErrors[key] && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{editErrors[key]}</div>}
-                </div>
-                );
-              })}
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>description</label>
-                <textarea value={editRow.description ?? ''} onChange={(e) => setEditRow((p) => ({ ...p, description: e.target.value }))} rows={2} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
-              </div>
-            </div>
-            <div style={{ marginTop: '14px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setEditOpen(false)} disabled={saving} style={{ padding: '6px 14px', fontSize: '13px', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>
-              <button type="button" onClick={handleSaveEdit} disabled={saving} style={{ padding: '6px 14px', fontSize: '13px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Save'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Delete confirm modal ── */}
-      {deleteConfirm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }}>
-          <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '400px' }}>
-            <p style={{ margin: '0 0 16px 0' }}>Delete this lead permanently? This cannot be undone.</p>
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setDeleteConfirm(null)} style={{ padding: '8px 16px', background: '#f5f5f5', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Cancel</button>
-              <button type="button" onClick={handleDeleteLead} style={{ padding: '8px 16px', background: '#c62828', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Pagination ── */}
-      {!loading && totalCount > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px' }}>
-          <span style={{ fontSize: '13px', color: '#666' }}>Showing {leads.length} of {totalCount} queries</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-            <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={{ padding: '6px 12px', fontSize: '10px', background: page <= 1 ? '#f0f0f0' : '#fff', color: page <= 1 ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page <= 1 ? 'not-allowed' : 'pointer' }}>Previous</button>
-            {(() => {
-              const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
-              const showPages = 5;
-              let start = Math.max(1, page - Math.floor(showPages / 2));
-              let end = Math.min(totalPages, start + showPages - 1);
-              if (end - start + 1 < showPages) start = Math.max(1, end - showPages + 1);
-              const pages = [];
-              for (let i = start; i <= end; i++) pages.push(i);
-              return pages.map((p) => (
-                <button key={p} type="button" onClick={() => setPage(p)} style={{ minWidth: '32px', padding: '6px 10px', fontSize: '10px', background: p === page ? '#FF5722' : '#fff', color: p === page ? '#fff' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', fontWeight: p === page ? 600 : 400 }}>{p}</button>
-              ));
-            })()}
-            <button type="button" disabled={page >= Math.ceil(totalCount / PAGE_SIZE)} onClick={() => setPage((p) => Math.min(Math.ceil(totalCount / PAGE_SIZE) || 1, p + 1))} style={{ padding: '6px 12px', fontSize: '10px', background: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#f0f0f0' : '#fff', color: page >= Math.ceil(totalCount / PAGE_SIZE) ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page >= Math.ceil(totalCount / PAGE_SIZE) ? 'not-allowed' : 'pointer' }}>Next</button>
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   );
 }

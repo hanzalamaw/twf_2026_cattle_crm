@@ -144,6 +144,7 @@ const AcceptTerms = () => {
       }}
     >
       <div
+        className="at-wrapper"
         style={{
           position: 'relative',
           width: 'calc(100vw - 48px)',
@@ -151,7 +152,7 @@ const AcceptTerms = () => {
           maxWidth: '1000px',
         }}
       >
-        {/* Back Card 2 (furthest back) - Peachy, tilted and drifting */}
+        {/* Back Card 2 */}
         <div
           style={{
             position: 'absolute',
@@ -164,7 +165,7 @@ const AcceptTerms = () => {
           }}
         />
 
-        {/* Back Card 1 (middle) - Lighter peach, tilted opposite and drifting */}
+        {/* Back Card 1 */}
         <div
           style={{
             position: 'absolute',
@@ -177,8 +178,9 @@ const AcceptTerms = () => {
           }}
         />
 
-        {/* Main White Card (front) - full size of wrapper, only text area scrolls */}
+        {/* Main White Card */}
         <div
+          className="at-card"
           style={{
             background: '#FFFFFF',
             borderRadius: '20px',
@@ -194,14 +196,14 @@ const AcceptTerms = () => {
             boxShadow: '0 5px 25px rgba(0,0,0,0.04)',
           }}
         >
-          {/* Header - fixed at top */}
+          {/* Header */}
           <div style={{ flexShrink: 0, marginBottom: '12px' }}>
             <p style={{ color: '#FF5722', fontSize: '12px', fontWeight: '500', margin: '0 0 4px 0' }}>TWF Cattle CRM</p>
-            <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#333', margin: 0 }}>Terms & Conditions</h1>
-            <p style={{ fontSize: '12px', color: '#666', marginTop: '6px' }}>Please scroll to the bottom to accept.</p>
+            <h1 className="at-title" style={{ fontSize: '24px', fontWeight: '700', color: '#333', margin: 0 }}>Terms & Conditions</h1>
+            <p className="at-hint" style={{ fontSize: '12px', color: '#666', marginTop: '6px' }}>Please scroll to the bottom to accept.</p>
           </div>
 
-          {/* Scrollable text area only */}
+          {/* Scrollable text */}
           <div
             ref={containerRef}
             onScroll={checkScroll}
@@ -238,7 +240,7 @@ const AcceptTerms = () => {
             })}
           </div>
 
-          {/* Button - fixed at bottom */}
+          {/* Button */}
           <button
             type="button"
             disabled={!scrolledToBottom || accepting}
@@ -271,6 +273,39 @@ const AcceptTerms = () => {
           @keyframes cardDrift2 {
             0%, 100% { transform: rotate(-1.5deg) translate(-5px, -6px); }
             50% { transform: rotate(-2.5deg) translate(-8px, 6px); }
+          }
+
+          /* ── Mobile ── */
+          @media (max-width: 767px) {
+            /* outer wrapper: switch from fixed-center to a full-screen column */
+            .at-wrapper {
+              width: calc(100vw - 32px) !important;
+              height: calc(100dvh - 48px) !important;
+              max-width: 100% !important;
+            }
+
+            .at-card {
+              padding: 20px 16px !important;
+            }
+
+            .at-title {
+              font-size: 20px !important;
+            }
+
+            .at-hint {
+              font-size: 11px !important;
+            }
+          }
+
+          /* very small phones (SE, Galaxy A series) */
+          @media (max-width: 375px) {
+            .at-wrapper {
+              width: calc(100vw - 24px) !important;
+              height: calc(100dvh - 32px) !important;
+            }
+            .at-card {
+              padding: 16px 14px !important;
+            }
           }
         `}
       </style>

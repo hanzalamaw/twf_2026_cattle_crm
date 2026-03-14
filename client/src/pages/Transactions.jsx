@@ -20,6 +20,15 @@ const ORDER_COLUMNS = [
   { key: 'payment_status', label: 'Status' },
 ];
 
+const AMOUNT_KEYS = ['total_amount', 'bank', 'cash', 'received', 'pending'];
+
+const TYPE_COLORS = {
+  'Hissa - Premium':  { bg: '#fff4f0', color: '#FF5722' },
+  'Hissa - Standard': { bg: '#e8f4ff', color: '#2196F3' },
+  'Hissa - Waqf':     { bg: '#edfbee', color: '#4CAF50' },
+  'Goat (Hissa)':     { bg: '#fff8e8', color: '#FF9800' },
+};
+
 function formatAmount(val) {
   if (val == null || val === '') return '—';
   const n = Number(val);
@@ -104,6 +113,7 @@ export default function Transactions() {
   const [filters, setFilters] = useState({ order_types: [] });
   const [searchQuery, setSearchQuery] = useState('');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('all'); // 'all' | 'received' | 'pending'
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const typeDropdownRef = useRef(null);
   const searchInputRef = useRef(null);
 
@@ -336,12 +346,71 @@ const fetchOrdersSummary = useCallback(async () => {
   const isOnHandDisabled = !onHandAvailable || appliedTypes.length > 0;
 
   return (
+    <>
+      {/* ── Mobile-only styles ── */}
+      <style>{`
+        @media (max-width: 767px) {
+
+          /* Top bar — title left, leave right edge clear for parent hamburger */
+          .txn-topbar           { flex-wrap: nowrap !important; gap: 8px !important; margin-bottom: 12px !important; align-items: center !important; }
+          .txn-topbar h2        { font-size: 16px !important; flex-shrink: 0 !important; }
+          .txn-topbar-controls  { display: none !important; }
+
+          /* Mobile filter/controls row */
+          .txn-mobile-row       { display: flex !important; }
+
+          /* Summary cards — compact side by side */
+          .txn-cards            { gap: 8px !important; margin-bottom: 12px !important; }
+          .txn-card             { min-width: 0 !important; flex: 1 1 calc(50% - 4px) !important; padding: 10px 10px !important; }
+          .txn-card-icon-wrap   { width: 44px !important; height: 44px !important; }
+          .txn-card-icon-wrap img { width: 36px !important; height: 36px !important; }
+          .txn-card-label       { font-size: 10px !important; }
+          .txn-card-amount      { font-size: 13px !important; }
+          .txn-card-amount span { min-width: unset !important; padding: 4px 6px !important; }
+
+          /* Search + status: single clean row, no stacking */
+          .txn-search-row                 { flex-direction: row !important; align-items: center !important; flex-wrap: nowrap !important; gap: 8px !important; margin-bottom: 10px !important; }
+          .txn-search-bar                 { flex: 1 1 0 !important; min-width: 0 !important; max-width: none !important; }
+          .txn-search-bar input           { font-size: 13px !important; padding: 10px 32px 10px 34px !important; border-radius: 8px !important; }
+          .txn-status-wrap                { flex-shrink: 0 !important; width: auto !important; gap: 0 !important; }
+          .txn-status-wrap label          { display: none !important; }
+          .txn-status-wrap select         { padding: 10px 8px !important; font-size: 12px !important; min-width: 88px !important; max-width: 100px !important; border-radius: 8px !important; width: auto !important; cursor: pointer !important; }
+
+          /* Hide chips + count on mobile */
+          .txn-filter-chips     { display: none !important; }
+          .txn-result-count     { display: none !important; }
+
+          /* Table hidden, cards shown */
+          .txn-table-wrap       { display: none !important; }
+          .txn-mobile-cards     { display: flex !important; }
+
+          /* Pagination */
+          .txn-pagination       { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; }
+
+          /* Payment modal — bottom sheet */
+          .txn-modal-wrap       { align-items: flex-end !important; padding: 0 !important; }
+          .txn-modal-box        {
+            border-radius: 20px 20px 0 0 !important;
+            width: 100vw !important;
+            max-width: 100vw !important;
+            max-height: 92dvh !important;
+            padding: 20px 16px 36px !important;
+          }
+          .txn-modal-grid       { grid-template-columns: 1fr 1fr !important; gap: 8px 12px !important; font-size: 12px !important; }
+          .txn-modal-input-grid { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
+          .txn-modal-summary    { grid-template-columns: 1fr 1fr !important; }
+          .txn-modal-actions    { gap: 10px !important; }
+          .txn-modal-actions button { flex: 1 !important; padding: 13px !important; font-size: 13px !important; border-radius: 10px !important; }
+          .txn-drag-handle      { display: block !important; }
+        }
+      `}</style>
+
     <div style={{ padding: '19px', fontFamily: "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
 
       {/* ── Top bar ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0, flexWrap: 'nowrap', gap: '10px' }}>
+      <div className="txn-topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0, flexWrap: 'nowrap', gap: '10px' }}>
         <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#333', flexShrink: 0 }}>Transactions</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap', marginLeft: 'auto' }} ref={typeDropdownRef}>
+        <div className="txn-topbar-controls" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap', marginLeft: 'auto' }} ref={typeDropdownRef}>
 
           {/* Year filter */}
           <label style={{ fontSize: '10px', color: '#666', whiteSpace: 'nowrap' }}>Year</label>
@@ -433,6 +502,88 @@ const fetchOrdersSummary = useCallback(async () => {
             <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
           </button>
         </div>
+
+        {/* ── Mobile top controls row (hidden on desktop) ── */}
+        <div className="txn-mobile-row" style={{ display: 'none', alignItems: 'center', gap: '8px', marginLeft: 'auto', marginRight: '44px' }}>
+          {/* Year */}
+          <select
+            value={yearFilter}
+            onChange={(e) => { setYearFilter(e.target.value); setAppliedTypes([]); setSelectedTypes([]); }}
+            style={{ padding: '7px 8px', fontSize: '12px', borderRadius: '8px', border: '1px solid #e0e0e0', background: '#fff', minWidth: '80px' }}
+          >
+            <option value="all">All</option>
+            <option value="2026">2026</option>
+            <option value="2025">2025</option>
+            <option value="2024">2024</option>
+          </select>
+
+          {/* Filters toggle */}
+          <button
+            type="button"
+            onClick={() => setMobileFiltersOpen((v) => !v)}
+            style={{ padding: '7px 12px', borderRadius: '8px', border: `1px solid ${mobileFiltersOpen ? '#FF5722' : '#e0e0e0'}`, background: mobileFiltersOpen ? '#fff4f0' : '#fff', color: mobileFiltersOpen ? '#FF5722' : '#555', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+          >
+            ⚙ Filters
+          </button>
+        </div>
+      </div>
+
+      {/* ── Mobile filter panel (hidden on desktop) ── */}
+      <div className="txn-mobile-row" style={{ display: 'none' }}>
+        {mobileFiltersOpen && (
+          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
+            {/* Type multi-select */}
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '6px', fontWeight: '500' }}>Order Type</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {typeOptions.length === 0 ? (
+                  <div style={{ color: '#999', fontSize: '12px' }}>No types available</div>
+                ) : typeOptions.map((t) => {
+                  const tc = TYPE_COLORS[t] || { bg: '#f3f4f6', color: '#374151' };
+                  const checked = selectedTypes.includes(t);
+                  return (
+                    <label key={t} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${checked ? tc.color : '#e5e7eb'}`, background: checked ? tc.bg : '#fafafa', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={checked} onChange={() => setSelectedTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])} style={{ accentColor: tc.color }} />
+                      <span style={{ fontSize: '13px', fontWeight: checked ? '600' : '400', color: checked ? tc.color : '#374151' }}>{t}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Amount mode */}
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '6px', fontWeight: '500' }}>Amount Mode</label>
+              <select
+                value={effectiveFilterMode}
+                onChange={(e) => setFilterMode(e.target.value)}
+                disabled={isOnHandDisabled}
+                style={{ width: '100%', padding: '10px 12px', fontSize: '13px', borderRadius: '8px', border: '1px solid #e0e0e0', background: isOnHandDisabled ? '#f5f5f5' : '#fff', color: isOnHandDisabled ? '#aaa' : '#333' }}
+              >
+                <option value="onHand" disabled={isOnHandDisabled}>On Hand</option>
+                <option value="actual">Actual</option>
+              </select>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => { setAppliedTypes([...selectedTypes]); setMobileFiltersOpen(false); }}
+                style={{ flex: 1, padding: '11px', background: '#166534', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+              >
+                Apply
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSelectedTypes([]); setAppliedTypes([]); setMobileFiltersOpen(false); }}
+                style={{ flex: 1, padding: '11px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '8px', fontSize: '13px', cursor: 'pointer' }}
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -440,15 +591,15 @@ const fetchOrdersSummary = useCallback(async () => {
       )}
 
       {/* ── Summary cards ── */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px', flexShrink: 0 }}>
+      <div className="txn-cards" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px', flexShrink: 0 }}>
         {/* Bank Only card */}
-        <div style={{ flex: '1 1 160px', minWidth: '160px', padding: '14px 12px', borderRadius: '10px', border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div className="txn-card" style={{ flex: '1 1 160px', minWidth: '160px', padding: '14px 12px', borderRadius: '10px', border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', overflow: 'hidden' }}>
+          <div className="txn-card-icon-wrap" style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <img src="/icons/total_orders_amount.png" alt="" style={{ width: '50px', height: '50px', objectFit: 'contain' }} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
-            <div style={{ fontSize: '11px', fontWeight: '400', color: '#6b7280' }}>Bank Only</div>
-            <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827', lineHeight: '1.2' }}>
+            <div className="txn-card-label" style={{ fontSize: '11px', fontWeight: '400', color: '#6b7280' }}>Bank Only</div>
+            <div className="txn-card-amount" style={{ fontSize: '18px', fontWeight: '600', color: '#111827', lineHeight: '1.2' }}>
               {amountVisible
                 ? <span>{formatAmount(bankOnlyAmount)}</span>
                 : <span style={{ filter: 'blur(6px)', userSelect: 'none', display: 'inline-block', minWidth: '120px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', padding: '6px 10px' }}>{formatAmount(bankOnlyAmount)}</span>}
@@ -457,13 +608,13 @@ const fetchOrdersSummary = useCallback(async () => {
         </div>
 
         {/* Cash card */}
-        <div style={{ flex: '1 1 160px', minWidth: '160px', padding: '14px 12px', borderRadius: '10px', border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div className="txn-card" style={{ flex: '1 1 160px', minWidth: '160px', padding: '14px 12px', borderRadius: '10px', border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', overflow: 'hidden' }}>
+          <div className="txn-card-icon-wrap" style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <img src="/icons/total_orders_amount.png" alt="" style={{ width: '50px', height: '50px', objectFit: 'contain' }} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
-            <div style={{ fontSize: '11px', fontWeight: '400', color: '#6b7280' }}>Cash</div>
-            <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827', lineHeight: '1.2' }}>
+            <div className="txn-card-label" style={{ fontSize: '11px', fontWeight: '400', color: '#6b7280' }}>Cash</div>
+            <div className="txn-card-amount" style={{ fontSize: '18px', fontWeight: '600', color: '#111827', lineHeight: '1.2' }}>
               {amountVisible
                 ? <span>{formatAmount(cashAmount)}</span>
                 : <span style={{ filter: 'blur(6px)', userSelect: 'none', display: 'inline-block', minWidth: '120px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', padding: '6px 10px' }}>{formatAmount(cashAmount)}</span>}
@@ -472,10 +623,22 @@ const fetchOrdersSummary = useCallback(async () => {
         </div>
       </div>
 
+      {/* ── Mobile-only: show/hide button below cards, right-aligned ── */}
+      <div className="txn-mobile-row" style={{ display: 'none', justifyContent: 'flex-end', marginTop: '-10px', marginBottom: '10px' }}>
+        <button
+          type="button"
+          onClick={() => setAmountVisible((v) => !v)}
+          title={amountVisible ? 'Hide' : 'Show'}
+          style={{ padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
+        </button>
+      </div>
+
       {/* ── Search + Status filter row ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', flexShrink: 0, flexWrap: 'wrap' }}>
+      <div className="txn-search-row" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', flexShrink: 0, flexWrap: 'wrap' }}>
         {/* Search bar */}
-        <div style={{ position: 'relative', flex: '1 1 220px', minWidth: '180px', maxWidth: '380px' }}>
+        <div className="txn-search-bar" style={{ position: 'relative', flex: '1 1 220px', minWidth: '180px', maxWidth: '380px' }}>
           <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
             <SearchIcon />
           </span>
@@ -509,7 +672,7 @@ const fetchOrdersSummary = useCallback(async () => {
         </div>
 
         {/* Payment status filter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div className="txn-status-wrap" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <label style={{ fontSize: '10px', color: '#666', whiteSpace: 'nowrap' }}>Status</label>
           <select
             value={paymentStatusFilter}
@@ -524,7 +687,7 @@ const fetchOrdersSummary = useCallback(async () => {
 
         {/* Active filter chips */}
         {(searchQuery || paymentStatusFilter !== 'all') && (
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div className="txn-filter-chips" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
             {searchQuery && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', background: '#EFF6FF', color: '#1D4ED8', borderRadius: '4px', fontSize: '10px', fontWeight: '500' }}>
                 "{searchQuery}"
@@ -542,14 +705,14 @@ const fetchOrdersSummary = useCallback(async () => {
 
         {/* Result count when filtered */}
         {(searchQuery || paymentStatusFilter !== 'all') && (
-          <span style={{ fontSize: '10px', color: '#888', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+          <span className="txn-result-count" style={{ fontSize: '10px', color: '#888', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
             {displayedOrders.length} result{displayedOrders.length !== 1 ? 's' : ''}
           </span>
         )}
       </div>
 
-      {/* ── Table ── */}
-      <div style={{ flex: 1, minHeight: '260px', overflow: 'auto' }}>
+      {/* ── Desktop Table ── */}
+      <div className="txn-table-wrap" style={{ flex: 1, minHeight: '260px', overflow: 'auto' }}>
         <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', background: '#fff', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', whiteSpace: 'nowrap' }}>
@@ -615,9 +778,66 @@ const fetchOrdersSummary = useCallback(async () => {
         </div>
       </div>
 
+      {/* ── Mobile order cards (hidden on desktop) ── */}
+      <div className="txn-mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: '10px', flex: 1, overflowY: 'auto' }}>
+        {loading ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>Loading orders…</div>
+        ) : displayedOrders.length === 0 ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>
+            {searchQuery || paymentStatusFilter !== 'all' ? 'No orders match your filters.' : 'No orders.'}
+          </div>
+        ) : displayedOrders.map((row) => {
+          const tc = TYPE_COLORS[row.type] || { bg: '#f3f4f6', color: '#374151' };
+          const isPending = row.payment_status === 'Pending';
+          return (
+            <div
+              key={row.order_id}
+              onClick={() => openModal(row)}
+              style={{ background: '#fff', borderRadius: '12px', border: '1.5px solid #e5e7eb', padding: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+            >
+              {/* Card top row */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '10px', gap: '8px' }}>
+                <div>
+                  <div style={{ fontWeight: '700', fontSize: '13px', color: '#111827', lineHeight: 1.2 }}>{row.booking_name || '—'}</div>
+                  <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>{row.order_id}</div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
+                  <span style={{ background: tc.bg, color: tc.color, fontSize: '10px', fontWeight: '600', padding: '3px 8px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{row.type || '—'}</span>
+                  <StatusPill status={row.payment_status} />
+                </div>
+              </div>
+
+              {/* Info grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px 16px' }}>
+                {[
+                  { label: 'Shareholder', val: row.shareholder_name },
+                  { label: 'Phone',       val: row.phone_number },
+                  { label: 'Total',       val: formatAmount(row.total_amount) },
+                  { label: 'Received',    val: formatAmount(row.received) },
+                  { label: 'Bank',        val: formatAmount(row.bank) },
+                  { label: 'Cash',        val: formatAmount(row.cash) },
+                  { label: 'Pending',     val: formatAmount(row.pending) },
+                  { label: 'Reference',   val: row.reference },
+                ].map(({ label, val }) => (
+                  <div key={label}>
+                    <div style={{ fontSize: '9px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: '1px' }}>{label}</div>
+                    <div style={{ fontSize: '12px', fontWeight: '500', color: label === 'Pending' && isPending ? '#C30730' : '#111827' }}>{val || '—'}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #f3f4f6', fontSize: '11px', color: '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                <span>Tap to update payment</span>
+                <span>→</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       {/* ── Pagination ── */}
       {!loading && totalCount > 0 && !searchQuery && paymentStatusFilter === 'all' && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px' }}>
+        <div className="txn-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px' }}>
           <span style={{ fontSize: '13px', color: '#666' }}>
             Showing {orders.length} of {totalCount} orders
           </span>
@@ -664,17 +884,22 @@ const fetchOrdersSummary = useCallback(async () => {
       {/* ── Payment modal ── */}
       {modalOrder && (
         <div
+          className="txn-modal-wrap"
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
           onClick={() => !submitting && setModalOrder(null)}
         >
           <div
+            className="txn-modal-box"
             style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(520px, 95vw)', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Drag handle — visible on mobile only */}
+            <div className="txn-drag-handle" style={{ display: 'none', width: '40px', height: '4px', background: '#e0e0e0', borderRadius: '2px', margin: '0 auto 16px' }} />
+
             <h3 style={{ margin: '0 0 13px 0', fontSize: '13px', fontWeight: '600' }}>Update Transaction</h3>
 
             <div style={{ fontSize: '11px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>Previous (current state)</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px', marginBottom: '13px', fontSize: '10px', padding: '8px 10px', background: '#f5f5f5', borderRadius: '6px', border: '1px solid #e8e8e8' }}>
+            <div className="txn-modal-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px', marginBottom: '13px', fontSize: '10px', padding: '8px 10px', background: '#f5f5f5', borderRadius: '6px', border: '1px solid #e8e8e8' }}>
               <div><span style={{ color: '#666' }}>Customer ID</span><div style={{ fontWeight: '600' }}>{modalOrder.customer_id ?? '—'}</div></div>
               <div><span style={{ color: '#666' }}>Order ID</span><div style={{ fontWeight: '600' }}>{modalOrder.order_id ?? '—'}</div></div>
               <div><span style={{ color: '#666' }}>Name</span><div style={{ fontWeight: '600' }}>{modalOrder.shareholder_name ?? modalOrder.booking_name ?? '—'}</div></div>
@@ -696,7 +921,7 @@ const fetchOrdersSummary = useCallback(async () => {
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+            <div className="txn-modal-input-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px' }}>Add Cash</label>
                 <input
@@ -715,14 +940,14 @@ const fetchOrdersSummary = useCallback(async () => {
               </div>
             </div>
 
-            <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', marginBottom: '13px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '10px' }}>
+            <div className="txn-modal-summary" style={{ padding: '10px', background: '#f9fafb', borderRadius: '6px', marginBottom: '13px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '10px' }}>
               <div><span style={{ color: '#666' }}>New Bank Total</span><div style={{ fontWeight: '600' }}>{formatAmount(newBank)}</div></div>
               <div><span style={{ color: '#666' }}>New Cash Total</span><div style={{ fontWeight: '600' }}>{formatAmount(newCash)}</div></div>
               <div><span style={{ color: '#666' }}>New Received Total</span><div style={{ fontWeight: '600' }}>{formatAmount(newReceived)}</div></div>
               <div><span style={{ color: '#666' }}>New Pending</span><div style={{ fontWeight: '600' }}>{formatAmount(newPending)}</div></div>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+            <div className="txn-modal-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => !submitting && setModalOrder(null)} disabled={submitting} style={{ padding: '8px 16px', background: '#e0e0e0', color: '#333', border: 'none', borderRadius: '8px', cursor: submitting ? 'not-allowed' : 'pointer' }}>Close</button>
               <button
                 type="button"
@@ -737,5 +962,6 @@ const fetchOrdersSummary = useCallback(async () => {
         </div>
       )}
     </div>
+    </>
   );
 }

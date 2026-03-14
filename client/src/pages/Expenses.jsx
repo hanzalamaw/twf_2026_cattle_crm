@@ -277,12 +277,76 @@ export default function Expenses() {
   }
 
   return (
+    <>
+      <style>{`
+        @media (max-width: 767px) {
+
+          /* Top bar */
+          .exp-topbar               { margin-bottom: 12px !important; }
+          .exp-topbar h2            { font-size: 16px !important; }
+          .exp-topbar-right         { margin-right: 44px !important; }
+
+          /* Show/hide toggle — hidden on mobile (moved below cards) */
+          .exp-showhide-wrap        { display: none !important; }
+
+          /* Summary cards — side by side compact */
+          .exp-cards                { gap: 8px !important; margin-bottom: 10px !important; }
+          .exp-card                 { min-width: 0 !important; flex: 1 1 calc(50% - 4px) !important; padding: 10px 10px !important; }
+          .exp-card-icon-wrap       { width: 44px !important; height: 44px !important; }
+          .exp-card-icon-wrap img   { width: 36px !important; height: 36px !important; }
+          .exp-card-label           { font-size: 10px !important; }
+          .exp-card-amount          { font-size: 13px !important; }
+          .exp-card-amount span     { min-width: unset !important; padding: 4px 6px !important; }
+
+          /* Add expense button row */
+          .exp-add-btn-row          { margin-top: 8px !important; }
+          .exp-mobile-showhide      { display: flex !important; }
+
+          /* Table — hide, show cards */
+          .exp-table-wrap           { display: none !important; }
+          .exp-mobile-cards         { display: flex !important; }
+
+          /* Pagination */
+          .exp-pagination           { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; }
+
+          /* Modals — bottom sheet */
+          .exp-modal-wrap           { align-items: flex-end !important; padding: 0 !important; }
+          .exp-modal-box            {
+            border-radius: 20px 20px 0 0 !important;
+            width: 100vw !important;
+            max-width: 100vw !important;
+            max-height: 92dvh !important;
+            padding: 20px 16px 36px !important;
+            overflow-y: auto !important;
+          }
+          .exp-modal-box h3         { font-size: 15px !important; }
+          .exp-modal-grid           { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
+          .exp-modal-label          { font-size: 12px !important; margin-bottom: 4px !important; }
+          .exp-modal-input          { font-size: 13px !important; padding: 10px 12px !important; border-radius: 8px !important; height: auto !important; }
+          .exp-modal-actions        { gap: 10px !important; margin-top: 4px !important; }
+          .exp-modal-actions button { flex: 1 !important; padding: 13px !important; font-size: 13px !important; border-radius: 10px !important; }
+          .exp-drag-handle          { display: block !important; }
+
+          /* Delete confirm modal */
+          .exp-delete-modal-box     {
+            border-radius: 20px 20px 0 0 !important;
+            width: 100vw !important;
+            max-width: 100vw !important;
+            padding: 20px 16px 36px !important;
+          }
+          .exp-delete-modal-box h3  { font-size: 15px !important; }
+          .exp-delete-modal-box p   { font-size: 13px !important; }
+          .exp-delete-actions       { gap: 10px !important; }
+          .exp-delete-actions button { flex: 1 !important; padding: 13px !important; font-size: 13px !important; border-radius: 10px !important; }
+        }
+      `}</style>
+
     <div style={{ padding: '19px', fontFamily: "'Poppins', 'Inter', sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
 
       {/* ── Top bar ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0, flexWrap: 'wrap', gap: '10px' }}>
+      <div className="exp-topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0, flexWrap: 'wrap', gap: '10px' }}>
         <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#333', flexShrink: 0 }}>Expenses</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
+        <div className="exp-topbar-right" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
           <button type="button" onClick={handleExport} style={{ padding: '6px 13px', fontSize: '11px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             Export
           </button>
@@ -294,22 +358,22 @@ export default function Expenses() {
       )}
 
       {/* ── Show/hide toggle ── */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', flexShrink: 0 }}>
+      <div className="exp-showhide-wrap" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', flexShrink: 0 }}>
         <button type="button" onClick={() => setAmountVisible((v) => !v)} title={amountVisible ? 'Hide' : 'Show'} style={{ padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
         </button>
       </div>
 
       {/* ── Summary cards ── */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px', flexShrink: 0, alignItems: 'flex-start' }}>
+      <div className="exp-cards" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px', flexShrink: 0, alignItems: 'flex-start' }}>
         {/* Bank card */}
-        <div style={{ flex: '1 1 160px', minWidth: '160px', padding: '14px 12px', borderRadius: '10px', border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div className="exp-card" style={{ flex: '1 1 160px', minWidth: '160px', padding: '14px 12px', borderRadius: '10px', border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', overflow: 'hidden' }}>
+          <div className="exp-card-icon-wrap" style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <img src="/icons/pending_payments_amount.png" alt="" style={{ width: '50px', height: '50px', objectFit: 'contain' }} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
-            <div style={{ fontSize: '11px', fontWeight: '400', color: '#6b7280' }}>Bank</div>
-            <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827', lineHeight: '1.2' }}>
+            <div className="exp-card-label" style={{ fontSize: '11px', fontWeight: '400', color: '#6b7280' }}>Bank</div>
+            <div className="exp-card-amount" style={{ fontSize: '18px', fontWeight: '600', color: '#111827', lineHeight: '1.2' }}>
               {amountVisible
                 ? <span>{formatAmount(fullDataTotalBank)}</span>
                 : <span style={{ filter: 'blur(6px)', userSelect: 'none', display: 'inline-block', minWidth: '120px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', padding: '6px 10px' }}>{formatAmount(fullDataTotalBank)}</span>}
@@ -318,13 +382,13 @@ export default function Expenses() {
         </div>
 
         {/* Cash card */}
-        <div style={{ flex: '1 1 160px', minWidth: '160px', padding: '14px 12px', borderRadius: '10px', border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div className="exp-card" style={{ flex: '1 1 160px', minWidth: '160px', padding: '14px 12px', borderRadius: '10px', border: '1px solid #f1f1f1', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', overflow: 'hidden' }}>
+          <div className="exp-card-icon-wrap" style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <img src="/icons/pending_payments_amount.png" alt="" style={{ width: '50px', height: '50px', objectFit: 'contain' }} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '2px' }}>
-            <div style={{ fontSize: '11px', fontWeight: '400', color: '#6b7280' }}>Cash</div>
-            <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827', lineHeight: '1.2' }}>
+            <div className="exp-card-label" style={{ fontSize: '11px', fontWeight: '400', color: '#6b7280' }}>Cash</div>
+            <div className="exp-card-amount" style={{ fontSize: '18px', fontWeight: '600', color: '#111827', lineHeight: '1.2' }}>
               {amountVisible
                 ? <span>{formatAmount(fullDataTotalCash)}</span>
                 : <span style={{ filter: 'blur(6px)', userSelect: 'none', display: 'inline-block', minWidth: '120px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', padding: '6px 10px' }}>{formatAmount(fullDataTotalCash)}</span>}
@@ -332,15 +396,19 @@ export default function Expenses() {
           </div>
         </div>
 
-        <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+        <div className="exp-add-btn-row" style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+          {/* Mobile-only show/hide button — hidden on desktop via exp-mobile-showhide */}
+          <button className="exp-mobile-showhide" type="button" onClick={() => setAmountVisible((v) => !v)} title={amountVisible ? 'Hide' : 'Show'} style={{ display: 'none', padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', marginRight: 'auto' }}>
+            <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
+          </button>
           <button type="button" onClick={openAddModal} style={{ padding: '6px 13px', fontSize: '11px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             Add Expense
           </button>
         </div>
       </div>
 
-      {/* ── Table ── */}
-      <div style={{ flex: 1, minHeight: '400px', overflow: 'auto' }}>
+      {/* ── Desktop Table ── */}
+      <div className="exp-table-wrap" style={{ flex: 1, minHeight: '400px', overflow: 'auto' }}>
         <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', background: '#fff', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', whiteSpace: 'nowrap' }}>
@@ -389,9 +457,63 @@ export default function Expenses() {
         </div>
       </div>
 
+      {/* ── Mobile expense cards (hidden on desktop) ── */}
+      <div className="exp-mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: '10px', flex: 1, overflowY: 'auto' }}>
+        {loading ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>Loading…</div>
+        ) : expenses.length === 0 ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>No expenses.</div>
+        ) : expenses.map((row) => (
+          <div
+            key={row.expense_id}
+            onClick={() => openEditModal(row)}
+            style={{ background: '#fff', borderRadius: '12px', border: '1.5px solid #e5e7eb', padding: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+          >
+            {/* Card top row */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '10px', gap: '8px' }}>
+              <div>
+                <div style={{ fontWeight: '700', fontSize: '13px', color: '#111827', lineHeight: 1.2 }}>{row.description || '—'}</div>
+                <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>{row.expense_id}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>{formatAmount(row.total)}</span>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setDeleteConfirmExpense(row); }}
+                  disabled={submitting}
+                  style={{ padding: '4px', cursor: submitting ? 'not-allowed' : 'pointer', background: 'none', border: 'none', opacity: submitting ? 0.5 : 1 }}
+                >
+                  <img src="/icons/delete.png" alt="Delete" style={{ width: '18px', height: '18px', display: 'block' }} />
+                </button>
+              </div>
+            </div>
+
+            {/* Info grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px 16px' }}>
+              {[
+                { label: 'Date',       val: formatDate(row.done_at) },
+                { label: 'Done By',    val: row.done_by },
+                { label: 'Bank',       val: formatAmount(row.bank) },
+                { label: 'Cash',       val: formatAmount(row.cash) },
+                { label: 'Created By', val: row.created_by },
+              ].map(({ label, val }) => (
+                <div key={label}>
+                  <div style={{ fontSize: '9px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: '1px' }}>{label}</div>
+                  <div style={{ fontSize: '12px', fontWeight: '500', color: '#111827' }}>{val || '—'}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #f3f4f6', fontSize: '11px', color: '#6b7280', textAlign: 'right' }}>
+              Tap to edit →
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* ── Pagination ── */}
       {!loading && totalCount > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px' }}>
+        <div className="exp-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px' }}>
           <span style={{ fontSize: '13px', color: '#666' }}>Showing {expenses.length} of {totalCount} expenses</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} style={{ padding: '6px 12px', fontSize: '10px', background: page <= 1 ? '#f0f0f0' : '#fff', color: page <= 1 ? '#999' : '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: page <= 1 ? 'not-allowed' : 'pointer' }}>Previous</button>
@@ -414,11 +536,12 @@ export default function Expenses() {
 
       {/* ── Delete confirm modal ── */}
       {deleteConfirmExpense && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !submitting && setDeleteConfirmExpense(null)}>
-          <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(380px, 95vw)', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+        <div className="exp-modal-wrap" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !submitting && setDeleteConfirmExpense(null)}>
+          <div className="exp-delete-modal-box" style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(380px, 95vw)', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="exp-drag-handle" style={{ display: 'none', width: '40px', height: '4px', background: '#e0e0e0', borderRadius: '2px', margin: '0 auto 16px' }} />
             <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '600', color: '#333' }}>Delete expense?</h3>
             <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#666' }}>Delete expense <strong>{deleteConfirmExpense.expense_id}</strong>? This cannot be undone.</p>
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+            <div className="exp-delete-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => !submitting && setDeleteConfirmExpense(null)} disabled={submitting} style={{ padding: '6px 13px', background: '#e0e0e0', color: '#333', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>Cancel</button>
               <button type="button" onClick={() => handleDelete(deleteConfirmExpense)} disabled={submitting} style={{ padding: '6px 13px', background: '#b91c1c', color: '#fff', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>{submitting ? 'Deleting...' : 'Delete'}</button>
             </div>
@@ -428,8 +551,9 @@ export default function Expenses() {
 
       {/* ── Edit modal ── */}
       {editExpense && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !submitting && setEditExpense(null)}>
-          <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(420px, 95vw)', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+        <div className="exp-modal-wrap" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !submitting && setEditExpense(null)}>
+          <div className="exp-modal-box" style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(420px, 95vw)', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="exp-drag-handle" style={{ display: 'none', width: '40px', height: '4px', background: '#e0e0e0', borderRadius: '2px', margin: '0 auto 16px' }} />
             <h3 style={{ margin: '0 0 13px 0', fontSize: '13px', fontWeight: '600' }}>Edit Expense</h3>
             <div style={{ fontSize: '10px', color: '#666', marginBottom: '10px' }}>Expense ID: {editExpense.expense_id} · Date: {formatDate(editExpense.done_at)}</div>
             {(editErrors.edit || editErrors.editBank || editErrors.editCash) && (
@@ -439,31 +563,31 @@ export default function Expenses() {
                 {editErrors.editCash && <div>Cash: {editErrors.editCash}</div>}
               </div>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
+            <div className="exp-modal-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Bank (Rs)</label>
-                <input type="number" min="0" step="0.01" value={editBank} onChange={(e) => { setEditBank(e.target.value); setEditErrors((p) => ({ ...p, editBank: undefined, editCash: undefined, edit: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: editErrors.editBank ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px' }} />
+                <label className="exp-modal-label" style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Bank (Rs)</label>
+                <input className="exp-modal-input" type="number" min="0" step="0.01" value={editBank} onChange={(e) => { setEditBank(e.target.value); setEditErrors((p) => ({ ...p, editBank: undefined, editCash: undefined, edit: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: editErrors.editBank ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px' }} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Cash (Rs)</label>
-                <input type="number" min="0" step="0.01" value={editCash} onChange={(e) => { setEditCash(e.target.value); setEditErrors((p) => ({ ...p, editCash: undefined, editBank: undefined, edit: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: editErrors.editCash ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px' }} />
+                <label className="exp-modal-label" style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Cash (Rs)</label>
+                <input className="exp-modal-input" type="number" min="0" step="0.01" value={editCash} onChange={(e) => { setEditCash(e.target.value); setEditErrors((p) => ({ ...p, editCash: undefined, editBank: undefined, edit: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: editErrors.editCash ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px' }} />
               </div>
             </div>
             <div style={{ marginBottom: '13px' }}>
-              <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Description (optional)</label>
-              <input type="text" value={editDescription} onChange={(e) => { setEditDescription(e.target.value); setEditErrors((p) => ({ ...p, edit: undefined })); }} placeholder="e.g. Fuel, stationery" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px' }} />
+              <label className="exp-modal-label" style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Description (optional)</label>
+              <input className="exp-modal-input" type="text" value={editDescription} onChange={(e) => { setEditDescription(e.target.value); setEditErrors((p) => ({ ...p, edit: undefined })); }} placeholder="e.g. Fuel, stationery" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px' }} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
+            <div className="exp-modal-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Date</label>
-                <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px', height: '30px' }} />
+                <label className="exp-modal-label" style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Date</label>
+                <input className="exp-modal-input" type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px', height: '30px' }} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Done By</label>
-                <input type="text" value={editDoneBy} onChange={(e) => setEditDoneBy(e.target.value)} placeholder="Staff name" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px', height: '30px' }} />
+                <label className="exp-modal-label" style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Done By</label>
+                <input className="exp-modal-input" type="text" value={editDoneBy} onChange={(e) => setEditDoneBy(e.target.value)} placeholder="Staff name" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px', height: '30px' }} />
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+            <div className="exp-modal-actions" style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => !submitting && setEditExpense(null)} disabled={submitting} style={{ padding: '6px 13px', background: '#e0e0e0', color: '#333', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>Close</button>
               <button type="button" onClick={handleSaveEdit} disabled={submitting || ((parseFloat(editBank) || 0) === 0 && (parseFloat(editCash) || 0) === 0)} style={{ padding: '6px 13px', background: '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>{submitting ? 'Saving...' : 'Save'}</button>
             </div>
@@ -473,8 +597,9 @@ export default function Expenses() {
 
       {/* ── Add modal ── */}
       {addModalOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !submitting && setAddModalOpen(false)}>
-          <div style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(420px, 95vw)', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+        <div className="exp-modal-wrap" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => !submitting && setAddModalOpen(false)}>
+          <div className="exp-modal-box" style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(420px, 95vw)', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="exp-drag-handle" style={{ display: 'none', width: '40px', height: '4px', background: '#e0e0e0', borderRadius: '2px', margin: '0 auto 16px' }} />
             <h3 style={{ margin: '0', fontSize: '13px', fontWeight: '600' }}>Add Expense</h3>
             <div style={{ fontSize: '10px', color: '#666', marginBottom: '13px' }}>Expense ID: {nextExpenseId || 'Loading...'}</div>
             {(addErrors.add || addErrors.addBank || addErrors.addCash) && (
@@ -484,31 +609,31 @@ export default function Expenses() {
                 {addErrors.addCash && <div>Cash: {addErrors.addCash}</div>}
               </div>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
+            <div className="exp-modal-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Bank (Rs)</label>
-                <input type="number" min="0" step="0.01" value={addBank} onChange={(e) => { setAddBank(e.target.value); setAddErrors((p) => ({ ...p, addBank: undefined, addCash: undefined, add: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: addErrors.addBank ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px' }} />
+                <label className="exp-modal-label" style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Bank (Rs)</label>
+                <input className="exp-modal-input" type="number" min="0" step="0.01" value={addBank} onChange={(e) => { setAddBank(e.target.value); setAddErrors((p) => ({ ...p, addBank: undefined, addCash: undefined, add: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: addErrors.addBank ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px' }} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Cash (Rs)</label>
-                <input type="number" min="0" step="0.01" value={addCash} onChange={(e) => { setAddCash(e.target.value); setAddErrors((p) => ({ ...p, addCash: undefined, addBank: undefined, add: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: addErrors.addCash ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px' }} />
+                <label className="exp-modal-label" style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Cash (Rs)</label>
+                <input className="exp-modal-input" type="number" min="0" step="0.01" value={addCash} onChange={(e) => { setAddCash(e.target.value); setAddErrors((p) => ({ ...p, addCash: undefined, addBank: undefined, add: undefined })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: addErrors.addCash ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px' }} />
               </div>
             </div>
             <div style={{ marginBottom: '13px' }}>
-              <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Description (optional)</label>
-              <input type="text" value={addDescription} onChange={(e) => setAddDescription(e.target.value)} placeholder="e.g. Fuel, stationery" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px' }} />
+              <label className="exp-modal-label" style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Description (optional)</label>
+              <input className="exp-modal-input" type="text" value={addDescription} onChange={(e) => setAddDescription(e.target.value)} placeholder="e.g. Fuel, stationery" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px' }} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
+            <div className="exp-modal-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '13px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Date</label>
-                <input type="date" value={addDate} onChange={(e) => setAddDate(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px', height: '30px' }} />
+                <label className="exp-modal-label" style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Date</label>
+                <input className="exp-modal-input" type="date" value={addDate} onChange={(e) => setAddDate(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px', height: '30px' }} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Done By</label>
-                <input type="text" value={addDoneBy} onChange={(e) => setAddDoneBy(e.target.value)} placeholder="Staff name" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px', height: '30px' }} />
+                <label className="exp-modal-label" style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Done By</label>
+                <input className="exp-modal-input" type="text" value={addDoneBy} onChange={(e) => setAddDoneBy(e.target.value)} placeholder="Staff name" style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px', height: '30px' }} />
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+            <div className="exp-modal-actions" style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => !submitting && setAddModalOpen(false)} disabled={submitting} style={{ padding: '6px 13px', background: '#e0e0e0', color: '#333', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>Close</button>
               <button type="button" onClick={handleAddExpense} disabled={submitting || ((parseFloat(addBank) || 0) === 0 && (parseFloat(addCash) || 0) === 0)} style={{ padding: '6px 13px', background: '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '10px' }}>{submitting ? 'Submitting...' : 'Add'}</button>
             </div>
@@ -516,5 +641,6 @@ export default function Expenses() {
         </div>
       )}
     </div>
+    </>
   );
 }
