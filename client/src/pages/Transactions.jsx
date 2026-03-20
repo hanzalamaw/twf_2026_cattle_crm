@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 
 const API = 'http://localhost:5000';
 
-const HIDDEN_TYPES = ['Cow', 'Goat'];
+const HIDDEN_TYPES_BOOKING = ['Cow', 'Goat'];
 
 const ORDER_COLUMNS = [
   { key: 'customer_id', label: 'Customer ID' },
@@ -118,6 +119,8 @@ export default function Transactions() {
   const searchInputRef = useRef(null);
 
   const token = localStorage.getItem('token');
+  const location = useLocation();
+  const isFarm = location.pathname.startsWith('/farm');
 
   // On Hand is only available when year === '2026'
   const onHandAvailable = yearFilter === '2026';
@@ -147,14 +150,16 @@ export default function Transactions() {
     }
   }, [token]);
 
-  const SUMMARY_TYPES = ['Hissa - Premium', 'Hissa - Standard', 'Hissa - Waqf', 'Goat (Hissa)'];
+  const BOOKING_SUMMARY_TYPES = ['Hissa - Premium', 'Hissa - Standard', 'Hissa - Waqf', 'Goat (Hissa)'];
+  const FARM_SUMMARY_TYPES = ['Cow', 'Goat'];
 
 const fetchOrdersSummary = useCallback(async () => {
   try {
     const params = new URLSearchParams();
     if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-    // Always filter summary to only the 4 valid order types
-    SUMMARY_TYPES.forEach((t) => params.append('order_type', t));
+    // Filter summary to the relevant order types
+    const summaryTypes = isFarm ? FARM_SUMMARY_TYPES : BOOKING_SUMMARY_TYPES;
+    summaryTypes.forEach((t) => params.append('order_type', t));
       const res = await fetch(`${API}/api/booking/orders/summary?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
@@ -163,7 +168,7 @@ const fetchOrdersSummary = useCallback(async () => {
     } catch (e) {
       console.error(e);
     }
-  }, [token, yearFilter, appliedTypes]);
+  }, [token, yearFilter, appliedTypes, isFarm]);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -178,10 +183,15 @@ const fetchOrdersSummary = useCallback(async () => {
       if (res.ok) {
         const data = await res.json();
         const list = Array.isArray(data.data) ? data.data : [];
-        // Filter out Cow and Goat rows
-        const filtered = list.filter((row) => !HIDDEN_TYPES.includes(row.type));
+        // Booking: remove Cow/Goat rows. Farm: show only Cow/Goat rows.
+        const filtered = list.filter((row) => {
+          if (isFarm) {
+            return ['Cow', 'Goat'].includes(row.type) && String(row.source ?? '').trim() === 'Farm';
+          }
+          return !HIDDEN_TYPES_BOOKING.includes(row.type);
+        });
         setOrders(filtered);
-        setTotalCount(typeof data.total === 'number' ? data.total : filtered.length);
+        setTotalCount(isFarm ? filtered.length : (typeof data.total === 'number' ? data.total : filtered.length));
       } else {
         setError('Failed to load orders');
       }
@@ -190,7 +200,7 @@ const fetchOrdersSummary = useCallback(async () => {
     } finally {
       setLoading(false);
     }
-  }, [token, yearFilter, appliedTypes, page]);
+  }, [token, yearFilter, appliedTypes, page, isFarm]);
 
   useEffect(() => { fetchFilters(); }, [fetchFilters]);
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
@@ -318,12 +328,12 @@ const fetchOrdersSummary = useCallback(async () => {
     );
   }
 
-  // Type options — never show Cow or Goat
+  // Booking: never show Cow/Goat. Farm: show only Cow/Goat.
   const typeOptions = (
     filters.order_types && filters.order_types.length > 0
       ? filters.order_types
       : [...new Set(orders.map((o) => o.type).filter(Boolean))].sort()
-  ).filter((t) => !HIDDEN_TYPES.includes(t));
+  ).filter((t) => (isFarm ? ['Cow', 'Goat'].includes(t) : !HIDDEN_TYPES_BOOKING.includes(t)));
   const s = summary || {};
   const totalExpensesBank = Number(s.totalExpensesBank) ?? 0;
   const totalExpensesCash = Number(s.totalExpensesCash) ?? 0;
@@ -349,7 +359,12 @@ const fetchOrdersSummary = useCallback(async () => {
     <>
       {/* ── Mobile-only styles ── */}
       <style>{`
+        @keyframes modalSlideInFromLeft {
+          from { transform: translateX(-18px); opacity: 0; }
+          to   { transform: translateX(0);    opacity: 1; }
+        }
         @media (max-width: 767px) {
+          .txn-root              { padding: 64px 12px 24px !important; overflow: auto !important; }
 
           /* Top bar — title left, leave right edge clear for parent hamburger */
           .txn-topbar           { flex-wrap: nowrap !important; gap: 8px !important; margin-bottom: 12px !important; align-items: center !important; }
@@ -357,7 +372,7 @@ const fetchOrdersSummary = useCallback(async () => {
           .txn-topbar-controls  { display: none !important; }
 
           /* Mobile filter/controls row */
-          .txn-mobile-row       { display: flex !important; }
+          .txn-mobile-row       { display: none !important; }
 
           /* Summary cards — compact side by side */
           .txn-cards            { gap: 8px !important; margin-bottom: 12px !important; }
@@ -380,9 +395,9 @@ const fetchOrdersSummary = useCallback(async () => {
           .txn-filter-chips     { display: none !important; }
           .txn-result-count     { display: none !important; }
 
-          /* Table hidden, cards shown */
-          .txn-table-wrap       { display: none !important; }
-          .txn-mobile-cards     { display: flex !important; }
+          /* Table shown, cards hidden */
+          .txn-table-wrap       { display: block !important; }
+          .txn-mobile-cards     { display: none !important; }
 
           /* Pagination */
           .txn-pagination       { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; }
@@ -395,6 +410,7 @@ const fetchOrdersSummary = useCallback(async () => {
             max-width: 100vw !important;
             max-height: 92dvh !important;
             padding: 20px 16px 36px !important;
+            animation: modalSlideInFromLeft .25s ease-out both !important;
           }
           .txn-modal-grid       { grid-template-columns: 1fr 1fr !important; gap: 8px 12px !important; font-size: 12px !important; }
           .txn-modal-input-grid { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
@@ -405,7 +421,7 @@ const fetchOrdersSummary = useCallback(async () => {
         }
       `}</style>
 
-    <div style={{ padding: '19px', fontFamily: "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
+    <div className="txn-root" style={{ padding: '19px', fontFamily: "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
 
       {/* ── Top bar ── */}
       <div className="txn-topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0, flexWrap: 'nowrap', gap: '10px' }}>

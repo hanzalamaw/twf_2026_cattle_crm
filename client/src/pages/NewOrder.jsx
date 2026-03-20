@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const API = 'http://localhost:5000';
 
 const ORDER_TYPES = ['Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];
+const FARM_ORDER_TYPES = ['Cow', 'Goat', 'Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];
 const ORDER_SOURCES = ['Tele-Sales', 'Social Media (Organic)', 'Social Media (Ads)', 'Previous Customer', 'Website'];
 const SLOTS = ['SLOT 1', 'SLOT 2', 'SLOT 3', 'SLOT GOAT', 'SLOT WAQF'];
 const REFERENCES = ['Ashhad Bhai', 'Ammar Bhai', 'Ashhal', 'Abuzar', 'Omer', 'Abdullah', 'Huzaifa', 'Hanzala', 'External'];
@@ -18,6 +19,9 @@ const EMPTY_FORM = {
 
 const NewOrder = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isFarm = location.pathname.startsWith('/farm');
+  const orderTypes = isFarm ? FARM_ORDER_TYPES : ORDER_TYPES;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -181,6 +185,11 @@ const NewOrder = () => {
   return (
     <>
       <style>{`
+        @keyframes modalSlideInFromLeft {
+          from { transform: translateX(-18px); opacity: 0; }
+          to   { transform: translateX(0);    opacity: 1; }
+        }
+
         @media (max-width: 767px) {
           .no-root  { padding: 14px 12px 32px !important; }
           .no-header-back { display: none !important; }
@@ -199,6 +208,7 @@ const NewOrder = () => {
           .no-alert { font-size: 12px !important; padding: 10px 12px !important; border-radius: 8px !important; }
           /* duplicate modal responsive */
           .no-dup-modal { padding: 16px !important; border-radius: 12px !important; }
+          .no-dup-modal { animation: modalSlideInFromLeft .25s ease-out both !important; }
           .no-dup-modal h3 { font-size: 13px !important; }
           .no-dup-modal p { font-size: 12px !important; }
           .no-dup-detail { font-size: 12px !important; }
@@ -302,7 +312,7 @@ const NewOrder = () => {
                 <select className="no-input" value={formData.order_type} onChange={handleOrderTypeChange} required style={inputStyle}
                   onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}>
                   <option value="" disabled>Select Order Type</option>
-                  {ORDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {orderTypes.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <div>

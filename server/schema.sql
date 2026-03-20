@@ -82,6 +82,22 @@ INSERT INTO `booking_expenses` (`expense_id`, `bank`, `cash`, `total`, `done_at`
 ('#E-0004-2026', 5000.00, 0.00, 5000.00, '2026-02-10 13:50:25', 'Social media ad campaign', 'admin', 1);
 
 -- --------------------------------------------------------
+--
+-- Table structure for table `farm_expenses`
+--
+
+CREATE TABLE `farm_expenses` (
+  `expense_id` varchar(50) NOT NULL,
+  `bank` decimal(10,2) DEFAULT 0.00,
+  `cash` decimal(10,2) DEFAULT 0.00,
+  `total` decimal(10,2) DEFAULT 0.00,
+  `done_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `description` text DEFAULT NULL,
+  `done_by` varchar(255) DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
 
 --
 -- Table structure for table `cancelled_orders`

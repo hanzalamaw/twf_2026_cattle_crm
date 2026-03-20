@@ -1,5 +1,6 @@
 // src/pages/Dashboard.jsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -8,11 +9,16 @@ import {
 
 const fmt = (n) => Number(n || 0).toLocaleString("en-PK");
 const DEV_PREVIEW_TOTAL_ORDERS = null;
-const FIXED_TYPES = [
+const FIXED_TYPES_BOOKING = [
   { key: "premium",  label: "Hissa - Premium"  },
   { key: "standard", label: "Hissa - Standard" },
   { key: "waqf",     label: "Hissa - Waqf"     },
   { key: "goat",     label: "Goat (Hissa)"     },
+];
+
+const FIXED_TYPES_FARM = [
+  { key: "cow",  label: "Cow" },
+  { key: "goat", label: "Goat" },
 ];
 
 /* ── Animated number hook ── */
@@ -90,6 +96,7 @@ const KPIBox = ({ title, value, icon, bubble, isMoney, isPercent, reveal = true,
 const SEGMENT_COLORS = {
   premium:  { fill: "#FF5722" }, standard: { fill: "#2196F3" },
   waqf:     { fill: "#4CAF50" }, goat:     { fill: "#FF9800" },
+  cow:      { fill: "#3B82F6" },
   remaining:{ fill: "#EAEAEA" },
 };
 
@@ -215,7 +222,7 @@ const TargetAchievement = ({ achieved, target, breakdown }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [activeKey, setActiveKey] = useState(null);
   return (
-    <div className="card animCard">
+    <div className="card animCard" style={{ paddingBottom: 24 }}>
       <div className="cardTitleBig cardTitleClickable" onClick={() => setCollapsed(v => !v)}>
         TARGET ACHIEVEMENT <span className="collapseChevron">{collapsed ? "▶" : "▼"}</span>
       </div>
@@ -258,7 +265,7 @@ const DayWiseSummary = ({ days }) => {
       {!collapsed && (
         <>
           {/* Desktop table */}
-          <div className="dayWiseTableWrap deskOnly">
+          <div className="dayWiseTableWrap">
             <table className="tblDayWise">
               <thead>
                 <tr>
@@ -300,35 +307,6 @@ const DayWiseSummary = ({ days }) => {
               </tbody>
             </table>
           </div>
-
-          {/* Mobile stacked cards */}
-          <div className="mobOnly">
-            {dayList.map((d) => (
-              <div key={d.key} className="mDayCard">
-                <div className="mDayCardTitle">{d.title}</div>
-                {rowLabels.map((label) => {
-                  const row = (d.data || []).find((r) => r.label === label);
-                  const accent = rowColors[label] || "#FF5722";
-                  return (
-                    <div key={label} className="mDayRow">
-                      <div className="mDayRowLabel" style={{ borderLeftColor: accent }}>{label}</div>
-                      <div className="mDayRowGrid">
-                        {["premium","standard","waqf","goat","total"].map((k) => (
-                          <div key={k} className="mDayCell">
-                            <div className="mDayCellKey">{k.charAt(0).toUpperCase() + k.slice(1)}</div>
-                            <div className="mDayCellVal" style={{ color: k === "total" ? accent : "#111827" }}>
-                              {row ? renderCell(row[k]) : "—"}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-            {dayList.length === 0 && <div className="mEmpty">No data available</div>}
-          </div>
         </>
       )}
     </div>
@@ -367,7 +345,7 @@ const ReferenceWiseSummary = ({ references }) => {
       {!collapsed && (
         <>
           {/* Desktop table */}
-          <div className="tableWrapRef deskOnly">
+          <div className="tableWrapRef">
             <table className="tblRefOld">
               <thead>
                 <tr>
@@ -393,34 +371,6 @@ const ReferenceWiseSummary = ({ references }) => {
                 {sorted.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "#9ca3af", padding: "16px" }}>No results found</td></tr>}
               </tbody>
             </table>
-          </div>
-
-          {/* Mobile stacked cards */}
-          <div className="mobOnly mRefList">
-            {sorted.map((r) => (
-              <div key={r.name} className="mRefCard animPop">
-                <div className="mRefName">{r.name}</div>
-                <div className="mRefGrid">
-                  <div className="mRefCell">
-                    <div className="mRefCellLabel">Leads Gen.</div>
-                    <div className="mRefCellVal"><AnimatedNumber value={Number(r.leadsGenerated || 0)} duration={600} format={(n) => fmt(Math.round(n))} /></div>
-                  </div>
-                  <div className="mRefCell">
-                    <div className="mRefCellLabel">Leads Conv.</div>
-                    <div className="mRefCellVal"><AnimatedNumber value={Number(r.leadsConverted || 0)} duration={600} format={(n) => fmt(Math.round(n))} /></div>
-                  </div>
-                  <div className="mRefCell">
-                    <div className="mRefCellLabel">Conv. Rate</div>
-                    <div className="mRefCellVal" style={{ color: "#FF5722" }}><AnimatedNumber value={Number(r.conversionRate || 0)} duration={600} format={(n) => `${Math.round(n)}%`} /></div>
-                  </div>
-                  <div className="mRefCell mRefCellWide">
-                    <div className="mRefCellLabel">Total Revenue</div>
-                    <div className="mRefCellVal">Rs. <AnimatedNumber value={Number(r.totalRevenueGenerated || 0)} duration={650} format={(n) => fmt(Math.round(n))} /></div>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {sorted.length === 0 && <div className="mEmpty">No results found</div>}
           </div>
         </>
       )}
@@ -534,6 +484,8 @@ const SalesOverviewChart = ({ series, reveal }) => {
 ════════════════════════════════════════ */
 const Dashboard = () => {
   const { user } = useAuth();
+  const location = useLocation();
+  const isFarm = location.pathname.startsWith("/farm");
   const [year, setYear] = useState("2026");
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState(null);
@@ -543,8 +495,6 @@ const Dashboard = () => {
   const [references, setReferences] = useState([]);
   const [salesOverview, setSalesOverview] = useState([]);
   const [kpiValuesVisible, setKpiValuesVisible] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastRefreshed, setLastRefreshed] = useState(null);
   const token = useMemo(() => localStorage.getItem("token"), []);
 
   const fetchAll = useCallback(async (opts = {}) => {
@@ -553,40 +503,46 @@ const Dashboard = () => {
       if (!silent) setLoading(true);
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const y = encodeURIComponent(year);
+      const base = isFarm ? "/api/farm/dashboard" : "/api/dashboard";
+      const dayPromise = isFarm
+        ? Promise.resolve({ json: async () => ({ days: [] }) })
+        : fetch(`${base}/day-wise?year=${y}`, { headers });
+
       const [k, t, d, src, r, sales] = await Promise.all([
-        fetch(`/api/dashboard/kpis?year=${y}`, { headers }),
-        fetch(`/api/dashboard/target-achievement?year=${y}`, { headers }),
-        fetch(`/api/dashboard/day-wise?year=${y}`, { headers }),
-        fetch(`/api/dashboard/source-wise?year=${y}`, { headers }),
-        fetch(`/api/dashboard/reference-wise?year=${y}`, { headers }),
-        fetch(`/api/dashboard/sales-overview?year=${y}`, { headers }),
+        fetch(`${base}/kpis?year=${y}`, { headers }),
+        fetch(`${base}/target-achievement?year=${y}`, { headers }),
+        dayPromise,
+        fetch(`${base}/source-wise?year=${y}`, { headers }),
+        fetch(`${base}/reference-wise?year=${y}`, { headers }),
+        fetch(`${base}/sales-overview?year=${y}`, { headers }),
       ]);
-      const [kj, tj, dj, srcj, rj, salesj] = await Promise.all([k.json(), t.json(), d.json(), src.json(), r.json(), sales.json()]);
+      const [kj, tj, dj, srcj, rj, salesj] = await Promise.all([
+        k.json(),
+        t.json(),
+        d.json(),
+        src.json(),
+        r.json(),
+        sales.json(),
+      ]);
       setKpis(kj.kpis || null); setTargetData(tj || null);
       setDays(dj.days || []); setSources(srcj.sources || []);
       setReferences(rj.references || []); setSalesOverview(salesj.series || []);
-      setLastRefreshed(new Date());
     } catch (e) {
       console.error(e);
     } finally {
-      if (!silent) { setLoading(false); setRefreshing(false); }
+      if (!silent) setLoading(false);
     }
-  }, [year, token]);
+  }, [year, token, isFarm]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
-  useEffect(() => {
-    const id = setInterval(() => fetchAll({ silent: true }), 2 * 60 * 1000);
-    return () => clearInterval(id);
-  }, [fetchAll]);
-
-  const handleRefresh = () => { setRefreshing(true); fetchAll(); };
 
   const achievedReal = Number(targetData?.target?.achievedTotal || 0);
   const achievedForDonut = Number.isFinite(Number(DEV_PREVIEW_TOTAL_ORDERS)) && DEV_PREVIEW_TOTAL_ORDERS !== null
     ? Number(DEV_PREVIEW_TOTAL_ORDERS) : achievedReal;
   const targetTotal = year === "all" ? 3500 : Number(targetData?.target?.targetTotal || 2000);
   const apiMap = new Map((Array.isArray(targetData?.breakdown) ? targetData.breakdown : []).map((b) => [String(b.key), b]));
-  const fixedBreakdown = FIXED_TYPES.map((t) => {
+  const fixedTypes = isFarm ? FIXED_TYPES_FARM : FIXED_TYPES_BOOKING;
+  const fixedBreakdown = fixedTypes.map((t) => {
     const found = apiMap.get(t.key);
     const value = Number(found?.value || 0);
     return { key: t.key, label: t.label, value, percentage: achievedReal > 0 ? (value / achievedReal) * 100 : 0 };
@@ -600,6 +556,7 @@ const Dashboard = () => {
 
         .page { font-family:'Poppins','Inter',sans-serif; padding:12px 16px; display:flex; flex-direction:column; gap:10px; }
         .page * { font-family:inherit; }
+
 
         /* animations */
         .animCard  { animation:cardIn  .35s ease-out both; }
@@ -738,8 +695,8 @@ const Dashboard = () => {
         .sourceWiseCard { background:#fff; }
         .sourceCardHeader { display:flex; justify-content:center; align-items:center; margin-bottom:12px; }
         .sourceCardHeader .cardTitle { margin-bottom:0; }
-        .sourceGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:10px; }
-        .sourceCard { background:#fff; border-radius:8px; padding:8px 12px; display:flex; align-items:center; gap:8px; border:1px solid #e8e8e8; min-height:40px; box-shadow:0 1px 3px rgba(0,0,0,0.04); transition:transform .15s,box-shadow .15s; }
+        .sourceGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:10px; width:100%; min-width:0; }
+        .sourceCard { background:#fff; border-radius:8px; padding:8px 12px; display:flex; align-items:center; gap:8px; border:1px solid #e8e8e8; min-height:40px; min-width:0; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.04); transition:transform .15s,box-shadow .15s; }
         .sourceCardInteractive:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,0.08); }
         .sourceCardEmpty { justify-content:center; color:#6b7280; font-size:11px; }
         .sourceIcon { width:24px; height:24px; border-radius:5px; background:#7c3aed; color:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:10px; }
@@ -772,7 +729,8 @@ const Dashboard = () => {
           .deskOnly { display:none !important; }
           .mobOnly  { display:block !important; }
 
-          .page { padding:10px 10px; gap:8px; }
+          /* top padding avoids the mobile hamburger/menu overlay */
+          .page { padding:64px 10px 28px; gap:8px; }
 
           /* header */
           .header { flex-direction:column; align-items:flex-start; gap:8px; }
@@ -798,8 +756,8 @@ const Dashboard = () => {
           .donutWrap { align-items:center; }
 
           /* source — 2 col on mobile */
-          .sourceGrid { grid-template-columns:1fr 1fr; gap:6px; }
-          .sourceCard { padding:7px 8px; gap:6px; }
+          .sourceGrid { grid-template-columns:1fr 1fr; gap:6px; overflow:hidden; }
+          .sourceCard { padding:7px 8px; gap:6px; min-width:0; overflow:hidden; }
           .sourceName { font-size:10px; }
           .sourceCount { font-size:11px; }
 
@@ -867,19 +825,10 @@ const Dashboard = () => {
       {/* Header */}
       <div className="header">
         <div>
-          <h1 className="hTitle">Dashboard</h1>
+          <h1 className="hTitle">{isFarm ? "Farm Dashboard" : "Dashboard"}</h1>
           <p className="hSub">Welcome, {user?.username || "Manager"}</p>
         </div>
         <div className="headerRight">
-          {lastRefreshed && (
-            <span className="lastRefreshed">
-              Updated {lastRefreshed.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit" })}
-            </span>
-          )}
-          <button type="button" className="ctrlBtn" onClick={handleRefresh} disabled={refreshing || loading}>
-            <span className={`ctrlBtnIcon ${refreshing ? "spinning" : ""}`}>↻</span>
-            Refresh
-          </button>
           <select className="ctrlSelect" value={year} onChange={(e) => setYear(e.target.value)}>
             <option value="all">All Year</option>
             <option value="2026">2026</option>
@@ -909,7 +858,7 @@ const Dashboard = () => {
         <div className="card animCard" style={{ textAlign: "center", color: "#6b7280" }}>Loading dashboard...</div>
       ) : (<>
         <TargetAchievement achieved={achievedForDonut} target={targetTotal} breakdown={fixedBreakdown} />
-        <DayWiseSummary days={days} />
+        {!isFarm && <DayWiseSummary days={days} />}
         <SourceWiseSummary sources={sources} />
         <ReferenceWiseSummary references={references} />
         <SalesOverviewChart series={salesOverview} reveal={kpiValuesVisible} />

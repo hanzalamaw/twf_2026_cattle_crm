@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 
 const API = 'http://localhost:5000';
 const PAGE_SIZE = 50;
-const HIDDEN_TYPES = ['Cow', 'Goat'];
+const HIDDEN_TYPES_BOOKING = ['Cow', 'Goat'];
 
 const COLUMNS = [
   { key: 'customer_id',    label: 'Customer ID'    },
@@ -32,13 +33,6 @@ const COLUMNS = [
 ];
 
 const AMOUNT_KEYS = ['total_amount', 'bank', 'cash', 'received', 'pending'];
-
-const TYPE_COLORS = {
-  'Hissa - Premium':  { bg: '#fff4f0', color: '#FF5722' },
-  'Hissa - Standard': { bg: '#e8f4ff', color: '#2196F3' },
-  'Hissa - Waqf':     { bg: '#edfbee', color: '#4CAF50' },
-  'Goat (Hissa)':     { bg: '#fff8e8', color: '#FF9800' },
-};
 
 function formatAmount(val) {
   if (val == null || val === '') return '—';
@@ -138,7 +132,11 @@ export default function OrderManagement() {
   const editDuplicateCheckTimeoutRef = useRef(null);
 
   const token = localStorage.getItem('token');
-  const visibleOrderTypes = (filters.order_types || []).filter((t) => !HIDDEN_TYPES.includes(t));
+  const location = useLocation();
+  const isFarm = location.pathname.startsWith('/farm');
+  const visibleOrderTypes = (filters.order_types || []).filter((t) => (
+    isFarm ? ['Cow', 'Goat'].includes(t) : !HIDDEN_TYPES_BOOKING.includes(t)
+  ));
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
   /* ── fetch ── */
@@ -162,6 +160,7 @@ export default function OrderManagement() {
       if (day)                params.set('day',         day);
       if (reference)          params.set('reference',   reference);
       if (cowNumber.trim())   params.set('cow_number',  cowNumber.trim());
+      if (isFarm)             params.set('source',      'Farm');
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page',  String(page));
       params.set('limit', String(PAGE_SIZE));
@@ -170,12 +169,18 @@ export default function OrderManagement() {
         const json  = await res.json();
         const data  = Array.isArray(json) ? json : json.data;
         const total = typeof json.total === 'number' ? json.total : (data?.length ?? 0);
-        const filtered = (Array.isArray(data) ? data : []).filter((r) => !HIDDEN_TYPES.includes(r.type));
-        setOrders(filtered); setTotalCount(total);
+        const filtered = (Array.isArray(data) ? data : []).filter((r) => {
+          if (isFarm) {
+            return ['Cow', 'Goat'].includes(r.type) && String(r.source ?? '').trim() === 'Farm';
+          }
+          return !HIDDEN_TYPES_BOOKING.includes(r.type);
+        });
+        setOrders(filtered);
+        setTotalCount(isFarm ? filtered.length : total);
       } else { setError('Failed to load orders'); }
     } catch (e) { setError('Failed to load orders'); }
     finally { setLoading(false); }
-  }, [token, search, slot, orderType, day, reference, cowNumber, yearFilter, page]);
+  }, [token, search, slot, orderType, day, reference, cowNumber, yearFilter, page, isFarm]);
 
   useEffect(() => { fetchFilters(); }, [fetchFilters]);
   useEffect(() => { setPage(1); }, [search, slot, orderType, day, reference, cowNumber, yearFilter]);
@@ -330,15 +335,21 @@ export default function OrderManagement() {
   return (
     <>
       <style>{`
+        @keyframes modalSlideInFromLeft {
+          from { transform: translateX(-18px); opacity: 0; }
+          to   { transform: translateX(0);    opacity: 1; }
+        }
+
         @media (max-width: 767px) {
-          .om-root            { padding: 12px 12px 24px !important; overflow: auto !important; }
+          /* top padding avoids the mobile hamburger/menu overlay */
+          .om-root            { padding: 64px 12px 24px !important; overflow: auto !important; }
           .om-header          { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; margin-bottom: 12px !important; }
           .om-header h2       { font-size: 16px !important; }
           .om-filter-desktop  { display: none !important; }
           .om-filter-toggle   { display: flex !important; }
           .om-filter-mobile   { display: block !important; }
-          .om-table-wrap      { display: none !important; }
-          .om-cards           { display: flex !important; }
+          .om-table-wrap      { display: block !important; }
+          .om-cards           { display: none !important; }
           .om-pagination      { flex-direction: column !important; align-items: flex-start !important; }
 
           /* ── Edit modal mobile overrides ── */
@@ -349,7 +360,9 @@ export default function OrderManagement() {
             max-width: 100vw !important;
             max-height: 92dvh !important;
             padding: 20px 16px 36px !important;
+            animation: modalSlideInFromLeft .25s ease-out both !important;
           }
+          .om-modal-box       { animation: modalSlideInFromLeft .25s ease-out both !important; }
           .om-edit-modal-box h3       { font-size: 15px !important; margin-bottom: 14px !important; }
           .om-edit-grid               { grid-template-columns: 1fr 1fr !important; gap: 10px 12px !important; }
           .om-edit-field-label        { font-size: 11px !important; margin-bottom: 3px !important; }
@@ -498,82 +511,6 @@ export default function OrderManagement() {
               </tbody>
             </table>
           )}
-        </div>
-
-        {/* ── Mobile card list ── */}
-        <div className="om-cards" style={{ display: 'none', flexDirection: 'column', gap: '10px', flex: 1, overflowY: 'auto' }}>
-          {loading ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>Loading orders…</div>
-          ) : orders.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>No orders found.</div>
-          ) : orders.map((row) => {
-            const tc  = TYPE_COLORS[row.type] || { bg: '#f3f4f6', color: '#374151' };
-            const sel = selectedIds.has(row.order_id);
-            const isPending = row.payment_status === 'Pending';
-            return (
-              <div key={row.order_id} style={{ background: '#fff', borderRadius: '12px', border: `1.5px solid ${sel ? '#FF5722' : '#e5e7eb'}`, padding: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-
-                {/* Top row */}
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '10px', gap: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input type="checkbox" checked={sel} onChange={() => toggleSelect(row.order_id)}
-                      style={{ cursor: 'pointer', accentColor: '#FF5722', width: '15px', height: '15px', flexShrink: 0, marginTop: '2px' }} />
-                    <div>
-                      <div style={{ fontWeight: '700', fontSize: '13px', color: '#111827', lineHeight: 1.2 }}>{row.booking_name || '—'}</div>
-                      <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>{row.order_id}</div>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
-                    <span style={{ background: tc.bg, color: tc.color, fontSize: '10px', fontWeight: '600', padding: '3px 8px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{row.type || '—'}</span>
-                    <StatusPill status={row.payment_status} />
-                  </div>
-                </div>
-
-                {/* Info grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px 16px', marginBottom: '10px' }}>
-                  {[
-                    { label: 'Phone',       val: row.phone_number },
-                    { label: 'Shareholder', val: row.shareholder_name },
-                    { label: 'Cow / Hissa', val: `${row.cow || '—'} / ${row.hissa || '—'}` },
-                    { label: 'Slot',        val: row.slot },
-                    { label: 'Day',         val: row.day },
-                    { label: 'Date',        val: formatDate(row.booking_date) },
-                    { label: 'Total',       val: formatAmount(row.total_amount) },
-                    { label: 'Received',    val: formatAmount(row.received) },
-                    { label: 'Pending',     val: formatAmount(row.pending) },
-                    { label: 'Reference',   val: row.reference },
-                  ].map(({ label, val }) => (
-                    <div key={label}>
-                      <div style={{ fontSize: '9px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: '1px' }}>{label}</div>
-                      <div style={{ fontSize: '12px', fontWeight: '500', color: label === 'Pending' && isPending ? '#C30730' : '#111827' }}>{val || '—'}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {row.address && (
-                  <div style={{ fontSize: '11px', color: '#6b7280', paddingTop: '8px', borderTop: '1px solid #f3f4f6', marginBottom: '10px' }}>
-                    📍 {row.address}
-                  </div>
-                )}
-
-                {/* Card actions */}
-                <div style={{ display: 'flex', gap: '8px', paddingTop: '10px', borderTop: '1px solid #f3f4f6' }}>
-                  <button type="button" onClick={() => handleEdit(row)}
-                    style={{ flex: 1, padding: '9px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '12px', fontWeight: '600', color: '#374151' }}>
-                    <img src="/icons/edit.png" alt="" style={{ width: '14px', height: '14px' }} /> Edit
-                  </button>
-                  <button type="button" onClick={() => handleInvoice(row.customer_id)}
-                    style={{ flex: 1, padding: '9px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '12px', fontWeight: '600', color: '#166534' }}>
-                    <img src="/icons/invoice.png" alt="" style={{ width: '16px', height: '16px' }} /> Invoice
-                  </button>
-                  <button type="button" onClick={() => setCancelConfirm(row)}
-                    style={{ padding: '9px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                    <img src="/icons/delete.png" alt="Cancel" style={{ width: '16px', height: '16px', display: 'block' }} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
         </div>
 
         {/* ── Pagination ── */}

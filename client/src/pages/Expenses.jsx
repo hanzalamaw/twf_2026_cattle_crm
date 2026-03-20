@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as XLSX from 'xlsx';
+import { useLocation } from 'react-router-dom';
 
 const API = 'http://localhost:5000';
 
@@ -59,6 +60,9 @@ export default function Expenses() {
   const PAGE_SIZE = 50;
   const { authFetch } = useAuth();
   const token = localStorage.getItem('token');
+  const location = useLocation();
+  const isFarm = location.pathname.startsWith('/farm');
+  const expenseBasePath = isFarm ? `${API}/api/farm/expenses` : `${API}/api/booking/expenses`;
 
   const toggleSelect = (expenseId) => {
     setSelectedIds((prev) => {
@@ -76,7 +80,7 @@ export default function Expenses() {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const res = await authFetch(`${API}/api/booking/expenses/summary`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${expenseBasePath}/summary`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
         setSummary(data);
@@ -84,13 +88,13 @@ export default function Expenses() {
     } catch (e) {
       console.error(e);
     }
-  }, [authFetch, token]);
+  }, [authFetch, token, expenseBasePath]);
 
   const fetchExpenses = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await authFetch(`${API}/api/booking/expenses?page=${page}&limit=${PAGE_SIZE}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${expenseBasePath}?page=${page}&limit=${PAGE_SIZE}`, { headers: { Authorization: `Bearer ${token}` } });
       let data;
       try { data = await res.json(); } catch (_) { data = {}; }
       if (res.ok) {
@@ -106,7 +110,7 @@ export default function Expenses() {
     } finally {
       setLoading(false);
     }
-  }, [authFetch, token, page]);
+  }, [authFetch, token, page, expenseBasePath]);
 
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
   useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
@@ -115,7 +119,7 @@ export default function Expenses() {
     setAddBank(''); setAddCash(''); setAddDescription('');
     setAddDate(''); setAddDoneBy(''); setAddErrors({});
     try {
-      const res = await authFetch(`${API}/api/booking/expenses/next-id`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${expenseBasePath}/next-id`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => ({}));
       setNextExpenseId(res.ok ? data.expense_id : '');
     } catch (e) {
@@ -155,7 +159,7 @@ export default function Expenses() {
     if (bank === 0 && cash === 0) return;
     setSubmitting(true);
     try {
-      const res = await authFetch(`${API}/api/booking/expenses/${encodeURIComponent(editExpense.expense_id)}`, {
+      const res = await authFetch(`${expenseBasePath}/${encodeURIComponent(editExpense.expense_id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ bank, cash, description: editDescription.trim(), done_at: editDate || null, done_by: editDoneBy.trim() || null }),
@@ -173,7 +177,7 @@ export default function Expenses() {
   const handleDelete = async (row) => {
     setSubmitting(true);
     try {
-      const res = await authFetch(`${API}/api/booking/expenses/${encodeURIComponent(row.expense_id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${expenseBasePath}/${encodeURIComponent(row.expense_id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setDeleteConfirmExpense(null);
@@ -208,7 +212,7 @@ export default function Expenses() {
     if (bank === 0 && cash === 0) return;
     setSubmitting(true);
     try {
-      const res = await authFetch(`${API}/api/booking/expenses`, {
+      const res = await authFetch(`${expenseBasePath}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ bank, cash, description: addDescription.trim(), done_at: addDate || null, done_by: addDoneBy.trim() || null }),
@@ -229,7 +233,7 @@ export default function Expenses() {
     let pageNum = 1;
     let total = 0;
     do {
-      const res = await authFetch(`${API}/api/booking/expenses?page=${pageNum}&limit=${limit}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${expenseBasePath}?page=${pageNum}&limit=${limit}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) { setError('Failed to load expenses for export'); return; }
       const data = await res.json();
       total = typeof data.total === 'number' ? data.total : 0;
@@ -256,7 +260,7 @@ export default function Expenses() {
     XLSX.utils.book_append_sheet(wb, ws, 'Expenses');
     XLSX.writeFile(wb, `expenses-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
     try {
-      await authFetch(`${API}/api/booking/expenses/export-audit`, {
+      await authFetch(`${expenseBasePath}/export-audit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ count: toExport.length, expense_ids: exportedIds }),
@@ -269,7 +273,7 @@ export default function Expenses() {
 
   if (loading && expenses.length === 0) {
     return (
-      <div style={{ padding: '19px', fontFamily: "'Poppins', 'Inter', sans-serif" }}>
+      <div className="exp-root" style={{ padding: '19px', fontFamily: "'Poppins', 'Inter', sans-serif" }}>
         <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#333', marginBottom: '16px' }}>Expenses</h2>
         <div style={{ padding: '32px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading...</div>
       </div>
@@ -279,7 +283,13 @@ export default function Expenses() {
   return (
     <>
       <style>{`
+        @keyframes modalSlideInFromLeft {
+          from { transform: translateX(-18px); opacity: 0; }
+          to   { transform: translateX(0);    opacity: 1; }
+        }
+
         @media (max-width: 767px) {
+          .exp-root                { padding: 64px 12px 24px !important; overflow: auto !important; }
 
           /* Top bar */
           .exp-topbar               { margin-bottom: 12px !important; }
@@ -302,9 +312,9 @@ export default function Expenses() {
           .exp-add-btn-row          { margin-top: 8px !important; }
           .exp-mobile-showhide      { display: flex !important; }
 
-          /* Table — hide, show cards */
-          .exp-table-wrap           { display: none !important; }
-          .exp-mobile-cards         { display: flex !important; }
+          /* Table — show on mobile, hide cards */
+          .exp-table-wrap           { display: block !important; }
+          .exp-mobile-cards         { display: none !important; }
 
           /* Pagination */
           .exp-pagination           { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; }
@@ -318,6 +328,7 @@ export default function Expenses() {
             max-height: 92dvh !important;
             padding: 20px 16px 36px !important;
             overflow-y: auto !important;
+            animation: modalSlideInFromLeft .25s ease-out both !important;
           }
           .exp-modal-box h3         { font-size: 15px !important; }
           .exp-modal-grid           { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
@@ -333,6 +344,7 @@ export default function Expenses() {
             width: 100vw !important;
             max-width: 100vw !important;
             padding: 20px 16px 36px !important;
+            animation: modalSlideInFromLeft .25s ease-out both !important;
           }
           .exp-delete-modal-box h3  { font-size: 15px !important; }
           .exp-delete-modal-box p   { font-size: 13px !important; }
@@ -341,7 +353,7 @@ export default function Expenses() {
         }
       `}</style>
 
-    <div style={{ padding: '19px', fontFamily: "'Poppins', 'Inter', sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
+    <div className="exp-root" style={{ padding: '19px', fontFamily: "'Poppins', 'Inter', sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
 
       {/* ── Top bar ── */}
       <div className="exp-topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0, flexWrap: 'wrap', gap: '10px' }}>
@@ -455,60 +467,6 @@ export default function Expenses() {
             </table>
           </div>
         </div>
-      </div>
-
-      {/* ── Mobile expense cards (hidden on desktop) ── */}
-      <div className="exp-mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: '10px', flex: 1, overflowY: 'auto' }}>
-        {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>Loading…</div>
-        ) : expenses.length === 0 ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>No expenses.</div>
-        ) : expenses.map((row) => (
-          <div
-            key={row.expense_id}
-            onClick={() => openEditModal(row)}
-            style={{ background: '#fff', borderRadius: '12px', border: '1.5px solid #e5e7eb', padding: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
-          >
-            {/* Card top row */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '10px', gap: '8px' }}>
-              <div>
-                <div style={{ fontWeight: '700', fontSize: '13px', color: '#111827', lineHeight: 1.2 }}>{row.description || '—'}</div>
-                <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>{row.expense_id}</div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
-                <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>{formatAmount(row.total)}</span>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setDeleteConfirmExpense(row); }}
-                  disabled={submitting}
-                  style={{ padding: '4px', cursor: submitting ? 'not-allowed' : 'pointer', background: 'none', border: 'none', opacity: submitting ? 0.5 : 1 }}
-                >
-                  <img src="/icons/delete.png" alt="Delete" style={{ width: '18px', height: '18px', display: 'block' }} />
-                </button>
-              </div>
-            </div>
-
-            {/* Info grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px 16px' }}>
-              {[
-                { label: 'Date',       val: formatDate(row.done_at) },
-                { label: 'Done By',    val: row.done_by },
-                { label: 'Bank',       val: formatAmount(row.bank) },
-                { label: 'Cash',       val: formatAmount(row.cash) },
-                { label: 'Created By', val: row.created_by },
-              ].map(({ label, val }) => (
-                <div key={label}>
-                  <div style={{ fontSize: '9px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: '1px' }}>{label}</div>
-                  <div style={{ fontSize: '12px', fontWeight: '500', color: '#111827' }}>{val || '—'}</div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #f3f4f6', fontSize: '11px', color: '#6b7280', textAlign: 'right' }}>
-              Tap to edit →
-            </div>
-          </div>
-        ))}
       </div>
 
       {/* ── Pagination ── */}

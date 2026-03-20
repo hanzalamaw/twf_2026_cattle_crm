@@ -10,7 +10,6 @@ import ResetPassword from './pages/ResetPassword';
 import AuthCallback from './pages/AuthCallback';
 import Control from './pages/Control';
 import Operations from './pages/Operations';
-import Farm from './pages/Farm';
 import Procurement from './pages/Procurement';
 import Accounting from './pages/Accounting';
 import PerformanceAdmin from './pages/PerformanceAdmin';
@@ -89,6 +88,13 @@ const ROUTE_TITLES = {
   '/bookings/expenses': 'Expenses',
   '/operations': 'Operations Management',
   '/farm': 'Farm Management',
+  '/farm/dashboard': 'Farm Dashboard',
+  '/farm/new-query': 'New Query',
+  '/farm/new-order': 'New Order',
+  '/farm/query-management': 'Query Management',
+  '/farm/orders': 'Order Management',
+  '/farm/transactions': 'Transactions',
+  '/farm/expenses': 'Expenses',
   '/procurement': 'Procurement Management',
   '/accounting': 'Accounting & Finance',
   '/performance': 'Performance Management',
@@ -211,7 +217,14 @@ function App() {
           </Route>
 
           <Route path="/farm" element={<ProtectedRoute><RequirePermission permission="farm_management"><MainLayout systemName="Farm Management" /></RequirePermission></ProtectedRoute>}>
-            <Route index element={<Farm />} />
+            <Route index element={<Navigate to="/farm/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="new-query" element={<NewQuery />} />
+            <Route path="new-order" element={<NewOrder />} />
+            <Route path="query-management" element={<QueryManagement />} />
+            <Route path="orders" element={<OrderManagement />} />
+            <Route path="transactions" element={<Transactions />} />
+            <Route path="expenses" element={<Expenses />} />
           </Route>
 
           <Route path="/procurement" element={<ProtectedRoute><RequirePermission permission="procurement_management"><MainLayout systemName="Procurement Management" /></RequirePermission></ProtectedRoute>}>

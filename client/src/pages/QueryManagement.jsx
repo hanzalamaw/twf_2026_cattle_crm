@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 
 const API = 'http://localhost:5000';
 const PAGE_SIZE = 50;
-const HIDDEN_TYPES = ['Cow', 'Goat'];
+const HIDDEN_TYPES_BOOKING = ['Cow', 'Goat'];
 
 const COLUMNS = [
   { key: 'lead_id',          label: 'Lead ID'          },
@@ -26,13 +27,6 @@ const COLUMNS = [
 
 const AMOUNT_KEYS = ['total_amount'];
 const SLOTS = ['SLOT 1', 'SLOT 2', 'SLOT 3', 'SLOT GOAT', 'SLOT WAQF'];
-
-const TYPE_COLORS = {
-  'Hissa - Premium':  { bg: '#fff4f0', color: '#FF5722' },
-  'Hissa - Standard': { bg: '#e8f4ff', color: '#2196F3' },
-  'Hissa - Waqf':     { bg: '#edfbee', color: '#4CAF50' },
-  'Goat (Hissa)':     { bg: '#fff8e8', color: '#FF9800' },
-};
 
 function formatAmount(val) {
   if (val == null || val === '') return '—';
@@ -86,7 +80,9 @@ export default function QueryManagement() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const token = localStorage.getItem('token');
-  const visibleOrderTypes = (filters.order_types || []).filter((t) => !HIDDEN_TYPES.includes(t));
+  const location = useLocation();
+  const isFarm = location.pathname.startsWith('/farm');
+  const visibleOrderTypes = (filters.order_types || []).filter((t) => (isFarm ? true : !HIDDEN_TYPES_BOOKING.includes(t)));
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
   const fetchFilters = useCallback(async () => {
@@ -108,6 +104,7 @@ export default function QueryManagement() {
       if (day) params.set('day', day);
       if (reference) params.set('reference', reference);
       if (area) params.set('area', area);
+      if (isFarm) params.set('source', 'Farm');
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
@@ -116,12 +113,16 @@ export default function QueryManagement() {
         const json = await res.json();
         const data = Array.isArray(json) ? json : json.data;
         const total = typeof json.total === 'number' ? json.total : (data?.length ?? 0);
-        const filtered = (Array.isArray(data) ? data : []).filter((r) => !HIDDEN_TYPES.includes(r.type));
-        setLeads(filtered); setTotalCount(total);
+        const filtered = (Array.isArray(data) ? data : []).filter((r) =>
+          (!isFarm ? !HIDDEN_TYPES_BOOKING.includes(r.type) : true) &&
+          (!isFarm || String(r.source ?? '').trim() === 'Farm')
+        );
+        setLeads(filtered);
+        setTotalCount(isFarm ? filtered.length : (typeof json.total === 'number' ? total : filtered.length));
       } else { setError('Failed to load queries'); }
     } catch (e) { setError('Failed to load queries'); }
     finally { setLoading(false); }
-  }, [token, search, orderType, day, reference, area, yearFilter, page]);
+  }, [token, search, orderType, day, reference, area, yearFilter, page, isFarm]);
 
   useEffect(() => { fetchFilters(); }, [fetchFilters]);
   useEffect(() => { setPage(1); }, [search, orderType, day, reference, area, yearFilter]);
@@ -302,7 +303,10 @@ export default function QueryManagement() {
       if (!res.ok) { setError('Failed to load queries for export'); return; }
       const json = await res.json(); const data = Array.isArray(json) ? json : json.data;
       total = typeof json.total === 'number' ? json.total : 0;
-      const chunk = (Array.isArray(data) ? data : []).filter((r) => !HIDDEN_TYPES.includes(r.type));
+      const chunk = (Array.isArray(data) ? data : []).filter((r) =>
+        (!isFarm ? !HIDDEN_TYPES_BOOKING.includes(r.type) : true) &&
+        (!isFarm || String(r.source ?? '').trim() === 'Farm')
+      );
       allLeads = allLeads.concat(chunk);
       if (chunk.length < limit || allLeads.length >= total) break;
       pageNum++;
@@ -341,17 +345,23 @@ export default function QueryManagement() {
   return (
     <>
       <style>{`
+        @keyframes modalSlideInFromLeft {
+          from { transform: translateX(-18px); opacity: 0; }
+          to   { transform: translateX(0);    opacity: 1; }
+        }
+
         @media (max-width: 767px) {
-          .qm-root               { padding: 12px 12px 24px !important; overflow: auto !important; }
+          /* top padding avoids the mobile hamburger/menu overlay */
+          .qm-root               { padding: 64px 12px 24px !important; overflow: auto !important; }
           .qm-header             { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; margin-bottom: 12px !important; }
           .qm-header h2          { font-size: 16px !important; }
           .qm-filter-desktop     { display: none !important; }
           .qm-filter-toggle-row  { display: flex !important; }
           .qm-filter-mobile-panel{ display: block !important; }
-          .qm-table-wrap         { display: none !important; }
-          .qm-cards              { display: flex !important; }
+          .qm-table-wrap         { display: block !important; }
+          .qm-cards              { display: none !important; }
           .qm-pagination         { flex-direction: column !important; align-items: flex-start !important; }
-          .qm-modal-box          { padding: 16px !important; border-radius: 12px !important; width: calc(100vw - 32px) !important; max-height: 90dvh !important; overflow-y: auto; }
+          .qm-modal-box          { padding: 16px !important; border-radius: 12px !important; width: calc(100vw - 32px) !important; max-height: 90dvh !important; overflow-y: auto; animation: modalSlideInFromLeft .25s ease-out both; }
           .qm-cow-grid           { grid-template-columns: 1fr !important; }
           .qm-edit-grid          { grid-template-columns: 1fr !important; }
         }
@@ -488,71 +498,6 @@ export default function QueryManagement() {
               </tbody>
             </table>
           )}
-        </div>
-
-        {/* Mobile card list */}
-        <div className="qm-cards" style={{ display: 'none', flexDirection: 'column', gap: '10px', flex: 1, overflowY: 'auto' }}>
-          {loading ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>Loading queries…</div>
-          ) : leads.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>No queries found.</div>
-          ) : leads.map((row) => {
-            const tc = TYPE_COLORS[row.type] || { bg: '#f3f4f6', color: '#374151' };
-            const sel = selectedIds.has(row.lead_id);
-            return (
-              <div key={row.lead_id} style={{ background: '#fff', borderRadius: '12px', border: `1.5px solid ${sel ? '#FF5722' : '#e5e7eb'}`, padding: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-                {/* Top */}
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '10px', gap: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input type="checkbox" checked={sel} onChange={() => toggleSelect(row.lead_id)} style={{ cursor: 'pointer', accentColor: '#FF5722', width: '15px', height: '15px', flexShrink: 0, marginTop: '2px' }} />
-                    <div>
-                      <div style={{ fontWeight: '700', fontSize: '13px', color: '#111827', lineHeight: 1.2 }}>{row.booking_name || '—'}</div>
-                      <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>{row.lead_id}</div>
-                    </div>
-                  </div>
-                  <span style={{ background: tc.bg, color: tc.color, fontSize: '10px', fontWeight: '600', padding: '3px 8px', borderRadius: '20px', whiteSpace: 'nowrap', flexShrink: 0 }}>{row.type || '—'}</span>
-                </div>
-                {/* Info grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px 16px', marginBottom: '10px' }}>
-                  {[
-                    { label: 'Phone',       val: row.phone_number },
-                    { label: 'Shareholder', val: row.shareholder_name },
-                    { label: 'Day',         val: row.day },
-                    { label: 'Date',        val: formatDate(row.booking_date) },
-                    { label: 'Amount',      val: formatAmount(row.total_amount) },
-                    { label: 'Reference',   val: row.reference },
-                    { label: 'Source',      val: row.source },
-                    { label: 'Area',        val: row.area },
-                  ].map(({ label, val }) => (
-                    <div key={label}>
-                      <div style={{ fontSize: '9px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: '1px' }}>{label}</div>
-                      <div style={{ fontSize: '12px', fontWeight: '500', color: '#111827' }}>{val || '—'}</div>
-                    </div>
-                  ))}
-                </div>
-                {row.address && (
-                  <div style={{ fontSize: '11px', color: '#6b7280', paddingTop: '8px', borderTop: '1px solid #f3f4f6', marginBottom: '10px' }}>
-                    📍 {row.address}
-                  </div>
-                )}
-                {/* Card actions */}
-                <div style={{ display: 'flex', gap: '8px', paddingTop: '10px', borderTop: '1px solid #f3f4f6' }}>
-                  <button type="button" onClick={() => handleConfirmClick(row)} disabled={confirmingLeadId === row.lead_id}
-                    style={{ flex: 1, padding: '9px', background: confirmingLeadId === row.lead_id ? '#d1d5db' : '#166534', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: confirmingLeadId === row.lead_id ? 'not-allowed' : 'pointer' }}>
-                    {confirmingLeadId === row.lead_id ? '…' : '✓ Confirm Order'}
-                  </button>
-                  <button type="button" onClick={() => handleEditLead(row)}
-                    style={{ padding: '9px 12px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                    <img src="/icons/edit.png" alt="Edit" style={{ width: '16px', height: '16px', display: 'block' }} />
-                  </button>
-                  <button type="button" onClick={() => setDeleteConfirm(row)}
-                    style={{ padding: '9px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                    <img src="/icons/delete.png" alt="Delete" style={{ width: '16px', height: '16px', display: 'block' }} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
         </div>
 
         {/* Confirm modal */}

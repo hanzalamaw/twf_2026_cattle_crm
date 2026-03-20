@@ -1,9 +1,19 @@
 import { useState, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const API = 'http://localhost:5000';
 
 const ORDER_TYPES = [
+  'Hissa - Standard',
+  'Hissa - Premium',
+  'Hissa - Waqf',
+  'Goat (Hissa)',
+];
+
+// Farm shows Cow + Goat alongside the 4 booking order types
+const FARM_ORDER_TYPES = [
+  'Cow',
+  'Goat',
   'Hissa - Standard',
   'Hissa - Premium',
   'Hissa - Waqf',
@@ -52,6 +62,9 @@ const EMPTY_FORM = {
 
 const NewQuery = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isFarm = location.pathname.startsWith('/farm');
+  const orderTypes = isFarm ? FARM_ORDER_TYPES : ORDER_TYPES;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -316,7 +329,7 @@ const NewQuery = () => {
                   onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                   onBlur={(e)  => (e.target.style.borderColor = '#e0e0e0')}>
                   <option value="" disabled>Select Order Type</option>
-                  {ORDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {orderTypes.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
 
