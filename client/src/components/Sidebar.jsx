@@ -1,111 +1,85 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import './Sidebar.css';
 
+/* ── Icons ─────────────────────────────────────────────────── */
 const DashboardIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="7" height="7" rx="1"/>
-    <rect x="14" y="3" width="7" height="7" rx="1"/>
-    <rect x="3" y="14" width="7" height="7" rx="1"/>
-    <rect x="14" y="14" width="7" height="7" rx="1"/>
+    <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+    <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
   </svg>
 );
-
 const ControlIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3"/>
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
   </svg>
 );
-
 const BookingsIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-    <polyline points="14 2 14 8 20 8"/>
-    <line x1="16" y1="13" x2="8" y2="13"/>
-    <line x1="16" y1="17" x2="8" y2="17"/>
-    <polyline points="10 9 9 9 8 9"/>
+    <polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
   </svg>
 );
-
 const OperationsIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
   </svg>
 );
-
 const FarmIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M8 3v4"/>
-    <path d="M16 3v4"/>
-    <rect x="3" y="11" width="18" height="10" rx="1"/>
-    <path d="M12 11v10"/>
-    <path d="M3 15h18"/>
+    <path d="M8 3v4"/><path d="M16 3v4"/><rect x="3" y="11" width="18" height="10" rx="1"/>
+    <path d="M12 11v10"/><path d="M3 15h18"/>
   </svg>
 );
-
 const ProcurementIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-    <line x1="12" y1="22.08" x2="12" y2="12"/>
+    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
   </svg>
 );
-
 const AccountingIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
-    <line x1="1" y1="10" x2="23" y2="10"/>
+    <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>
     <path d="M7 14h.01M7 18h.01"/>
   </svg>
 );
-
 const PerformanceIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>
-    <path d="M22 12A10 10 0 0 0 12 2v10z"/>
+    <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>
   </svg>
 );
-
-const QueryIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-  </svg>
-);
-
-const OrderIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-  </svg>
-);
-
-const TransactionsIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-  </svg>
-);
-
-const ExpensesIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-  </svg>
-);
-
-const ChevronIcon = ({ direction = 'right' }) => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: direction === 'left' ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s ease' }}>
-    <polyline points="9 18 15 12 9 6"/>
-  </svg>
-);
-
 const LogoutIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-    <polyline points="16 17 21 12 16 7"/>
-    <line x1="21" y1="12" x2="9" y2="12"/>
+    <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+  </svg>
+);
+const ChevronIcon = ({ direction = 'right' }) => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    style={{ transform: direction === 'left' ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s ease' }}>
+    <polyline points="9 18 15 12 9 6"/>
+  </svg>
+);
+const HamburgerIcon = ({ isOpen }) => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+    {isOpen ? (
+      <>
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </>
+    ) : (
+      <>
+        <line x1="3" y1="6" x2="21" y2="6"/>
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="18" x2="21" y2="18"/>
+      </>
+    )}
   </svg>
 );
 
+/* ── Menu Data ──────────────────────────────────────────────── */
 const MENU_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', managersOnly: true },
   { id: 'control', label: 'Control Management', icon: <ControlIcon />, path: '/control', permission: 'control_management' },
@@ -115,6 +89,11 @@ const MENU_ITEMS = [
   { id: 'procurement', label: 'Procurement Management', icon: <ProcurementIcon />, path: '/procurement', permission: 'procurement_management' },
   { id: 'accounting', label: 'Accounting & Finance', icon: <AccountingIcon />, path: '/accounting', permission: 'accounting_and_finance' },
   { id: 'performance', label: 'Performance Management', icon: <PerformanceIcon />, path: '/performance', permission: 'performance_management' },
+];
+
+const PERFORMANCE_MENU_ITEMS = [
+  { id: 'perf-admin', label: 'Admin', icon: <PerformanceIcon />, path: '/performance/admin', permission: 'performance_management' },
+  { id: 'perf-dashboard', label: 'Dashboard', icon: <DashboardIcon />, path: '/performance/dashboard', permission: 'performance_management' },
 ];
 
 const BOOKING_MENU_ITEMS = [
@@ -127,8 +106,23 @@ const BOOKING_MENU_ITEMS = [
   { id: 'bm-expenses', label: 'Expenses', iconDefault: '/icons/expenses_default.png', iconActive: '/icons/expenses_active.png', path: '/bookings/expenses', permission: 'booking_management' },
 ];
 
+// ── NEW: Farm Management sub-menu (mirrors Booking pattern) ──
+const FARM_MENU_ITEMS = [
+  { id: 'fm-dashboard',  label: 'Dashboard',        iconDefault: '/icons/dashboard_default.png',         iconActive: '/icons/dashboard_active.png',         path: '/farm/dashboard',        managersOnly: true },
+  { id: 'fm-new-query',  label: 'New Query',         iconDefault: '/icons/new_query_default.png',         iconActive: '/icons/new_query_active.png',         path: '/farm/new-query',        permission: 'farm_management' },
+  { id: 'fm-new-order',  label: 'New Order',         iconDefault: '/icons/new_order_default.png',         iconActive: '/icons/new_order_active.png',         path: '/farm/new-order',        permission: 'farm_management' },
+  { id: 'fm-queries',    label: 'Query Management',  iconDefault: '/icons/query_management_default.png',  iconActive: '/icons/query_management_active.png',  path: '/farm/query-management', permission: 'farm_management' },
+  { id: 'fm-orders',     label: 'Order Management',  iconDefault: '/icons/order_management_default.png',  iconActive: '/icons/order_management_active.png',  path: '/farm/orders',           permission: 'farm_management' },
+  { id: 'fm-expenses',   label: 'Expenses',          iconDefault: '/icons/expenses_default.png',          iconActive: '/icons/expenses_active.png',          path: '/farm/expenses',         permission: 'farm_management' },
+  { id: 'fm-transactions', label: 'Transactions',    iconDefault: '/icons/transactions_default.png',      iconActive: '/icons/transactions_active.png',      path: '/farm/transactions',     permission: 'farm_management' },
+];
+
+/* ── Component ──────────────────────────────────────────────── */
 function Sidebar() {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const drawerRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
@@ -137,24 +131,160 @@ function Sidebar() {
   const roleId = user?.role_id;
   const isManager = [3, 5, 7].includes(roleId);
   const isBookingContext = location.pathname.startsWith('/bookings');
-
+  const isPerformanceContext = location.pathname.startsWith('/performance');
+  const isFarmContext = location.pathname.startsWith('/farm');
   const isAdminOrManager = [1, 2, 3, 5, 7].includes(roleId);
-  const items = isBookingContext ? BOOKING_MENU_ITEMS : MENU_ITEMS;
+
+  const items = isBookingContext
+    ? BOOKING_MENU_ITEMS
+    : isPerformanceContext
+    ? PERFORMANCE_MENU_ITEMS
+    : isFarmContext
+    ? FARM_MENU_ITEMS
+    : MENU_ITEMS;
+
   const visibleItems = items.filter((item) => {
-    if (item.managersOnly) {
-      return isBookingContext ? isAdminOrManager : isManager;
-    }
+    if (item.managersOnly) return (isBookingContext || isFarmContext) ? isAdminOrManager : isManager;
     if (item.permission) return item.permission === 'performance_management' ? true : !!permissions[item.permission];
     return true;
   });
 
+  // Auto-redirect to /farm/dashboard when entering /farm exactly
+  useEffect(() => {
+    if (location.pathname === '/farm') {
+      navigate('/farm/dashboard', { replace: true });
+    }
+  }, [location.pathname, navigate]);
+
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
+  const handleLogout = () => { logout(); navigate('/login'); };
+
+  const handleNavigate = (path) => {
+    navigate(path);
+    if (isMobile) setMobileOpen(false);
   };
 
+  // Detect mobile
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  // Close drawer on outside tap
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const handler = (e) => {
+      if (drawerRef.current && !drawerRef.current.contains(e.target)) {
+        setMobileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    document.addEventListener('touchstart', handler);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('touchstart', handler);
+    };
+  }, [mobileOpen]);
+
+  // Lock body scroll when drawer open
+  useEffect(() => {
+    if (isMobile) {
+      document.body.style.overflow = mobileOpen ? 'hidden' : '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileOpen, isMobile]);
+
+  const sectionLabel = isBookingContext
+    ? 'BOOKING MANAGEMENT'
+    : isPerformanceContext
+    ? 'PERFORMANCE'
+    : isFarmContext
+    ? 'FARM MANAGEMENT'
+    : 'MANAGEMENT';
+
+  /* ── Mobile Layout ── */
+  if (isMobile) {
+    return (
+      <>
+        {/* Floating Hamburger Button */}
+        {!mobileOpen && (
+          <button
+            className="mobile-fab"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open menu"
+          >
+            <HamburgerIcon isOpen={false} />
+          </button>
+        )}
+
+        {/* Overlay */}
+        <div className={`mobile-overlay ${mobileOpen ? 'visible' : ''}`} onClick={() => setMobileOpen(false)} />
+
+        {/* Drawer */}
+        <aside ref={drawerRef} className={`mobile-drawer ${mobileOpen ? 'open' : ''}`}>
+          {/* Drawer Header */}
+          <div className="drawer-header">
+            <div className="drawer-profile">
+              <div className="drawer-avatar">
+                <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face" alt="Profile" />
+              </div>
+              <div className="drawer-user-info">
+                <span className="drawer-role">{user?.role || 'USER'}</span>
+                <span className="drawer-name">{user?.username || 'User'}</span>
+              </div>
+            </div>
+            <button className="drawer-close" onClick={() => setMobileOpen(false)} aria-label="Close menu">
+              <HamburgerIcon isOpen={true} />
+            </button>
+          </div>
+
+          {/* Section Label */}
+          <div className="drawer-section-label">{sectionLabel}</div>
+
+          {/* Nav Items */}
+          <nav className="drawer-nav">
+            <ul className="drawer-nav-list">
+              {visibleItems.map((item, idx) => (
+                <li key={item.id} className={`drawer-nav-item ${isActive(item.path) ? 'active' : ''}`}
+                  style={{ animationDelay: `${idx * 40}ms` }}>
+                  <button
+                    type="button"
+                    className={`drawer-nav-link ${isActive(item.path) ? 'active' : ''}`}
+                    onClick={() => handleNavigate(item.path)}
+                  >
+                    <span className="drawer-nav-icon">
+                      {item.iconDefault ? (
+                        <img src={isActive(item.path) ? item.iconActive : item.iconDefault} alt="" style={{ width: '20px', height: '20px' }} />
+                      ) : item.icon}
+                    </span>
+                    <span className="drawer-nav-label">{item.label}</span>
+                    {isActive(item.path) && <span className="drawer-active-dot" />}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+
+          {/* Drawer Footer */}
+          <div className="drawer-footer">
+            <button type="button" className="drawer-back-btn" onClick={() => handleNavigate('/')}>
+              <img src="/icons/select_system.png" alt="" style={{ width: '20px', height: '20px' }} />
+              <span>Select Management</span>
+            </button>
+            <button type="button" className="drawer-logout-btn" onClick={handleLogout}>
+              <LogoutIcon />
+              <span>Logout</span>
+            </button>
+          </div>
+        </aside>
+      </>
+    );
+  }
+
+  /* ── Desktop Layout (original sidebar) ── */
   return (
     <aside className={`sidebar ${isExpanded ? 'expanded' : 'collapsed'}`}>
       <div className="sidebar-profile">
@@ -182,7 +312,7 @@ function Sidebar() {
       </div>
 
       <nav className="sidebar-nav">
-        <span className="nav-section-label">{isExpanded ? (isBookingContext ? 'BOOKING MANAGEMENT' : 'MANAGEMENT') : ''}</span>
+        <span className="nav-section-label">{isExpanded ? sectionLabel : ''}</span>
         <ul className="nav-list">
           {visibleItems.map((item) => (
             <li key={item.id} className={`nav-item ${isActive(item.path) ? 'active' : ''}`}>
@@ -194,9 +324,7 @@ function Sidebar() {
                 <span className="nav-icon nav-icon-main">
                   {item.iconDefault ? (
                     <img src={isActive(item.path) ? item.iconActive : item.iconDefault} alt="" style={{ width: '20px', height: '20px', display: 'block' }} />
-                  ) : (
-                    item.icon
-                  )}
+                  ) : item.icon ? item.icon : null}
                 </span>
                 {isExpanded && <span className="nav-label">{item.label}</span>}
               </button>

@@ -133,14 +133,14 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
   // Get available cow/hissa number (day-based independent numbering)
   app.post("/api/booking/get-available-cow-hissa", verifyToken, async (req, res) => {
     try {
-      const { order_type, day } = req.body || {};
+      const { order_type, day, booking_date } = req.body || {};
       if (!order_type || !String(order_type).trim()) {
         return res.json({ cow_number: "", hissa_number: "" });
       }
 
       const orderType = String(order_type).trim();
       const dayValue = day ? String(day).trim() : null;
-      const year = 2026;
+      const year = booking_date ? (new Date(booking_date).getFullYear() || 2026) : 2026;
 
       // Only for Hissa types
       const hissaTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf", "Goat (Hissa)"];
@@ -209,10 +209,78 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     }
   });
 
+  // Hissa stats sheet (for /stats page)
+  // Returns totals per cow/day/type (distinct hissa_number) and slot distribution (for row coloring).
+  app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
+    try {
+      const yearParam = parseInt(req.query.year, 10);
+      const year = Number.isFinite(yearParam) ? yearParam : 2026;
+      const days = ["DAY 1", "DAY 2", "DAY 3"];
+      const orderTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf"];
+
+      const [rows] = await db.execute(
+        `
+        SELECT
+          o.order_type,
+          o.day,
+          o.cow_number,
+          o.slot,
+          COUNT(DISTINCT o.hissa_number) AS total_hissa
+        FROM orders o
+        WHERE o.order_type IN (${orderTypes.map(() => "?").join(",")})
+          AND o.day IN (${days.map(() => "?").join(",")})
+          AND o.cow_number IS NOT NULL AND o.cow_number <> ''
+          AND o.hissa_number IS NOT NULL AND o.hissa_number <> ''
+          AND YEAR(o.booking_date) = ?
+        GROUP BY o.order_type, o.day, o.cow_number, o.slot
+        `,
+        [...orderTypes, ...days, year]
+      );
+
+      const out = { year, days, order_types: orderTypes, types: {} };
+
+      for (const ot of orderTypes) {
+        out.types[ot] = {};
+        for (const d of days) out.types[ot][d] = {};
+      }
+
+      const slotOrder = ["SLOT 1", "SLOT 2", "SLOT 3"];
+      const normalizeSlot = (slot) => {
+        const s = String(slot || "").trim();
+        if (slotOrder.includes(s)) return s;
+        return null;
+      };
+
+      for (const r of rows) {
+        const ot = String(r.order_type || "").trim();
+        const d = String(r.day || "").trim();
+        const cow = String(r.cow_number || "").trim();
+        const slot = normalizeSlot(r.slot);
+        const count = Math.max(0, Number(r.total_hissa) || 0);
+
+        if (!out.types[ot] || !out.types[ot][d] || !cow) continue;
+
+        if (!out.types[ot][d][cow]) {
+          out.types[ot][d][cow] = {
+            total_hissa: 0,
+            slot_counts: { "SLOT 1": 0, "SLOT 2": 0, "SLOT 3": 0 },
+          };
+        }
+        out.types[ot][d][cow].total_hissa += count;
+        if (slot) out.types[ot][d][cow].slot_counts[slot] += count;
+      }
+
+      res.json(out);
+    } catch (error) {
+      logError("BOOKING", "Hissa sheet stats error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
   // Check if cow/hissa combination already exists
   app.post("/api/booking/check-cow-hissa", verifyToken, async (req, res) => {
     try {
-      const { cow_number, hissa_number, order_type, day, order_id } = req.body || {};
+      const { cow_number, hissa_number, order_type, day, order_id, booking_date } = req.body || {};
       
       if (!cow_number || !hissa_number || !order_type) {
         return res.json({ exists: false });
@@ -222,7 +290,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const hissaNum = String(hissa_number).trim();
       const orderType = String(order_type).trim();
       const dayValue = day ? String(day).trim() : null;
-      const year = 2026;
+      const year = booking_date ? (new Date(booking_date).getFullYear() || 2026) : 2026;
 
       let query = `
         SELECT order_id, booking_name, shareholder_name, contact 
@@ -355,9 +423,18 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           order_type,
           booking_name,
           shareholder_name,
-          cow_number,
-          hissa_number,
+          cow_number: cow_number || null,
+          hissa_number: hissa_number || null,
+          alt_contact: alt_contact || null,
+          address: address || null,
+          area: area || null,
+          day: day || null,
+          slot: slot || null,
+          booking_date: booking_date ? toDateOnly(booking_date) : null,
           total_amount: totalAmount,
+          order_source: order_source || null,
+          reference: reference || null,
+          description: description || null,
         },
         ip_address: req.ip,
         user_agent: req.get("user-agent"),
@@ -522,10 +599,22 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
 
   app.get("/api/booking/orders/filters", verifyToken, async (req, res) => {
     try {
-      const [slots] = await db.execute("SELECT DISTINCT slot AS value FROM orders WHERE slot IS NOT NULL AND slot != '' ORDER BY slot");
-      const [types] = await db.execute("SELECT DISTINCT order_type AS value FROM orders WHERE order_type IS NOT NULL ORDER BY order_type");
-      const [days] = await db.execute("SELECT DISTINCT day AS value FROM orders WHERE day IS NOT NULL ORDER BY day");
-      const [refs] = await db.execute("SELECT DISTINCT reference AS value FROM orders WHERE reference IS NOT NULL AND reference != '' ORDER BY reference");
+      const { year } = req.query;
+      const conditions = [];
+      const params = [];
+      if (year === "2026" || year === "2025") {
+        conditions.push("YEAR(booking_date) = ?");
+        params.push(year);
+      } else if (year === "2024") {
+        conditions.push("(booking_date IS NULL OR YEAR(booking_date) < 2025)");
+      }
+      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+      const andOrWhere = whereClause ? " AND " : " WHERE ";
+
+      const [slots] = await db.execute(`SELECT DISTINCT slot AS value FROM orders ${whereClause}${andOrWhere}slot IS NOT NULL AND slot != '' ORDER BY slot`, params);
+      const [types] = await db.execute(`SELECT DISTINCT order_type AS value FROM orders ${whereClause}${andOrWhere}order_type IS NOT NULL ORDER BY order_type`, params);
+      const [days] = await db.execute(`SELECT DISTINCT day AS value FROM orders ${whereClause}${andOrWhere}day IS NOT NULL ORDER BY day`, params);
+      const [refs] = await db.execute(`SELECT DISTINCT reference AS value FROM orders ${whereClause}${andOrWhere}reference IS NOT NULL AND reference != '' ORDER BY reference`, params);
       res.json({
         slots: slots.map((r) => r.value),
         order_types: types.map((r) => r.value),
@@ -625,10 +714,22 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
 
   app.get("/api/booking/leads/filters", verifyToken, async (req, res) => {
     try {
-      const [types] = await db.execute("SELECT DISTINCT order_type AS value FROM leads WHERE order_type IS NOT NULL ORDER BY order_type");
-      const [days] = await db.execute("SELECT DISTINCT day AS value FROM leads WHERE day IS NOT NULL ORDER BY day");
-      const [refs] = await db.execute("SELECT DISTINCT reference AS value FROM leads WHERE reference IS NOT NULL AND reference != '' ORDER BY reference");
-      const [areas] = await db.execute("SELECT DISTINCT area AS value FROM leads WHERE area IS NOT NULL AND area != '' ORDER BY area");
+      const { year } = req.query;
+      const conditions = [];
+      const params = [];
+      if (year === "2026" || year === "2025") {
+        conditions.push("YEAR(booking_date) = ?");
+        params.push(year);
+      } else if (year === "2024") {
+        conditions.push("(booking_date IS NULL OR YEAR(booking_date) < 2025)");
+      }
+      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+      const andOrWhere = whereClause ? " AND " : " WHERE ";
+
+      const [types] = await db.execute(`SELECT DISTINCT order_type AS value FROM leads ${whereClause}${andOrWhere}order_type IS NOT NULL ORDER BY order_type`, params);
+      const [days] = await db.execute(`SELECT DISTINCT day AS value FROM leads ${whereClause}${andOrWhere}day IS NOT NULL ORDER BY day`, params);
+      const [refs] = await db.execute(`SELECT DISTINCT reference AS value FROM leads ${whereClause}${andOrWhere}reference IS NOT NULL AND reference != '' ORDER BY reference`, params);
+      const [areas] = await db.execute(`SELECT DISTINCT area AS value FROM leads ${whereClause}${andOrWhere}area IS NOT NULL AND area != '' ORDER BY area`, params);
       res.json({
         order_types: types.map((r) => r.value),
         days: days.map((r) => r.value),
@@ -723,10 +824,11 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     }
   });
 
-  // Confirm lead → create order and remove lead (audit logged)
+  // Confirm lead → create order and remove lead (audit logged). Body may include order_id, slot, booking_date, cow_number, hissa_number.
   app.post("/api/booking/leads/:leadId/confirm-order", verifyToken, async (req, res) => {
     try {
       const { leadId } = req.params;
+      const body = req.body || {};
       const [leadRows] = await db.execute(
         "SELECT lead_id, customer_id, contact, order_type AS order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, reference, description FROM leads WHERE lead_id = ?",
         [leadId]
@@ -738,16 +840,24 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const lead = leadRows[0];
       const totalAmount = Number(lead.total_amount) || 0;
 
-      const [idRows] = await db.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(order_id, 4, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM orders WHERE order_id LIKE '#O-%'"
-      );
-      const year = new Date().getFullYear();
-      const nextNum = idRows[0]?.nextId ?? 1;
-      const orderId = `O-${String(nextNum).padStart(4, "0")}-${year}`;
+      let orderId = body.order_id && String(body.order_id).trim() ? String(body.order_id).trim() : null;
+      if (!orderId) {
+        const [idRows] = await db.execute(
+          "SELECT COALESCE(MAX(CAST(SUBSTRING(order_id, 4, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM orders WHERE order_id LIKE '#O-%'"
+        );
+        const year = new Date().getFullYear();
+        const nextNum = idRows[0]?.nextId ?? 1;
+        orderId = `O-${String(nextNum).padStart(4, "0")}-${year}`;
+      }
+
+      const slotVal = body.slot != null && String(body.slot).trim() !== "" ? String(body.slot).trim() : null;
+      const bookingDateVal = body.booking_date != null && String(body.booking_date).trim() !== "" ? toDateOnly(body.booking_date) : toDateOnly(lead.booking_date);
+      const cowNumber = body.cow_number != null && String(body.cow_number).trim() !== "" ? String(body.cow_number).trim() : null;
+      const hissaNumber = body.hissa_number != null && String(body.hissa_number).trim() !== "" ? String(body.hissa_number).trim() : null;
 
       await db.execute(
         `INSERT INTO orders (order_id, customer_id, contact, order_type, booking_name, shareholder_name, cow_number, hissa_number, alt_contact, address, area, day, booking_date, total_amount, received_amount, pending_amount, order_source, reference, description, rider_id, slot)
-         VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, NULL)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, ?)`,
         [
           orderId,
           lead.customer_id ?? null,
@@ -755,22 +865,41 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           lead.order_type ?? null,
           lead.booking_name ?? null,
           lead.shareholder_name ?? null,
+          cowNumber,
+          hissaNumber,
           lead.alt_contact ?? null,
           lead.address ?? null,
           lead.area ?? null,
           lead.day ?? null,
-          toDateOnly(lead.booking_date) ?? null,
+          bookingDateVal ?? null,
           totalAmount,
           totalAmount, // pending_amount
           lead.order_source ?? null,
           lead.reference ?? null,
           lead.description ?? null,
+          slotVal,
         ]
       );
 
       await db.execute("DELETE FROM leads WHERE lead_id = ?", [leadId]);
 
-      const auditDetail = { lead_id: leadId, order_id: orderId, customer_id: lead.customer_id, booking_name: lead.booking_name, shareholder_name: lead.shareholder_name, total_amount: totalAmount };
+      const auditDetail = {
+        lead_id: leadId,
+        order_id: orderId,
+        customer_id: lead.customer_id,
+        contact: lead.contact,
+        order_type: lead.order_type,
+        booking_name: lead.booking_name,
+        shareholder_name: lead.shareholder_name,
+        cow_number: cowNumber,
+        hissa_number: hissaNumber,
+        slot: slotVal,
+        day: lead.day,
+        booking_date: bookingDateVal,
+        total_amount: totalAmount,
+        order_source: lead.order_source || null,
+        reference: lead.reference || null,
+      };
       await writeAuditLog(db, {
         user_id: req.userId,
         action: "CONFIRM_LEAD_ORDER",
@@ -1129,8 +1258,8 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
       const { count, expense_ids } = req.body || {};
       const exportCount = typeof count === "number" && count >= 0 ? count : 0;
       const newValues = { count: exportCount };
-      if (expense_ids && Array.isArray(expense_ids) && expense_ids.length > 0) {
-        newValues.expense_ids = expense_ids;
+      if (Array.isArray(expense_ids) && expense_ids.length > 0) {
+        newValues.expense_ids = expense_ids.length === exportCount && exportCount > 0 ? "all" : expense_ids;
       }
       await writeAuditLog(db, {
         user_id: req.userId,
@@ -1291,8 +1420,8 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
       if (filters && typeof filters === "object" && Object.keys(filters).length > 0) {
         newValues.filters = filters;
       }
-      if (lead_ids && Array.isArray(lead_ids) && lead_ids.length > 0) {
-        newValues.lead_ids = lead_ids;
+      if (Array.isArray(lead_ids) && lead_ids.length > 0) {
+        newValues.lead_ids = lead_ids.length === exportCount && exportCount > 0 ? "all" : lead_ids;
       }
       await writeAuditLog(db, {
         user_id: req.userId,
@@ -1316,12 +1445,12 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
       const { count, filters, order_ids } = req.body || {};
       const exportCount = typeof count === "number" && count >= 0 ? count : 0;
       const newValues = { count: exportCount };
-      if (filters && typeof filters === "object" && Object.keys(filters).length > 0) {
-        newValues.filters = filters;
-      }
-      if (order_ids && Array.isArray(order_ids) && order_ids.length > 0) {
-        newValues.order_ids = order_ids;
-      }
+if (filters && typeof filters === "object" && Object.keys(filters).length > 0) {
+  newValues.filters = filters;
+}
+if (Array.isArray(order_ids) && order_ids.length > 0) {
+  newValues.order_ids = order_ids.length === exportCount && exportCount > 0 ? "all" : order_ids;
+}
       await writeAuditLog(db, {
         user_id: req.userId,
         action: "ORDER_EXPORT",
@@ -1438,32 +1567,49 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
     }
   });
 
-  // Invoice PDF: THE WARSI FARM style - all orders for customer_id in year 2026
+  // Invoice PDF: THE WARSI FARM style - all orders for customer_id, any year
   app.get("/api/booking/invoice/:customerId", verifyToken, async (req, res) => {
     try {
       const { customerId } = req.params;
+
+      // Fetch all orders for this customer (any year), ordered by booking_date then order_id
       const [orders] = await db.execute(
-        `SELECT o.order_id, o.cow_number AS cow, o.hissa_number AS hissa, o.booking_name, o.shareholder_name, o.contact, o.alt_contact, o.address, o.area, o.day, o.order_type AS type, o.booking_date, o.total_amount, o.received_amount, o.pending_amount
-         FROM orders o WHERE o.customer_id = ? AND YEAR(o.booking_date) = 2026 ORDER BY o.booking_date, o.order_id`,
+        `SELECT o.order_id, o.cow_number AS cow, o.hissa_number AS hissa, o.booking_name,
+                o.shareholder_name, o.contact, o.alt_contact, o.address, o.area, o.day,
+                o.order_type AS type, o.booking_date, o.total_amount,
+                o.received_amount, o.pending_amount
+         FROM orders o
+         WHERE o.customer_id = ?
+         ORDER BY o.booking_date, o.order_id`,
         [customerId]
       );
+
       if (orders.length === 0) {
-        await writeAuditLog(db, { user_id: req.userId, action: "INVOICE_NO_ORDERS", entity_type: "invoice", entity_id: customerId, new_values: { reason: "no_orders_2026" }, ip_address: req.ip, user_agent: req.get("user-agent") });
-        return res.status(404).json({ message: "No orders found for this customer in 2026" });
+        await writeAuditLog(db, { user_id: req.userId, action: "INVOICE_NO_ORDERS", entity_type: "invoice", entity_id: customerId, new_values: { reason: "no_orders" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+        return res.status(404).json({ message: "No orders found for this customer" });
       }
+
+      // Generate sequential invoice number: find max from audit_logs for this customer
+      // Format: #I-NNNN-YYYY where YYYY = year of first order's booking_date
+      const firstBookingYear = (() => {
+        const d = orders[0].booking_date;
+        if (!d) return new Date().getFullYear();
+        const yr = new Date(d).getFullYear();
+        return isNaN(yr) ? new Date().getFullYear() : yr;
+      })();
+
+      // Get next invoice sequence number by counting previous INVOICE_GENERATED entries for any customer
+      const [seqRows] = await db.execute(
+        `SELECT COUNT(*) AS cnt FROM audit_logs WHERE action = 'INVOICE_GENERATED'`
+      );
+      const invoiceSeq = (Number(seqRows[0]?.cnt ?? 0) + 1);
+      const invoiceNumber = `#I-${String(invoiceSeq).padStart(4, "0")}-${firstBookingYear}`;
+
       const customer = orders[0];
-      await writeAuditLog(db, {
-        user_id: req.userId,
-        action: "INVOICE_GENERATED",
-        entity_type: "invoice",
-        entity_id: customerId,
-        new_values: { customer_id: customerId, order_count: orders.length },
-        ip_address: req.ip,
-        user_agent: req.get("user-agent"),
-      });
-      const invoiceNumber = `#I-${String(orders.length).padStart(4, "0")}-2026`;
       const bookingDateStr = toDateOnly(customer.booking_date) || "";
       const issuedDate = toDateOnly(new Date()) || new Date().toISOString().split("T")[0];
+
+      // Grand totals across all orders
       let grandTotal = 0;
       let grandReceived = 0;
       let grandPending = 0;
@@ -1472,169 +1618,274 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
         grandReceived += Number(row.received_amount || 0);
         grandPending += Number(row.pending_amount || 0);
       }
-      const fmt = (n) => Math.round(Number(n)).toLocaleString("en-PK");
 
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "INVOICE_GENERATED",
+        entity_type: "invoice",
+        entity_id: customerId,
+        new_values: { customer_id: customerId, invoice_number: invoiceNumber, order_count: orders.length, grand_total: grandTotal, grand_received: grandReceived, grand_pending: grandPending },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+
+      const fmt = (n) => Math.round(Number(n || 0)).toLocaleString("en-PK");
+
+      // Serve inline so it opens in browser tab (not forced download)
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="Invoice-${invoiceNumber.replace("#", "")}-${customerId}.pdf"`);
+
       const doc = new PDFDocument({ margin: 50, size: "A4", autoFirstPage: true });
       doc.pipe(res);
 
-      const pageW = doc.page.width - 100;
-      const pageHeight = doc.page.height;
-      const left = 50;
-      const right = doc.page.width - 50;
+      // ── Layout constants ──────────────────────────────────────────────────────
+      const left   = 50;
+      const right  = doc.page.width - 50;          // 545
+      const pageW  = right - left;                  // 495
+      const pageH  = doc.page.height;               // 841.89
+      const gray   = "#888888";
+      const footerZoneTop  = pageH - 48;
+      const contentBottom  = footerZoneTop - 8;
 
-      const footerZoneTop = pageHeight - 48;
-      const contentBottom = footerZoneTop - 4;
-
-      const wrapLines = (text, width, fontSize) => {
-        doc.font("Helvetica").fontSize(fontSize);
-        const words = String(text).split(/\s+/);
+      // ── Helper: word-wrap text at given font size ─────────────────────────────
+      const wrapText = (text, maxW, font, size) => {
+        doc.font(font).fontSize(size);
+        const words = String(text || "").split(/\s+/);
         const lines = [];
         let line = "";
         for (const w of words) {
-          const tryLine = line ? `${line} ${w}` : w;
-          if (doc.widthOfString(tryLine) <= width) line = tryLine;
-          else {
-            if (line) lines.push(line);
-            line = w;
-          }
+          const candidate = line ? `${line} ${w}` : w;
+          if (doc.widthOfString(candidate) <= maxW) { line = candidate; }
+          else { if (line) lines.push(line); line = w; }
         }
         if (line) lines.push(line);
         return lines;
       };
 
-      const textClip = (str, x, y, opts) => {
-        const h = opts.height || 200;
-        doc.text(str, x, y, { ...opts, height: h });
-      };
+      // ── HEADER ────────────────────────────────────────────────────────────────
+      // "THE WARSI FARM" top-left, "INVOICE" top-right
+      doc.fontSize(18).font("Helvetica-Bold").fillColor("#000000")
+         .text("THE WARSI FARM", left, 50, { lineBreak: false });
 
-      const gray = "#888888";
+      doc.fontSize(14).font("Helvetica-Bold")
+         .text("INVOICE", left, 50, { width: pageW, align: "right", lineBreak: false });
 
-      // --- Header ---
-      doc.fontSize(18).font("Helvetica-Bold").text("THE WARSI FARM", left, 50);
-      doc.fontSize(14).font("Helvetica-Bold").text("INVOICE", right - 150, 50, { width: 150, align: "right" });
-      doc.fontSize(10).font("Helvetica").text(invoiceNumber, right - 150, 66, { width: 150, align: "right" });
-      doc.strokeColor(gray).lineWidth(0.5).moveTo(left, 82).lineTo(right, 82).stroke().strokeColor("#000000").lineWidth(1);
+      // Invoice number right-aligned, below INVOICE label
+      doc.fontSize(10).font("Helvetica").fillColor("#333333")
+         .text(invoiceNumber, left, 67, { width: pageW, align: "right", lineBreak: false });
+      doc.fillColor("#000000");
 
-      const col1Right = left + 160;
-      const col2Left = left + 180;
-      const col2Right = right - 190;
-      const col3Left = right - 180;
-      const blockTop = 88;
-      const blockBottom = 162;
-      const sectionPad = 14;
+      // Horizontal rule below header
+      doc.strokeColor(gray).lineWidth(0.5)
+         .moveTo(left, 82).lineTo(right, 82).stroke()
+         .strokeColor("#000000").lineWidth(1);
 
-      const billedLeft = col2Left + sectionPad;
-      const billedWidth = col2Right - billedLeft;
-      const fromLeft = col3Left + sectionPad;
-      const fromWidth = right - fromLeft;
+      // ── INFO BLOCK (3 columns) ────────────────────────────────────────────────
+      // Col 1: Booking Date / Issued Date  (left edge → left+160)
+      // Col 2: Billed to                   (left+180 → right-180)
+      // Col 3: From                         (right-180 → right)
+      const blockTop    = 90;
+      const blockBottom = 165;
+      const col2Left    = left + 160;
+      const col3Left    = right - 175;
+      const col2Pad     = col2Left + 10;
+      const col3Pad     = col3Left + 10;
+      const col2Width   = col3Left - col2Pad - 4;
+      const col3Width   = right - col3Pad;
 
-      doc.fontSize(10).font("Helvetica-Bold").text("Booking Date", left, blockTop);
-      doc.font("Helvetica").text(bookingDateStr || "—", left, blockTop + 13);
-      doc.font("Helvetica-Bold").text("Issued Date", left, blockTop + 30);
-      doc.font("Helvetica").text(issuedDate, left, blockTop + 43);
+      // Col 1 — dates
+      doc.fontSize(10).font("Helvetica-Bold").fillColor("#000000")
+         .text("Booking Date", left, blockTop);
+      doc.font("Helvetica").fontSize(10)
+         .text(bookingDateStr || "—", left, blockTop + 14);
+      doc.font("Helvetica-Bold")
+         .text("Issued Date", left, blockTop + 32);
+      doc.font("Helvetica")
+         .text(issuedDate, left, blockTop + 46);
 
-      // Billed to: Bold heading only; then Full Name (not bold), Phone (not bold), Address (not bold)
-      doc.fontSize(10).font("Helvetica-Bold").text("Billed to", billedLeft, blockTop);
-      doc.font("Helvetica");
-      const fullName = (customer.shareholder_name || customer.booking_name || "—").trim();
-      doc.text(fullName, billedLeft, blockTop + 14, { width: billedWidth, height: 16 });
-      doc.text(customer.contact || "—", billedLeft, blockTop + 30, { width: billedWidth, height: 14 });
-      const billedAddr = [customer.address, customer.area].filter(Boolean).join(", ") || "";
-      if (billedAddr) doc.text(billedAddr, billedLeft, blockTop + 46, { width: billedWidth, height: 20 });
-
-      // From section: left-aligned with padding left
-      doc.font("Helvetica-Bold").text("From", fromLeft, blockTop);
-      doc.font("Helvetica").text("The Warsi Farm", fromLeft, blockTop + 14);
-      doc.text("B-655, F.B.A Block # 13,", fromLeft, blockTop + 28);
-      doc.text("Gulberg, Karachi", fromLeft, blockTop + 42);
-
-      doc.strokeColor(gray).lineWidth(0.5);
-      doc.moveTo(col2Left, blockTop).lineTo(col2Left, blockBottom).stroke();
-      doc.moveTo(col3Left, blockTop).lineTo(col3Left, blockBottom).stroke();
-      doc.strokeColor("#000000").lineWidth(1);
-
-      let y = 165;
-      doc.strokeColor(gray).lineWidth(0.5).moveTo(left, y).lineTo(right, y).stroke().strokeColor("#000000").lineWidth(1);
-      y += 12;
-
-      doc.fontSize(10).font("Helvetica-Bold");
-      doc.text("Service", left, y);
-      doc.text("Qty", right - 180, y, { width: 50, align: "center" });
-      doc.text("Total Amount", right - 120, y, { width: 120, align: "right" });
-      y += 14;
-
+      // Col 2 — Billed to
+      doc.font("Helvetica-Bold").fontSize(10)
+         .text("Billed to", col2Pad, blockTop);
       doc.font("Helvetica").fontSize(10);
+      const billName = (customer.shareholder_name || customer.booking_name || "—").trim();
+      doc.text(billName,          col2Pad, blockTop + 14, { width: col2Width, lineBreak: false });
+      doc.text(customer.contact || "—", col2Pad, blockTop + 28, { width: col2Width, lineBreak: false });
+      const billAddr = [customer.address, customer.area].filter(Boolean).join(", ");
+      if (billAddr) doc.text(billAddr, col2Pad, blockTop + 42, { width: col2Width, lineBreak: false });
+
+      // Col 3 — From
+      doc.font("Helvetica-Bold").fontSize(10)
+         .text("From", col3Pad, blockTop);
+      doc.font("Helvetica").fontSize(10)
+         .text("The Warsi Farm",         col3Pad, blockTop + 14, { width: col3Width, lineBreak: false })
+         .text("B-655, F.B.A Block # 13,", col3Pad, blockTop + 28, { width: col3Width, lineBreak: false })
+         .text("Gulberg, Karachi",         col3Pad, blockTop + 42, { width: col3Width, lineBreak: false });
+
+      // Vertical dividers between the 3 columns
+      doc.strokeColor(gray).lineWidth(0.5)
+         .moveTo(col2Left, blockTop).lineTo(col2Left, blockBottom).stroke()
+         .moveTo(col3Left, blockTop).lineTo(col3Left, blockBottom).stroke()
+         .strokeColor("#000000").lineWidth(1);
+
+      // ── SERVICE TABLE ─────────────────────────────────────────────────────────
+      let y = blockBottom + 4;
+
+      // Table top rule
+      doc.strokeColor(gray).lineWidth(0.5)
+         .moveTo(left, y).lineTo(right, y).stroke()
+         .strokeColor("#000000").lineWidth(1);
+      y += 10;
+
+      // Table header row — 5 columns: Service | Qty | Total | Paid | Due
+      const qtyX   = right - 280;
+      const totX   = right - 210;
+      const totW   = 70;
+      const paidX  = right - 130;
+      const paidW  = 65;
+      const dueX   = right - 60;
+      const dueW   = 60;
+      const qtyW   = 30;
+      const svcW   = qtyX - left - 8;
+
+      doc.fontSize(10).font("Helvetica-Bold").fillColor("#000000");
+      doc.text("Service", left,  y, { width: svcW,  lineBreak: false });
+      doc.text("Qty",     qtyX,  y, { width: qtyW,  align: "center", lineBreak: false });
+      doc.text("Total",   totX,  y, { width: totW,  align: "center", lineBreak: false });
+      doc.text("Paid",    paidX, y, { width: paidW, align: "center", lineBreak: false });
+      doc.text("Due",     dueX,  y, { width: dueW,  align: "center", lineBreak: false });
+      y += 16;
+
+      // Table body — one row per order
+      doc.font("Helvetica").fontSize(10).fillColor("#000000");
       for (const row of orders) {
+        // If near bottom of page, add new page
+        if (y + 40 > contentBottom) {
+          doc.addPage();
+          y = 50;
+        }
+
         const serviceTitle = row.type || "Booking";
         const serviceSub = `Cow No: ${row.cow || "—"} | Hissa No: ${row.hissa || "—"} • ${row.day || "—"}`;
-        textClip(serviceTitle, left, y, { width: pageW - 200, height: 14 });
+
+        const rowStartY = y;
+
+        // Service title (bold)
+        doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000")
+           .text(serviceTitle, left, y, { width: svcW, lineBreak: false });
+        y += 13;
+
+        // Sub-line (regular, muted)
+        doc.font("Helvetica").fontSize(9).fillColor("#444444")
+           .text(serviceSub, left, y, { width: svcW, lineBreak: false });
+        doc.fillColor("#000000");
         y += 12;
-        textClip(serviceSub, left, y, { width: pageW - 200, height: 14 });
-        doc.text("1", right - 180, y - 12, { width: 50, align: "center" });
-        doc.text(`PKR ${fmt(row.total_amount)}`, right - 120, y - 12, { width: 120, align: "right" });
-        y += 16;
+
+        // Qty, Total, Paid, Due — all center-aligned, aligned to title line
+        doc.font("Helvetica").fontSize(10).fillColor("#000000");
+        doc.text("1",                               qtyX,  rowStartY, { width: qtyW,  align: "center", lineBreak: false });
+        doc.text(`PKR ${fmt(row.total_amount)}`,    totX,  rowStartY, { width: totW,  align: "center", lineBreak: false });
+
+        // Paid — green
+        doc.font("Helvetica").fontSize(10).fillColor("#166534")
+           .text(`PKR ${fmt(row.received_amount)}`, paidX, rowStartY, { width: paidW, align: "center", lineBreak: false });
+
+        // Due — red
+        doc.font("Helvetica").fontSize(10).fillColor("#b91c1c")
+           .text(`PKR ${fmt(row.pending_amount)}`,  dueX,  rowStartY, { width: dueW,  align: "center", lineBreak: false });
+
+        doc.fillColor("#000000");
+        y += 4; // row gap
       }
 
-      y += 4;
-      doc.strokeColor(gray).lineWidth(0.5).moveTo(left, y).lineTo(right, y).stroke().strokeColor("#000000").lineWidth(1);
-      y += 10;
-
-      // --- Calculation summary: HALF WIDTH, RIGHT SIDE ONLY (not full page) ---
-      const summaryWidth = Math.floor(pageW / 2);
-      const summaryLeft = right - summaryWidth;
-      const sumLineLeft = summaryLeft;
-      const sumLineRight = right;
-      const labelW = 100;
-      const valW = 100;
-      const valX = right - valW;
-
-      doc.font("Helvetica-Bold").text("Subtotal:", sumLineLeft, y, { width: labelW, align: "right" });
-      doc.text(`PKR ${fmt(grandTotal)}`, valX, y, { width: valW, align: "right" });
-      y += 11;
-      doc.strokeColor("#999999").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
-      y += 6;
-      doc.font("Helvetica").text("Shipping:", sumLineLeft, y, { width: labelW, align: "right" });
-      doc.text("Free", valX, y, { width: valW, align: "right" });
-      y += 11;
-      doc.strokeColor("#999999").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
-      y += 6;
-      doc.font("Helvetica-Bold").text("Total:", sumLineLeft, y, { width: labelW, align: "right" });
-      doc.text(`PKR ${fmt(grandTotal)}`, valX, y, { width: valW, align: "right" });
-      y += 11;
-      doc.strokeColor("#999999").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
-      y += 8;
-
-      doc.fillColor("#166534").font("Helvetica-Bold").text("Amount Paid:", sumLineLeft, y, { width: labelW, align: "right" });
-      doc.text(`PKR ${fmt(grandReceived)}`, valX, y, { width: valW, align: "right" });
-      y += 11;
-      doc.strokeColor("#166534").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
-      y += 10;
-      doc.fillColor("#b91c1c").font("Helvetica-Bold").text("Amount Due:", sumLineLeft, y, { width: labelW, align: "right" });
-      doc.text(`PKR ${fmt(grandPending)}`, valX, y, { width: valW, align: "right" });
-      y += 11;
-      doc.strokeColor("#b91c1c").lineWidth(0.5).moveTo(sumLineLeft, y).lineTo(sumLineRight, y).stroke().lineWidth(1).strokeColor("#000000");
-      doc.fillColor("#000000");
-      y += 18;
-
-      doc.font("Helvetica-Bold").fontSize(10).text("PAYMENT INFO", left, y);
-      y += 10;
-      doc.font("Helvetica").fontSize(9);
-      doc.text("ACCOUNT NAME (HBL)", left, y);
-      doc.text("BRANCH", left + 140, y);
-      doc.text("IBAN", left + 280, y);
-      doc.text("ACCOUNT NO", left + 400, y);
-      y += 11;
-      doc.text("TW TRADERS", left, y);
-      doc.text("ZIAUDDIN SHAHEED ROA", left + 140, y);
-      doc.text("PK10HABB0016787900655603", left + 280, y, { width: 110 });
-      doc.text("16787900655603", left + 400, y);
-      y += 18;
-
-      doc.font("Helvetica-Bold").fontSize(10).text("TERMS & CONDITIONS", left, y);
+      // Table bottom rule
+      doc.strokeColor(gray).lineWidth(0.5)
+         .moveTo(left, y).lineTo(right, y).stroke()
+         .strokeColor("#000000").lineWidth(1);
       y += 12;
-      doc.font("Helvetica").fontSize(8);
+
+      // ── SUMMARY (right half, like the PDF) ───────────────────────────────────
+      // Layout: label right-aligned in left portion, value right-aligned at far right
+      // Matches PDF: "Subtotal:" ... "PKR 23,000"
+      const sumBlockLeft  = right - 230;   // left edge of summary block
+      const sumLabelRight = right - 110;   // right edge of label column
+      const sumLabelW     = sumLabelRight - sumBlockLeft;
+      const sumValX       = right - 108;   // start of value column
+      const sumValW       = 108;
+
+      const drawSummaryRow = (label, value, labelFont, labelColor, ruleColor) => {
+        doc.font(labelFont).fontSize(10).fillColor(labelColor)
+           .text(label, sumBlockLeft, y, { width: sumLabelW, align: "right", lineBreak: false });
+        doc.font(labelFont).fontSize(10).fillColor(labelColor)
+           .text(value, sumValX, y, { width: sumValW, align: "right", lineBreak: false });
+        doc.fillColor("#000000");
+        y += 13;
+        doc.strokeColor(ruleColor || "#cccccc").lineWidth(0.5)
+           .moveTo(sumBlockLeft, y).lineTo(right, y).stroke()
+           .strokeColor("#000000").lineWidth(1);
+        y += 5;
+      };
+
+      drawSummaryRow("Subtotal:",  `PKR ${fmt(grandTotal)}`,    "Helvetica-Bold", "#000000", "#cccccc");
+      drawSummaryRow("Delivery:",  "Free",                       "Helvetica",      "#000000", "#cccccc");
+      drawSummaryRow("Total:",     `PKR ${fmt(grandTotal)}`,    "Helvetica-Bold", "#000000", "#cccccc");
+
+      // Amount Paid — green
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#166534")
+         .text("Amount Paid:", sumBlockLeft, y, { width: sumLabelW, align: "right", lineBreak: false });
+      doc.text(`PKR ${fmt(grandReceived)}`, sumValX, y, { width: sumValW, align: "right", lineBreak: false });
+      doc.fillColor("#000000");
+      y += 13;
+      doc.strokeColor("#166534").lineWidth(0.5)
+         .moveTo(sumBlockLeft, y).lineTo(right, y).stroke()
+         .strokeColor("#000000").lineWidth(1);
+      y += 5;
+
+      // Amount Due — red
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#b91c1c")
+         .text("Amount Due:", sumBlockLeft, y, { width: sumLabelW, align: "right", lineBreak: false });
+      doc.text(`PKR ${fmt(grandPending)}`, sumValX, y, { width: sumValW, align: "right", lineBreak: false });
+      doc.fillColor("#000000");
+      y += 13;
+      doc.strokeColor("#b91c1c").lineWidth(0.5)
+         .moveTo(sumBlockLeft, y).lineTo(right, y).stroke()
+         .strokeColor("#000000").lineWidth(1);
+      y += 16;
+
+      // ── PAYMENT INFO ──────────────────────────────────────────────────────────
+      if (y + 60 > contentBottom) { doc.addPage(); y = 50; }
+
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000")
+         .text("PAYMENT INFO", left, y);
+      y += 12;
+
+      // Header row
+      const pi1 = left;
+      const pi2 = left + 130;
+      const pi3 = left + 275;
+      const pi4 = left + 400;
+
+      doc.font("Helvetica-Bold").fontSize(9).fillColor("#555555");
+      doc.text("ACCOUNT NAME (HBL)", pi1, y, { lineBreak: false });
+      doc.text("BRANCH",              pi2, y, { lineBreak: false });
+      doc.text("IBAN",                pi3, y, { lineBreak: false });
+      doc.text("ACCOUNT NO",          pi4, y, { lineBreak: false });
+      y += 12;
+
+      // Values
+      doc.font("Helvetica").fontSize(9).fillColor("#000000");
+      doc.text("TW TRADERS",                   pi1, y, { lineBreak: false });
+      doc.text("ZIAUDDIN SHAHEED ROA",         pi2, y, { lineBreak: false });
+      doc.text("PK10HABB0016787900655603",      pi3, y, { width: 120, lineBreak: false });
+      doc.text("16787900655603",                pi4, y, { lineBreak: false });
+      y += 18;
+
+      // ── TERMS & CONDITIONS ────────────────────────────────────────────────────
+      if (y + 30 > contentBottom) { doc.addPage(); y = 50; }
+
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000")
+         .text("TERMS & CONDITIONS", left, y);
+      y += 12;
+
       const terms = [
         "Livestock bookings must be paid in full at the time of purchase. For Qurbani orders, full payment is required at least 7 days before Eid.",
         "Accepted payment methods: Cash, Bank Transfer, Easypaisa, JazzCash, or Online Checkout.",
@@ -1642,25 +1893,26 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
         "Ensure accurate delivery information and availability at the time of delivery. Any delays caused due to incorrect information or unavailability at delivery address will not be compensated.",
         "THE WARSI FARM is not liable for delays or issues caused by unforeseen circumstances like natural disasters, transport strikes, or technical faults.",
       ];
-      const lineHeight = 11;
-      const termGap = 4;
+      doc.font("Helvetica").fontSize(8).fillColor("#000000");
       for (let i = 0; i < terms.length; i++) {
-        const lines = wrapLines(`${i + 1}. ${terms[i]}`, pageW, 8);
+        const lines = wrapText(`${i + 1}. ${terms[i]}`, pageW, "Helvetica", 8);
         for (const line of lines) {
-          if (y + lineHeight > contentBottom) break;
-          doc.text(line, left, y, { width: pageW, height: lineHeight + 2 });
-          y += lineHeight;
+          if (y + 10 > contentBottom) break;
+          doc.text(line, left, y, { lineBreak: false });
+          y += 11;
         }
-        y += termGap;
+        y += 3;
       }
 
-      // Footer: The Warsi Farm left (unchanged); phone | website on same line, right-aligned
+      // ── FOOTER ───────────────────────────────────────────────────────────────
       const footerY = footerZoneTop + 2;
-      doc.strokeColor(gray).lineWidth(0.5).moveTo(left, footerZoneTop - 4).lineTo(right, footerZoneTop - 4).stroke().strokeColor("#000000").lineWidth(1);
-      doc.font("Helvetica").fontSize(9);
+      doc.strokeColor(gray).lineWidth(0.5)
+         .moveTo(left, footerZoneTop - 4).lineTo(right, footerZoneTop - 4).stroke()
+         .strokeColor("#000000").lineWidth(1);
+      doc.font("Helvetica").fontSize(9).fillColor("#000000");
       doc.text("The Warsi Farm", left, footerY, { lineBreak: false });
-      const footerRightStr = "(0331 & 0332) - 9911466  |  thewarsifarm.com";
-      doc.text(footerRightStr, right - doc.widthOfString(footerRightStr), footerY, { lineBreak: false });
+      const footerRight = "0331-4211466  |  0332-4211466  |  thewarsifarm.com";
+      doc.text(footerRight, right - doc.widthOfString(footerRight), footerY, { lineBreak: false });
 
       doc.end();
     } catch (error) {
@@ -1669,271 +1921,4 @@ app.get("/api/booking/expenses/next-id", verifyToken, async (req, res) => {
       res.status(500).json({ message: "Server error" });
     }
   });
-
-  // Generate customer ID based on contact lookup
-  app.post("/api/booking/generate-customer-id", verifyToken, async (req, res) => {
-    try {
-      const { contact } = req.body;
-      if (!contact || typeof contact !== "string") {
-        return res.status(400).json({ message: "Contact number is required" });
-      }
-
-      // Check in orders and cancelled_orders tables
-      const [orderRows] = await db.execute(
-        "SELECT customer_id FROM orders WHERE contact = ? LIMIT 1",
-        [contact]
-      );
-      if (orderRows.length > 0 && orderRows[0].customer_id) {
-        return res.json({ customer_id: orderRows[0].customer_id });
-      }
-
-      const [cancelledRows] = await db.execute(
-        "SELECT customer_id FROM cancelled_orders WHERE contact = ? LIMIT 1",
-        [contact]
-      );
-      if (cancelledRows.length > 0 && cancelledRows[0].customer_id) {
-        return res.json({ customer_id: cancelledRows[0].customer_id });
-      }
-
-      // Generate new customer ID: find max from both tables
-      const [maxOrderRows] = await db.execute(
-        "SELECT customer_id FROM orders WHERE customer_id LIKE 'TWF-%' ORDER BY CAST(SUBSTRING(customer_id, 5, 4) AS UNSIGNED) DESC LIMIT 1"
-      );
-      const [maxCancelledRows] = await db.execute(
-        "SELECT customer_id FROM cancelled_orders WHERE customer_id LIKE 'TWF-%' ORDER BY CAST(SUBSTRING(customer_id, 5, 4) AS UNSIGNED) DESC LIMIT 1"
-      );
-
-      let maxNum = 0;
-      if (maxOrderRows.length > 0) {
-        const match = maxOrderRows[0].customer_id.match(/^TWF-(\d+)-/);
-        if (match) {
-          maxNum = Math.max(maxNum, parseInt(match[1], 10));
-        }
-      }
-      if (maxCancelledRows.length > 0) {
-        const match = maxCancelledRows[0].customer_id.match(/^TWF-(\d+)-/);
-        if (match) {
-          maxNum = Math.max(maxNum, parseInt(match[1], 10));
-        }
-      }
-
-      const nextNum = maxNum + 1;
-      const customerId = `TWF-${String(nextNum).padStart(4, "0")}-Q`;
-      res.json({ customer_id: customerId });
-    } catch (error) {
-      logError("BOOKING", "Generate customer ID error", error);
-      res.status(500).json({ message: "Server error" });
-    }
-  });
-
-  // Generate order ID based on order_type
-  app.post("/api/booking/generate-order-id", verifyToken, async (req, res) => {
-    try {
-      const { order_type } = req.body;
-      if (!order_type) {
-        return res.status(400).json({ message: "Order type is required" });
-      }
-
-      const prefixMap = {
-        "Cow": "C",
-        "Goat (Hissa)": "G",
-        "Hissa - Standard": "S",
-        "Hissa - Premium": "P",
-        "Hissa - Waqf": "W",
-        "Goat": "J",
-      };
-
-      const prefix = prefixMap[order_type];
-      if (!prefix) {
-        return res.status(400).json({ message: "Invalid order type" });
-      }
-
-      const year = 2026;
-      const pattern = `${prefix}-%`;
-      
-      // Get max order ID for this type in 2026 (only consider orders with booking_date = 2026)
-      const [rows] = await db.execute(
-        `SELECT order_id FROM orders 
-         WHERE order_id LIKE ? AND booking_date IS NOT NULL AND YEAR(booking_date) = ? 
-         ORDER BY CAST(SUBSTRING(order_id, 3, 4) AS UNSIGNED) DESC LIMIT 1`,
-        [pattern, year]
-      );
-
-      let nextNum = 1;
-      if (rows.length > 0) {
-        const match = rows[0].order_id.match(/^[A-Z]-(\d+)-/);
-        if (match) {
-          nextNum = parseInt(match[1], 10) + 1;
-        }
-      }
-
-      const orderId = `${prefix}-${String(nextNum).padStart(4, "0")}-${year}`;
-      res.json({ order_id: orderId });
-    } catch (error) {
-      logError("BOOKING", "Generate order ID error", error);
-      res.status(500).json({ message: "Server error" });
-    }
-  });
-
-  // Get available cow and hissa numbers
-  app.post("/api/booking/get-available-cow-hissa", verifyToken, async (req, res) => {
-    try {
-      const { order_type, day } = req.body;
-      if (!order_type) {
-        return res.json({ cow_number: "0", hissa_number: "0" });
-      }
-
-      // Only for Hissa types
-      const hissaTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf"];
-      if (!hissaTypes.includes(order_type)) {
-        return res.json({ cow_number: "0", hissa_number: "0" });
-      }
-
-      const cowPrefixMap = {
-        "Hissa - Standard": "S",
-        "Hissa - Premium": "P",
-        "Hissa - Waqf": "W",
-      };
-
-      const prefix = cowPrefixMap[order_type];
-      const year = 2026;
-
-      // Get all used cow/hissa combinations for this type and day in 2026
-      // Each day has its own independent cow numbering
-      let query = `SELECT cow_number, hissa_number FROM orders 
-                   WHERE order_type = ? AND booking_date IS NOT NULL AND YEAR(booking_date) = ? 
-                   AND cow_number IS NOT NULL AND cow_number != '' 
-                   AND hissa_number IS NOT NULL AND hissa_number != ''`;
-      const params = [order_type, year];
-
-      if (day) {
-        query += ` AND day = ?`;
-        params.push(day);
-      }
-
-      const [rows] = await db.execute(query, params);
-
-      // Build a set of used combinations for this specific day
-      const used = new Set();
-      rows.forEach((row) => {
-        used.add(`${row.cow_number}-${row.hissa_number}`);
-      });
-
-      // Find first available combination
-      // Cows: S1, S2, S3 (or P1, P2, P3 or W1, W2, W3)
-      // Hissas: 1-7
-      // Each day resets the numbering, so Day 1, Day 2, Day 3 each have their own S1-S3
-      for (let cowNum = 1; cowNum <= 3; cowNum++) {
-        for (let hissaNum = 1; hissaNum <= 7; hissaNum++) {
-          const cow = `${prefix}${cowNum}`;
-          const hissa = String(hissaNum);
-          if (!used.has(`${cow}-${hissa}`)) {
-            return res.json({ cow_number: cow, hissa_number: hissa });
-          }
-        }
-      }
-
-      // If all combinations are used, return the first one anyway
-      res.json({ cow_number: `${prefix}1`, hissa_number: "1" });
-    } catch (error) {
-      logError("BOOKING", "Get available cow/hissa error", error);
-      res.status(500).json({ message: "Server error" });
-    }
-  });
-
-  // Create new order
-  app.post("/api/booking/orders", verifyToken, async (req, res) => {
-    try {
-      const {
-        order_id,
-        customer_id,
-        contact,
-        order_type,
-        booking_name,
-        shareholder_name,
-        cow_number,
-        hissa_number,
-        alt_contact,
-        address,
-        area,
-        day,
-        booking_date,
-        total_amount,
-        order_source,
-        reference,
-        description,
-        slot,
-      } = req.body;
-
-      if (!order_id || !customer_id || !contact || !order_type) {
-        return res.status(400).json({ message: "Missing required fields" });
-      }
-
-      const receivedAmount = 0;
-      const pendingAmount = Number(total_amount) || 0;
-
-      await db.execute(
-        `INSERT INTO orders (
-          order_id, customer_id, contact, order_type, booking_name, shareholder_name,
-          cow_number, hissa_number, alt_contact, address, area, day, booking_date,
-          total_amount, received_amount, pending_amount, order_source, reference,
-          description, slot, rider_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-        [
-          order_id,
-          customer_id,
-          contact,
-          order_type,
-          booking_name || null,
-          shareholder_name || null,
-          cow_number || null,
-          hissa_number || null,
-          alt_contact || null,
-          address || null,
-          area || null,
-          day || null,
-          toDateOnly(booking_date) || null,
-          total_amount || null,
-          receivedAmount,
-          pendingAmount,
-          order_source || null,
-          reference || null,
-          description || null,
-          slot || null,
-        ]
-      );
-
-      await writeAuditLog(db, {
-        user_id: req.userId,
-        action: "CREATE_ORDER",
-        entity_type: "orders",
-        entity_id: order_id,
-        new_values: {
-          order_id,
-          customer_id,
-          booking_name,
-          shareholder_name,
-          order_type,
-          total_amount,
-        },
-        ip_address: req.ip,
-        user_agent: req.get("user-agent"),
-      });
-
-      log("BOOKING", "Order created", { user_id: req.userId, order_id });
-      res.json({ message: "Order created successfully", order_id });
-    } catch (error) {
-      logError("BOOKING", "Create order error", error);
-      await writeAuditLog(db, {
-        user_id: req.userId,
-        action: "CREATE_ORDER_ERROR",
-        entity_type: "orders",
-        new_values: { reason: "server_error" },
-        ip_address: req.ip,
-        user_agent: req.get("user-agent"),
-      });
-      res.status(500).json({ message: "Server error" });
-    }
-  });
 };
-

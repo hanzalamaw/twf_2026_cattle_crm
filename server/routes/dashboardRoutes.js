@@ -36,7 +36,7 @@ const TYPE_KEY_SQL = `
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissapremium') THEN 'premium'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissastandard') THEN 'standard'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissawaqf') THEN 'waqf'
-    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('goathissa','goat') THEN 'goat'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('goathissa') THEN 'goat'
     ELSE NULL
   END
 `;
@@ -57,9 +57,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
   // GET: /api/dashboard/kpis?year=2026|2025|2024|all
   //
-  // ✅ IMPORTANT FIX:
-  // KPIs should be GLOBAL for ALL orders (do NOT filter by TYPE_KEY_SQL)
-  //
+  // ✅ KPIs from 4 order types only: Hissa Premium, Standard, Waqf, Goat (Hissa)
   // ✅ Received Payments = SUM(orders.received_amount)
   // ✅ Cleared Orders = COUNT where pending_amount <= 0
   // ✅ Clearance Rate = clearedOrders / totalOrders * 100
@@ -70,6 +68,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
       const params = [];
       const conditions = buildYearWhere(year, params);
+      conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
       const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
       const [rows] = await db.execute(
@@ -145,7 +144,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
       }
 
       const achievedTotal = map.premium + map.standard + map.waqf + map.goat;
-      const targetTotal = 2000;
+      const targetTotal = year === "2024" ? 500 : year === "2025" ? 1000 : 2000;
 
       const breakdown = [
         { key: "premium", label: TYPES.premium, value: map.premium },
@@ -196,20 +195,12 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
           COUNT(*) AS totalOrders,
 
-          -- ✅ cleared = pending_amount <= 0
-          SUM(CASE WHEN COALESCE(o.pending_amount,0) <= 0 THEN 1 ELSE 0 END) AS paymentCleared,
-
-          -- ✅ pending completely = received=0 AND pending>0
-          SUM(CASE 
-              WHEN COALESCE(o.received_amount,0) <= 0 AND COALESCE(o.pending_amount,0) > 0 THEN 1
-              ELSE 0
-          END) AS pendingCompletely,
-
-          -- ✅ pending partially = received>0 AND pending>0
-          SUM(CASE 
-              WHEN COALESCE(o.received_amount,0) > 0 AND COALESCE(o.pending_amount,0) > 0 THEN 1
-              ELSE 0
-          END) AS pendingPartially
+          -- Payment Cleared: pending is 0
+          SUM(CASE WHEN COALESCE(o.pending_amount,0) = 0 THEN 1 ELSE 0 END) AS paymentCleared,
+          -- Pending (Completely): pending = total amount (nothing paid)
+          SUM(CASE WHEN COALESCE(o.pending_amount,0) = COALESCE(o.total_amount,0) AND COALESCE(o.total_amount,0) > 0 THEN 1 ELSE 0 END) AS pendingCompletely,
+          -- Pending (Partially): some pending but less than total (some amount paid)
+          SUM(CASE WHEN COALESCE(o.pending_amount,0) > 0 AND COALESCE(o.pending_amount,0) < COALESCE(o.total_amount,0) THEN 1 ELSE 0 END) AS pendingPartially
 
         FROM orders o
         ${where}
@@ -256,14 +247,19 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
       };
 
       for (const r of rows) {
-        const d = r.dayKey;
-        const t = r.typeKey;
-        if (!base[d] || !base[d].rows || base[d].rows.totalOrders[t] === undefined) continue;
+        const d = r.dayKey ?? r.daykey ?? null;
+        const t = r.typeKey ?? r.typekey ?? null;
+        const totalOrders = Number(r.totalOrders ?? r.totalorders ?? 0);
+        const paymentCleared = Number(r.paymentCleared ?? r.paymentcleared ?? 0);
+        const pendingCompletely = Number(r.pendingCompletely ?? r.pendingcompletely ?? 0);
+        const pendingPartially = Number(r.pendingPartially ?? r.pendingpartially ?? 0);
 
-        base[d].rows.totalOrders[t] = Number(r.totalOrders || 0);
-        base[d].rows.paymentCleared[t] = Number(r.paymentCleared || 0);
-        base[d].rows.pendingCompletely[t] = Number(r.pendingCompletely || 0);
-        base[d].rows.pendingPartially[t] = Number(r.pendingPartially || 0);
+        if (!d || !t || !base[d] || !base[d].rows || base[d].rows.totalOrders[t] === undefined) continue;
+
+        base[d].rows.totalOrders[t] = totalOrders;
+        base[d].rows.paymentCleared[t] = paymentCleared;
+        base[d].rows.pendingCompletely[t] = pendingCompletely;
+        base[d].rows.pendingPartially[t] = pendingPartially;
       }
 
       const toCard = (dkey) => {
@@ -320,51 +316,181 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
   // -----------------------
   // GET: /api/dashboard/reference-wise?year=...
-  // (ONLY 4 types)
+  // Lead generated = orders with that reference + queries (leads) with that reference.
+  // Lead converted = orders with that reference only.
   // -----------------------
   app.get("/api/dashboard/reference-wise", verifyToken, async (req, res) => {
+    try {
+      const { year = "all" } = req.query;
+
+      const paramsO = [];
+      const conditionsO = buildYearWhere(year, paramsO);
+      conditionsO.push(`${TYPE_KEY_SQL} IS NOT NULL`);
+      conditionsO.push("o.reference IS NOT NULL AND o.reference != ''");
+      const whereO = conditionsO.length ? `WHERE ${conditionsO.join(" AND ")}` : "";
+
+      const paramsL = [];
+      const conditionsL = [];
+      if (year === "2026" || year === "2025") {
+        conditionsL.push("YEAR(l.created_at) = ?");
+        paramsL.push(year);
+      } else if (year === "2024") {
+        conditionsL.push("(l.created_at IS NULL OR YEAR(l.created_at) < 2025)");
+      }
+      conditionsL.push("l.reference IS NOT NULL AND l.reference != ''");
+      const whereL = conditionsL.length ? `WHERE ${conditionsL.join(" AND ")}` : "";
+
+      const [orderRows] = await db.execute(
+        `
+        SELECT
+          o.reference AS name,
+          COUNT(*) AS orderCount,
+          COALESCE(SUM(o.total_amount), 0) AS totalRevenueGenerated
+        FROM orders o
+        ${whereO}
+        GROUP BY o.reference
+        `,
+        paramsO
+      );
+
+      const [leadRows] = await db.execute(
+        `
+        SELECT l.reference AS name, COUNT(*) AS queryCount
+        FROM leads l
+        ${whereL}
+        GROUP BY l.reference
+        `,
+        paramsL
+      );
+
+      const orderMap = new Map();
+      for (const r of orderRows || []) {
+        const orderCount = Number(r.orderCount || 0);
+        orderMap.set(r.name, {
+          orderCount,
+          leadsConverted: orderCount,
+          totalRevenueGenerated: Number(r.totalRevenueGenerated || 0),
+        });
+      }
+      const leadMap = new Map();
+      for (const r of leadRows || []) {
+        leadMap.set(r.name, Number(r.queryCount || 0));
+      }
+
+      const allRefs = new Set([...orderMap.keys(), ...leadMap.keys()]);
+      const data = [...allRefs].map((name) => {
+        const o = orderMap.get(name) || {
+          orderCount: 0,
+          totalRevenueGenerated: 0,
+        };
+        const leadsConverted = o.orderCount;
+        const queryCount = leadMap.get(name) || 0;
+        const leadsGenerated = o.orderCount + queryCount;
+        const conversionRate = leadsGenerated > 0 ? (leadsConverted / leadsGenerated) * 100 : 0;
+        return {
+          name,
+          leadsGenerated,
+          leadsConverted,
+          totalRevenueGenerated: o.totalRevenueGenerated,
+          conversionRate,
+        };
+      });
+      data.sort((a, b) => (b.leadsGenerated - a.leadsGenerated));
+
+      res.json({ references: data });
+    } catch (e) {
+      logError("DASHBOARD", "Reference-wise error", e);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // -----------------------
+  // GET: /api/dashboard/source-wise?year=...
+  // Order count per order_source (for Source wise summary cards)
+  // -----------------------
+  app.get("/api/dashboard/source-wise", verifyToken, async (req, res) => {
     try {
       const { year = "all" } = req.query;
 
       const params = [];
       const conditions = buildYearWhere(year, params);
       conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
-      conditions.push("o.reference IS NOT NULL AND o.reference != ''");
+      conditions.push("(o.order_source IS NOT NULL AND o.order_source != '')");
 
       const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
       const [rows] = await db.execute(
         `
         SELECT
-          o.reference AS name,
-          COUNT(*) AS leadsGenerated,
-          SUM(CASE WHEN COALESCE(o.pending_amount,0) <= 0 THEN 1 ELSE 0 END) AS leadsConverted,
-          COALESCE(SUM(o.total_amount), 0) AS totalRevenueGenerated
+          o.order_source AS sourceName,
+          COUNT(*) AS count
         FROM orders o
         ${where}
-        GROUP BY o.reference
-        ORDER BY leadsGenerated DESC
+        GROUP BY o.order_source
+        ORDER BY count DESC
         `,
         params
       );
 
-      const data = rows.map((r) => {
-        const generated = Number(r.leadsGenerated || 0);
-        const converted = Number(r.leadsConverted || 0);
-        const conversionRate = generated > 0 ? (converted / generated) * 100 : 0;
+      const sources = (rows || []).map((r) => ({
+        sourceName: r.sourceName || "—",
+        count: Number(r.count || 0),
+      }));
 
+      res.json({ sources });
+    } catch (e) {
+      logError("DASHBOARD", "Source-wise error", e);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // -----------------------
+  // GET: /api/dashboard/sales-overview?year=...
+  // Daily series for line chart: date, orders, totalSales, receivedPayments, pendingPayments, totalQuantity, avgOrderValue
+  // -----------------------
+  app.get("/api/dashboard/sales-overview", verifyToken, async (req, res) => {
+    try {
+      const { year = "2026" } = req.query;
+
+      const params = [];
+      const conditions = buildYearWhere(year, params);
+      conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
+      conditions.push("o.booking_date IS NOT NULL");
+      const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+      const [rows] = await db.execute(
+        `
+        SELECT
+          DATE(o.booking_date) AS date,
+          COUNT(*) AS orders,
+          COALESCE(SUM(o.total_amount), 0) AS totalSales,
+          COALESCE(SUM(o.received_amount), 0) AS receivedPayments,
+          COALESCE(SUM(o.pending_amount), 0) AS pendingPayments
+        FROM orders o
+        ${where}
+        GROUP BY DATE(o.booking_date)
+        ORDER BY date ASC
+        `,
+        params
+      );
+
+      const series = (rows || []).map((r) => {
+        const orders = Number(r.orders || 0);
+        const totalSales = Number(r.totalSales || 0);
         return {
-          name: r.name,
-          leadsGenerated: generated,
-          leadsConverted: converted,
-          totalRevenueGenerated: Number(r.totalRevenueGenerated || 0),
-          conversionRate,
+          date: r.date ? String(r.date).slice(0, 10) : "",
+          orders,
+          totalSales,
+          receivedPayments: Number(r.receivedPayments || 0),
+          pendingPayments: Number(r.pendingPayments || 0),
+          totalQuantity: orders,
+          avgOrderValue: orders > 0 ? Math.round(totalSales / orders) : 0,
         };
       });
 
-      res.json({ references: data });
+      res.json({ series });
     } catch (e) {
-      logError("DASHBOARD", "Reference-wise error", e);
+      logError("DASHBOARD", "Sales overview error", e);
       res.status(500).json({ message: "Server error" });
     }
   });

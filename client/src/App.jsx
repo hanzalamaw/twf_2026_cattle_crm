@@ -10,10 +10,10 @@ import ResetPassword from './pages/ResetPassword';
 import AuthCallback from './pages/AuthCallback';
 import Control from './pages/Control';
 import Operations from './pages/Operations';
-import Farm from './pages/Farm';
 import Procurement from './pages/Procurement';
 import Accounting from './pages/Accounting';
-import Performance from './pages/Performance';
+import PerformanceAdmin from './pages/PerformanceAdmin';
+import PerformanceDashboard from './pages/PerformanceDashboard';
 import Dashboard from './pages/Dashboard';
 import BookingPlaceholder from './pages/BookingPlaceholder';
 import AcceptTerms from './pages/AcceptTerms';
@@ -22,6 +22,8 @@ import QueryManagement from './pages/QueryManagement';
 import Transactions from './pages/Transactions';
 import Expenses from './pages/Expenses';
 import NewOrder from './pages/NewOrder';
+import NewQuery from './pages/NewQuery';
+import Stats from './pages/Stats';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -86,10 +88,75 @@ const ROUTE_TITLES = {
   '/bookings/expenses': 'Expenses',
   '/operations': 'Operations Management',
   '/farm': 'Farm Management',
+  '/farm/dashboard': 'Farm Dashboard',
+  '/farm/new-query': 'New Query',
+  '/farm/new-order': 'New Order',
+  '/farm/query-management': 'Query Management',
+  '/farm/orders': 'Order Management',
+  '/farm/transactions': 'Transactions',
+  '/farm/expenses': 'Expenses',
   '/procurement': 'Procurement Management',
   '/accounting': 'Accounting & Finance',
   '/performance': 'Performance Management',
+  '/performance/admin': 'Performance Admin',
+  '/performance/dashboard': 'Performance Dashboard',
+  '/stats': 'Stats',
 };
+
+const API_BASE = 'http://localhost:5000';
+
+function clearSessionAndRedirectToLogin() {
+  localStorage.removeItem('token');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('user');
+  window.location.href = '/login';
+}
+
+function AuthFetchInterceptor() {
+  const { user } = useAuth();
+  useEffect(() => {
+    if (!user) return;
+    const originalFetch = window.fetch;
+    window.fetch = async function (...args) {
+      const res = await originalFetch.apply(this, args);
+      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+      const isApi = url.includes('/api/');
+      const isAuthEndpoint = /\/api\/(login|register|refresh|forgot-password|reset-password|accept-terms)/.test(url);
+      if (res.status === 401 && isApi && !isAuthEndpoint) {
+        const refreshToken = localStorage.getItem('refreshToken');
+        if (!refreshToken) {
+          clearSessionAndRedirectToLogin();
+          return res;
+        }
+        try {
+          const refreshRes = await originalFetch(`${API_BASE}/api/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken }),
+          });
+          if (!refreshRes.ok) {
+            clearSessionAndRedirectToLogin();
+            return res;
+          }
+          const data = await refreshRes.json().catch(() => ({}));
+          if (!data?.token) {
+            clearSessionAndRedirectToLogin();
+            return res;
+          }
+          localStorage.setItem('token', data.token);
+          const newHeaders = { ...(args[1]?.headers || {}), Authorization: `Bearer ${data.token}` };
+          return originalFetch(args[0], { ...args[1], headers: newHeaders });
+        } catch {
+          clearSessionAndRedirectToLogin();
+          return res;
+        }
+      }
+      return res;
+    };
+    return () => { window.fetch = originalFetch; };
+  }, [user]);
+  return null;
+}
 
 function DocumentTitle() {
   const location = useLocation();
@@ -106,6 +173,7 @@ function App() {
     <AuthProvider>
       <Router>
         <DocumentTitle />
+        <AuthFetchInterceptor />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
@@ -136,7 +204,7 @@ function App() {
           <Route path="/bookings" element={<ProtectedRoute><RequirePermission permission="booking_management"><MainLayout systemName="" /></RequirePermission></ProtectedRoute>}>
             <Route index element={<Navigate to="/bookings/dashboard" replace />} />
             <Route path="dashboard" element={<RequireBookingDashboard><Dashboard /></RequireBookingDashboard>} />
-            <Route path="new-query" element={<BookingPlaceholder title="New Query" />} />
+            <Route path="new-query" element={<NewQuery />} />
             <Route path="new-order" element={<NewOrder />} />
             <Route path="queries" element={<QueryManagement />} />
             <Route path="orders" element={<OrderManagement />} />
@@ -149,7 +217,14 @@ function App() {
           </Route>
 
           <Route path="/farm" element={<ProtectedRoute><RequirePermission permission="farm_management"><MainLayout systemName="Farm Management" /></RequirePermission></ProtectedRoute>}>
-            <Route index element={<Farm />} />
+            <Route index element={<Navigate to="/farm/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="new-query" element={<NewQuery />} />
+            <Route path="new-order" element={<NewOrder />} />
+            <Route path="query-management" element={<QueryManagement />} />
+            <Route path="orders" element={<OrderManagement />} />
+            <Route path="transactions" element={<Transactions />} />
+            <Route path="expenses" element={<Expenses />} />
           </Route>
 
           <Route path="/procurement" element={<ProtectedRoute><RequirePermission permission="procurement_management"><MainLayout systemName="Procurement Management" /></RequirePermission></ProtectedRoute>}>
@@ -161,8 +236,16 @@ function App() {
           </Route>
 
           <Route path="/performance" element={<ProtectedRoute><RequirePermission permission="performance_management"><MainLayout systemName="Performance Management" /></RequirePermission></ProtectedRoute>}>
-            <Route index element={<Performance />} />
+            <Route index element={<Navigate to="/performance/admin" replace />} />
+            <Route path="admin" element={<PerformanceAdmin />} />
+            <Route path="dashboard" element={<PerformanceDashboard />} />
           </Route>
+
+          <Route path="/stats" element={
+            <ProtectedRoute>
+              <Stats />
+            </ProtectedRoute>
+          } />
         </Routes>
       </Router>
     </AuthProvider>
