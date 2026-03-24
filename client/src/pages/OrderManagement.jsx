@@ -160,7 +160,6 @@ export default function OrderManagement() {
       if (day)                params.set('day',         day);
       if (reference)          params.set('reference',   reference);
       if (cowNumber.trim())   params.set('cow_number',  cowNumber.trim());
-      if (isFarm)             params.set('source',      'Farm');
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page',  String(page));
       params.set('limit', String(PAGE_SIZE));
@@ -171,7 +170,7 @@ export default function OrderManagement() {
         const total = typeof json.total === 'number' ? json.total : (data?.length ?? 0);
         const filtered = (Array.isArray(data) ? data : []).filter((r) => {
           if (isFarm) {
-            return ['Cow', 'Goat'].includes(r.type) && String(r.source ?? '').trim() === 'Farm';
+            return ['Cow', 'Goat'].includes(r.type);
           }
           return !HIDDEN_TYPES_BOOKING.includes(r.type);
         });

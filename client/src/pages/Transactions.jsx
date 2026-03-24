@@ -71,7 +71,6 @@ function StatusPill({ status }) {
   );
 }
 
-// Search icon SVG
 function SearchIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -113,7 +112,7 @@ export default function Transactions() {
   const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
   const [filters, setFilters] = useState({ order_types: [] });
   const [searchQuery, setSearchQuery] = useState('');
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState('all'); // 'all' | 'received' | 'pending'
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('all');
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const typeDropdownRef = useRef(null);
   const searchInputRef = useRef(null);
@@ -122,7 +121,6 @@ export default function Transactions() {
   const location = useLocation();
   const isFarm = location.pathname.startsWith('/farm');
 
-  // On Hand is only available when year === '2026'
   const onHandAvailable = yearFilter === '2026';
   const effectiveFilterMode = !onHandAvailable ? 'actual' : (appliedTypes.length > 0 ? 'actual' : filterMode);
 
@@ -153,13 +151,12 @@ export default function Transactions() {
   const BOOKING_SUMMARY_TYPES = ['Hissa - Premium', 'Hissa - Standard', 'Hissa - Waqf', 'Goat (Hissa)'];
   const FARM_SUMMARY_TYPES = ['Cow', 'Goat'];
 
-const fetchOrdersSummary = useCallback(async () => {
-  try {
-    const params = new URLSearchParams();
-    if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-    // Filter summary to the relevant order types
-    const summaryTypes = isFarm ? FARM_SUMMARY_TYPES : BOOKING_SUMMARY_TYPES;
-    summaryTypes.forEach((t) => params.append('order_type', t));
+  const fetchOrdersSummary = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+      const summaryTypes = isFarm ? FARM_SUMMARY_TYPES : BOOKING_SUMMARY_TYPES;
+      summaryTypes.forEach((t) => params.append('order_type', t));
       const res = await fetch(`${API}/api/booking/orders/summary?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
@@ -183,7 +180,6 @@ const fetchOrdersSummary = useCallback(async () => {
       if (res.ok) {
         const data = await res.json();
         const list = Array.isArray(data.data) ? data.data : [];
-        // Booking: remove Cow/Goat rows. Farm: show only Cow/Goat rows.
         const filtered = list.filter((row) => {
           if (isFarm) {
             return ['Cow', 'Goat'].includes(row.type) && String(row.source ?? '').trim() === 'Farm';
@@ -208,7 +204,6 @@ const fetchOrdersSummary = useCallback(async () => {
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
   useEffect(() => { setPage(1); }, [yearFilter, appliedTypes]);
 
-  // Reset filterMode to 'onHand' when switching back to 2026, force 'actual' otherwise
   useEffect(() => {
     if (!onHandAvailable) {
       setFilterMode('actual');
@@ -224,18 +219,13 @@ const fetchOrdersSummary = useCallback(async () => {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [typeDropdownOpen]);
 
-  // Client-side filtering: search + payment status
   const displayedOrders = useMemo(() => {
     let result = orders;
-
-    // Payment status filter
     if (paymentStatusFilter === 'received') {
       result = result.filter((o) => o.payment_status !== 'Pending');
     } else if (paymentStatusFilter === 'pending') {
       result = result.filter((o) => o.payment_status === 'Pending');
     }
-
-    // Search filter
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       result = result.filter((row) =>
@@ -246,7 +236,6 @@ const fetchOrdersSummary = useCallback(async () => {
         })
       );
     }
-
     return result;
   }, [orders, searchQuery, paymentStatusFilter]);
 
@@ -328,12 +317,12 @@ const fetchOrdersSummary = useCallback(async () => {
     );
   }
 
-  // Booking: never show Cow/Goat. Farm: show only Cow/Goat.
   const typeOptions = (
     filters.order_types && filters.order_types.length > 0
       ? filters.order_types
       : [...new Set(orders.map((o) => o.type).filter(Boolean))].sort()
   ).filter((t) => (isFarm ? ['Cow', 'Goat'].includes(t) : !HIDDEN_TYPES_BOOKING.includes(t)));
+
   const s = summary || {};
   const totalExpensesBank = Number(s.totalExpensesBank) ?? 0;
   const totalExpensesCash = Number(s.totalExpensesCash) ?? 0;
@@ -357,7 +346,6 @@ const fetchOrdersSummary = useCallback(async () => {
 
   return (
     <>
-      {/* ── Mobile-only styles ── */}
       <style>{`
         @keyframes modalSlideInFromLeft {
           from { transform: translateX(-18px); opacity: 0; }
@@ -366,7 +354,7 @@ const fetchOrdersSummary = useCallback(async () => {
         @media (max-width: 767px) {
           .txn-root              { padding: 64px 12px 24px !important; overflow: auto !important; }
 
-          /* Top bar — title left, leave right edge clear for parent hamburger */
+          /* Top bar */
           .txn-topbar           { flex-wrap: nowrap !important; gap: 8px !important; margin-bottom: 12px !important; align-items: center !important; }
           .txn-topbar h2        { font-size: 16px !important; flex-shrink: 0 !important; }
           .txn-topbar-controls  { display: none !important; }
@@ -383,7 +371,10 @@ const fetchOrdersSummary = useCallback(async () => {
           .txn-card-amount      { font-size: 13px !important; }
           .txn-card-amount span { min-width: unset !important; padding: 4px 6px !important; }
 
-          /* Search + status: single clean row, no stacking */
+          /* ── Show/hide toggle row below cards — VISIBLE on mobile ── */
+          .txn-showhide-mobile  { display: flex !important; }
+
+          /* Search + status */
           .txn-search-row                 { flex-direction: row !important; align-items: center !important; flex-wrap: nowrap !important; gap: 8px !important; margin-bottom: 10px !important; }
           .txn-search-bar                 { flex: 1 1 0 !important; min-width: 0 !important; max-width: none !important; }
           .txn-search-bar input           { font-size: 13px !important; padding: 10px 32px 10px 34px !important; border-radius: 8px !important; }
@@ -395,7 +386,7 @@ const fetchOrdersSummary = useCallback(async () => {
           .txn-filter-chips     { display: none !important; }
           .txn-result-count     { display: none !important; }
 
-          /* Table shown, cards hidden */
+          /* Table shown */
           .txn-table-wrap       { display: block !important; }
           .txn-mobile-cards     { display: none !important; }
 
@@ -487,7 +478,7 @@ const fetchOrdersSummary = useCallback(async () => {
             )}
           </div>
 
-          {/* Amount / On Hand filter — only enabled for 2026 */}
+          {/* Amount / On Hand filter */}
           <label style={{ fontSize: '10px', color: isOnHandDisabled ? '#bbb' : '#666', whiteSpace: 'nowrap' }}>Amount</label>
           <select
             value={effectiveFilterMode}
@@ -508,7 +499,7 @@ const fetchOrdersSummary = useCallback(async () => {
             <option value="actual">Actual</option>
           </select>
 
-          {/* Show/hide amounts */}
+          {/* Show/hide amounts — desktop */}
           <button
             type="button"
             onClick={() => setAmountVisible((v) => !v)}
@@ -640,7 +631,8 @@ const fetchOrdersSummary = useCallback(async () => {
       </div>
 
       {/* ── Mobile-only: show/hide button below cards, right-aligned ── */}
-      <div className="txn-mobile-row" style={{ display: 'none', justifyContent: 'flex-end', marginTop: '-10px', marginBottom: '10px' }}>
+      {/* Uses txn-showhide-mobile class — hidden on desktop, shown on mobile via CSS */}
+      <div className="txn-showhide-mobile" style={{ display: 'none', justifyContent: 'flex-end', marginTop: '-8px', marginBottom: '10px' }}>
         <button
           type="button"
           onClick={() => setAmountVisible((v) => !v)}
@@ -727,7 +719,7 @@ const fetchOrdersSummary = useCallback(async () => {
         )}
       </div>
 
-      {/* ── Desktop Table ── */}
+      {/* ── Table (desktop + mobile) ── */}
       <div className="txn-table-wrap" style={{ flex: 1, minHeight: '260px', overflow: 'auto' }}>
         <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', background: '#fff', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
@@ -794,63 +786,6 @@ const fetchOrdersSummary = useCallback(async () => {
         </div>
       </div>
 
-      {/* ── Mobile order cards (hidden on desktop) ── */}
-      <div className="txn-mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: '10px', flex: 1, overflowY: 'auto' }}>
-        {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>Loading orders…</div>
-        ) : displayedOrders.length === 0 ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '13px' }}>
-            {searchQuery || paymentStatusFilter !== 'all' ? 'No orders match your filters.' : 'No orders.'}
-          </div>
-        ) : displayedOrders.map((row) => {
-          const tc = TYPE_COLORS[row.type] || { bg: '#f3f4f6', color: '#374151' };
-          const isPending = row.payment_status === 'Pending';
-          return (
-            <div
-              key={row.order_id}
-              onClick={() => openModal(row)}
-              style={{ background: '#fff', borderRadius: '12px', border: '1.5px solid #e5e7eb', padding: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
-            >
-              {/* Card top row */}
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '10px', gap: '8px' }}>
-                <div>
-                  <div style={{ fontWeight: '700', fontSize: '13px', color: '#111827', lineHeight: 1.2 }}>{row.booking_name || '—'}</div>
-                  <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>{row.order_id}</div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
-                  <span style={{ background: tc.bg, color: tc.color, fontSize: '10px', fontWeight: '600', padding: '3px 8px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{row.type || '—'}</span>
-                  <StatusPill status={row.payment_status} />
-                </div>
-              </div>
-
-              {/* Info grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px 16px' }}>
-                {[
-                  { label: 'Shareholder', val: row.shareholder_name },
-                  { label: 'Phone',       val: row.phone_number },
-                  { label: 'Total',       val: formatAmount(row.total_amount) },
-                  { label: 'Received',    val: formatAmount(row.received) },
-                  { label: 'Bank',        val: formatAmount(row.bank) },
-                  { label: 'Cash',        val: formatAmount(row.cash) },
-                  { label: 'Pending',     val: formatAmount(row.pending) },
-                  { label: 'Reference',   val: row.reference },
-                ].map(({ label, val }) => (
-                  <div key={label}>
-                    <div style={{ fontSize: '9px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: '1px' }}>{label}</div>
-                    <div style={{ fontSize: '12px', fontWeight: '500', color: label === 'Pending' && isPending ? '#C30730' : '#111827' }}>{val || '—'}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #f3f4f6', fontSize: '11px', color: '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                <span>Tap to update payment</span>
-                <span>→</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
       {/* ── Pagination ── */}
       {!loading && totalCount > 0 && !searchQuery && paymentStatusFilter === 'all' && (
         <div className="txn-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px' }}>
@@ -909,7 +844,6 @@ const fetchOrdersSummary = useCallback(async () => {
             style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(520px, 95vw)', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Drag handle — visible on mobile only */}
             <div className="txn-drag-handle" style={{ display: 'none', width: '40px', height: '4px', background: '#e0e0e0', borderRadius: '2px', margin: '0 auto 16px' }} />
 
             <h3 style={{ margin: '0 0 13px 0', fontSize: '13px', fontWeight: '600' }}>Update Transaction</h3>

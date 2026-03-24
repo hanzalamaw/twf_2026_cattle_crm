@@ -294,7 +294,9 @@ export default function Expenses() {
           /* Top bar */
           .exp-topbar               { margin-bottom: 12px !important; }
           .exp-topbar h2            { font-size: 16px !important; }
-          .exp-topbar-right         { margin-right: 44px !important; }
+
+          /* ── FIX: remove the 44px right margin so Export button sits flush ── */
+          .exp-topbar-right         { margin-right: 0 !important; }
 
           /* Show/hide toggle — hidden on mobile (moved below cards) */
           .exp-showhide-wrap        { display: none !important; }
@@ -312,7 +314,7 @@ export default function Expenses() {
           .exp-add-btn-row          { margin-top: 8px !important; }
           .exp-mobile-showhide      { display: flex !important; }
 
-          /* Table — show on mobile, hide cards */
+          /* Table shown on mobile */
           .exp-table-wrap           { display: block !important; }
           .exp-mobile-cards         { display: none !important; }
 
@@ -369,7 +371,7 @@ export default function Expenses() {
         <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', flexShrink: 0, fontSize: '10px' }}>{error}</div>
       )}
 
-      {/* ── Show/hide toggle ── */}
+      {/* ── Show/hide toggle (desktop only) ── */}
       <div className="exp-showhide-wrap" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', flexShrink: 0 }}>
         <button type="button" onClick={() => setAmountVisible((v) => !v)} title={amountVisible ? 'Hide' : 'Show'} style={{ padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
@@ -409,7 +411,7 @@ export default function Expenses() {
         </div>
 
         <div className="exp-add-btn-row" style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
-          {/* Mobile-only show/hide button — hidden on desktop via exp-mobile-showhide */}
+          {/* Mobile-only show/hide button */}
           <button className="exp-mobile-showhide" type="button" onClick={() => setAmountVisible((v) => !v)} title={amountVisible ? 'Hide' : 'Show'} style={{ display: 'none', padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', marginRight: 'auto' }}>
             <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
           </button>
@@ -419,7 +421,7 @@ export default function Expenses() {
         </div>
       </div>
 
-      {/* ── Desktop Table ── */}
+      {/* ── Table ── */}
       <div className="exp-table-wrap" style={{ flex: 1, minHeight: '400px', overflow: 'auto' }}>
         <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', background: '#fff', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>

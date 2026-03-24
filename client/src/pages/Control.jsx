@@ -406,6 +406,38 @@ const Control = () => {
     transition: 'border-color 0.2s'
   };
 
+  // Shared table styles
+  const tableWrapStyle = {
+    background: '#FFFFFF',
+    borderRadius: '10px',
+    padding: '16px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+    overflowX: 'auto',
+  };
+
+  const tableStyle = {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '11px',
+    whiteSpace: 'nowrap',
+  };
+
+  const thStyle = {
+    textAlign: 'left',
+    padding: '10px',
+    fontSize: '11px',
+    fontWeight: '600',
+    color: '#666',
+    borderBottom: '2px solid #E0E0E0',
+    whiteSpace: 'nowrap',
+  };
+
+  const tdStyle = {
+    padding: '10px',
+    fontSize: '11px',
+    whiteSpace: 'nowrap',
+  };
+
   // Dashboard View
   const renderDashboard = () => {
     const activeUsers = users.filter(u => u.status === 'active').length;
@@ -489,75 +521,43 @@ const Control = () => {
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px', color: '#888', fontSize: '12px' }}>Loading...</div>
       ) : (
-        <>
-          {/* Desktop table */}
-          <div className="ctrl-table-wrap" style={{ background: '#FFFFFF', borderRadius: '10px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
-                  {['Username','Email','Name','Role','Status','Actions'].map(h => (
-                    <th key={h} style={{ textAlign: 'left', padding: '10px', fontSize: '11px', fontWeight: '600', color: '#666' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {users.map(u => (
-                  <tr key={u.user_id} style={{ borderBottom: '1px solid #F0F0F0', transition: 'background 0.2s' }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#F9F9F9'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                    <td style={{ padding: '10px', fontSize: '12px' }}>{u.username}</td>
-                    <td style={{ padding: '10px', fontSize: '12px' }}>{u.email}</td>
-                    <td style={{ padding: '10px', fontSize: '12px' }}>{u.first_name || u.last_name ? `${u.first_name || ''} ${u.last_name || ''}`.trim() : '-'}</td>
-                    <td style={{ padding: '10px', fontSize: '12px' }}>{u.role_name}</td>
-                    <td style={{ padding: '10px', fontSize: '12px' }}>
-                      <span style={{ padding: '3px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: '500', background: u.status === 'active' ? '#E8F5E9' : u.status === 'suspended' ? '#FFEBEE' : '#F5F5F5', color: u.status === 'active' ? '#2E7D32' : u.status === 'suspended' ? '#C62828' : '#666' }}>{u.status}</span>
-                    </td>
-                    <td style={{ padding: '10px', fontSize: '12px' }}>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button onClick={() => openUserModal(u)} style={{ padding: '5px 10px', borderRadius: '5px', border: '1px solid #E0E0E0', background: '#FFFFFF', color: '#1976D2', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
-                          onMouseEnter={(e) => { e.target.style.background = '#E3F2FD'; e.target.style.borderColor = '#1976D2'; }}
-                          onMouseLeave={(e) => { e.target.style.background = '#FFFFFF'; e.target.style.borderColor = '#E0E0E0'; }}>Edit</button>
-                        <button onClick={() => handleDeleteUser(u.user_id)} style={{ padding: '5px 10px', borderRadius: '5px', border: '1px solid #E0E0E0', background: '#FFFFFF', color: '#C62828', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
-                          onMouseEnter={(e) => { e.target.style.background = '#FFEBEE'; e.target.style.borderColor = '#C62828'; }}
-                          onMouseLeave={(e) => { e.target.style.background = '#FFFFFF'; e.target.style.borderColor = '#E0E0E0'; }}>Delete</button>
-                      </div>
-                    </td>
-                  </tr>
+        /* Single scrollable table — shown on both desktop and mobile */
+        <div style={tableWrapStyle}>
+          <table style={tableStyle}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
+                {['Username', 'Email', 'Name', 'Role', 'Status', 'Actions'].map(h => (
+                  <th key={h} style={thStyle}>{h}</th>
                 ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile user cards */}
-          <div className="ctrl-mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: '10px' }}>
-            {users.map(u => (
-              <div key={u.user_id} style={{ background: '#fff', borderRadius: '12px', border: '1.5px solid #e5e7eb', padding: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                  <div>
-                    <div style={{ fontWeight: '700', fontSize: '14px', color: '#111827' }}>{u.username}</div>
-                    <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>{u.email}</div>
-                  </div>
-                  <span style={{ padding: '3px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: '500', background: u.status === 'active' ? '#E8F5E9' : u.status === 'suspended' ? '#FFEBEE' : '#F5F5F5', color: u.status === 'active' ? '#2E7D32' : u.status === 'suspended' ? '#C62828' : '#666', flexShrink: 0 }}>{u.status}</span>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', marginBottom: '12px' }}>
-                  {[
-                    { label: 'Name', val: u.first_name || u.last_name ? `${u.first_name || ''} ${u.last_name || ''}`.trim() : '—' },
-                    { label: 'Role', val: u.role_name || '—' },
-                  ].map(({ label, val }) => (
-                    <div key={label}>
-                      <div style={{ fontSize: '9px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: '1px' }}>{label}</div>
-                      <div style={{ fontSize: '12px', fontWeight: '500', color: '#111827' }}>{val}</div>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.user_id} style={{ borderBottom: '1px solid #F0F0F0', transition: 'background 0.2s' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#F9F9F9'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                  <td style={tdStyle}>{u.username}</td>
+                  <td style={tdStyle}>{u.email}</td>
+                  <td style={tdStyle}>{u.first_name || u.last_name ? `${u.first_name || ''} ${u.last_name || ''}`.trim() : '-'}</td>
+                  <td style={tdStyle}>{u.role_name}</td>
+                  <td style={tdStyle}>
+                    <span style={{ padding: '3px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: '500', background: u.status === 'active' ? '#E8F5E9' : u.status === 'suspended' ? '#FFEBEE' : '#F5F5F5', color: u.status === 'active' ? '#2E7D32' : u.status === 'suspended' ? '#C62828' : '#666' }}>{u.status}</span>
+                  </td>
+                  <td style={tdStyle}>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => openUserModal(u)} style={{ padding: '5px 10px', borderRadius: '5px', border: '1px solid #E0E0E0', background: '#FFFFFF', color: '#1976D2', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
+                        onMouseEnter={(e) => { e.target.style.background = '#E3F2FD'; e.target.style.borderColor = '#1976D2'; }}
+                        onMouseLeave={(e) => { e.target.style.background = '#FFFFFF'; e.target.style.borderColor = '#E0E0E0'; }}>Edit</button>
+                      <button onClick={() => handleDeleteUser(u.user_id)} style={{ padding: '5px 10px', borderRadius: '5px', border: '1px solid #E0E0E0', background: '#FFFFFF', color: '#C62828', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
+                        onMouseEnter={(e) => { e.target.style.background = '#FFEBEE'; e.target.style.borderColor = '#C62828'; }}
+                        onMouseLeave={(e) => { e.target.style.background = '#FFFFFF'; e.target.style.borderColor = '#E0E0E0'; }}>Delete</button>
                     </div>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: '8px', paddingTop: '10px', borderTop: '1px solid #f3f4f6' }}>
-                  <button onClick={() => openUserModal(u)} style={{ flex: 1, padding: '9px', background: '#E3F2FD', border: '1px solid #1976D2', borderRadius: '8px', color: '#1976D2', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Edit</button>
-                  <button onClick={() => handleDeleteUser(u.user_id)} style={{ flex: 1, padding: '9px', background: '#FFEBEE', border: '1px solid #C62828', borderRadius: '8px', color: '#C62828', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Delete</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -571,15 +571,11 @@ const Control = () => {
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
         @media (max-width: 767px) {
+          /* Tab bar — show on mobile too, allow horizontal scroll */
+          .ctrl-tab-bar               { display: flex !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; scrollbar-width: none !important; }
+          .ctrl-tab-bar::-webkit-scrollbar { display: none !important; }
 
-          /* ── Desktop tab bar — hidden on mobile ── */
-          .ctrl-tab-bar               { display: none !important; }
-
-          /* ── Bottom nav — shown on mobile ── */
-          .ctrl-bottom-nav            { display: flex !important; }
-
-          /* Add bottom padding to content so it's not hidden behind the nav */
-          .ctrl-content-wrap          { padding-bottom: 72px !important; }
+          /* Bottom nav — keep as-is (not touched) */
 
           /* Page headings */
           .ctrl-page-title            { font-size: 15px !important; }
@@ -590,10 +586,6 @@ const Control = () => {
 
           /* Dashboard bottom — stack */
           .ctrl-dashboard-bottom      { grid-template-columns: 1fr !important; }
-
-          /* Tables → hidden, cards shown */
-          .ctrl-table-wrap            { display: none !important; }
-          .ctrl-mobile-cards          { display: flex !important; }
 
           /* Modals — bottom sheet */
           .ctrl-modal-wrap            { align-items: flex-end !important; padding: 0 !important; }
@@ -626,7 +618,7 @@ const Control = () => {
         <div className="ctrl-toast" style={{ position: 'fixed', top: '20px', right: '20px', background: '#E8F5E9', color: '#2E7D32', padding: '14px 20px', borderRadius: '8px', border: '1px solid #C8E6C9', fontSize: '10px', zIndex: 999, boxShadow: '0 4px 12px rgba(0,0,0,0.15)', animation: 'slideUp 0.3s ease-out' }}>{success}</div>
       )}
 
-      {/* Tabs — desktop only */}
+      {/* Tabs — desktop + mobile (horizontal scroll on mobile) */}
       <div className="ctrl-tab-bar" style={{ background: '#FFFFFF', borderBottom: '1px solid #E0E0E0', padding: '0 20px', display: 'flex', alignItems: 'center' }}>
         {['dashboard', 'users', 'roles', 'audit', 'sessions'].map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)} style={{ padding: '12px 20px', border: 'none', background: 'none', borderBottom: activeTab === tab ? '3px solid #1976D2' : '3px solid transparent', color: activeTab === tab ? '#1976D2' : '#666', cursor: 'pointer', fontSize: '10px', fontWeight: activeTab === tab ? '600' : '400', textTransform: 'capitalize', transition: 'all 0.2s', marginBottom: '-1px', whiteSpace: 'nowrap' }}
@@ -635,7 +627,7 @@ const Control = () => {
             {TAB_LABELS[tab]}
           </button>
         ))}
-        {/* Back to main — desktop */}
+        {/* Back to main */}
         <a href="http://localhost:5173/" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fafafa', color: '#555', fontSize: '10px', fontWeight: '500', textDecoration: 'none', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
           onMouseEnter={(e) => { e.currentTarget.style.background = '#F5F5F5'; e.currentTarget.style.color = '#333'; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.color = '#555'; }}>
@@ -649,7 +641,7 @@ const Control = () => {
         {activeTab === 'dashboard' && renderDashboard()}
         {activeTab === 'users' && renderUsers()}
 
-      {/* Roles */}
+      {/* ── Roles ── */}
       {activeTab === 'roles' && (
         <div style={{ padding: '20px', width: '100%', boxSizing: 'border-box', margin: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -666,224 +658,140 @@ const Control = () => {
           {loading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: '#888', fontSize: '12px' }}>Loading...</div>
           ) : (
-            <>
-              {/* Desktop table */}
-              <div className="ctrl-table-wrap" style={{ background: '#FFFFFF', borderRadius: '10px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
-                      {['Role Name','Permissions','Actions'].map(h => (
-                        <th key={h} style={{ textAlign: 'left', padding: '10px', fontSize: '11px', fontWeight: '600', color: '#666' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {roles.map(r => {
-                      const permissions = [];
-                      if (r.control_management) permissions.push('Control');
-                      if (r.booking_management) permissions.push('Booking');
-                      if (r.operation_management) permissions.push('Operation');
-                      if (r.farm_management) permissions.push('Farm');
-                      if (r.procurement_management) permissions.push('Procurement');
-                      if (r.accounting_and_finance) permissions.push('Accounting');
-                      if (r.performance_management) permissions.push('Performance');
-                      return (
-                        <tr key={r.role_id} style={{ borderBottom: '1px solid #F0F0F0', transition: 'background 0.2s' }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#F9F9F9'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                          <td style={{ padding: '10px', fontSize: '12px', fontWeight: '500' }}>{r.role_name}</td>
-                          <td style={{ padding: '10px', fontSize: '12px' }}>{permissions.length > 0 ? permissions.join(', ') : 'No permissions'}</td>
-                          <td style={{ padding: '10px', fontSize: '12px' }}>
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                              <button onClick={() => openRoleModal(r)} style={{ padding: '5px 10px', borderRadius: '5px', border: '1px solid #E0E0E0', background: '#FFFFFF', color: '#4CAF50', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
-                                onMouseEnter={(e) => { e.target.style.background = '#E8F5E9'; e.target.style.borderColor = '#4CAF50'; }}
-                                onMouseLeave={(e) => { e.target.style.background = '#FFFFFF'; e.target.style.borderColor = '#E0E0E0'; }}>Edit</button>
-                              <button onClick={() => handleDeleteRole(r.role_id)} style={{ padding: '5px 10px', borderRadius: '5px', border: '1px solid #E0E0E0', background: '#FFFFFF', color: '#C62828', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
-                                onMouseEnter={(e) => { e.target.style.background = '#FFEBEE'; e.target.style.borderColor = '#C62828'; }}
-                                onMouseLeave={(e) => { e.target.style.background = '#FFFFFF'; e.target.style.borderColor = '#E0E0E0'; }}>Delete</button>
+            /* Single scrollable table for desktop + mobile */
+            <div style={tableWrapStyle}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
+                    {['Role Name', 'Permissions', 'Actions'].map(h => (
+                      <th key={h} style={thStyle}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {roles.map(r => {
+                    const permissions = [];
+                    if (r.control_management) permissions.push('Control');
+                    if (r.booking_management) permissions.push('Booking');
+                    if (r.operation_management) permissions.push('Operation');
+                    if (r.farm_management) permissions.push('Farm');
+                    if (r.procurement_management) permissions.push('Procurement');
+                    if (r.accounting_and_finance) permissions.push('Accounting');
+                    if (r.performance_management) permissions.push('Performance');
+                    return (
+                      <tr key={r.role_id} style={{ borderBottom: '1px solid #F0F0F0', transition: 'background 0.2s' }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#F9F9F9'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                        <td style={{ ...tdStyle, fontWeight: '500' }}>{r.role_name}</td>
+                        <td style={tdStyle}>
+                          {permissions.length > 0 ? (
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                              {permissions.map(p => (
+                                <span key={p} style={{ padding: '2px 7px', borderRadius: '10px', fontSize: '10px', fontWeight: '500', background: '#E8F5E9', color: '#2E7D32' }}>{p}</span>
+                              ))}
                             </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile role cards */}
-              <div className="ctrl-mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: '10px' }}>
-                {roles.map(r => {
-                  const permissions = [];
-                  if (r.control_management) permissions.push('Control');
-                  if (r.booking_management) permissions.push('Booking');
-                  if (r.operation_management) permissions.push('Operation');
-                  if (r.farm_management) permissions.push('Farm');
-                  if (r.procurement_management) permissions.push('Procurement');
-                  if (r.accounting_and_finance) permissions.push('Accounting');
-                  if (r.performance_management) permissions.push('Performance');
-                  return (
-                    <div key={r.role_id} style={{ background: '#fff', borderRadius: '12px', border: '1.5px solid #e5e7eb', padding: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-                      <div style={{ fontWeight: '700', fontSize: '14px', color: '#111827', marginBottom: '8px' }}>{r.role_name}</div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '12px' }}>
-                        {permissions.length > 0 ? permissions.map(p => (
-                          <span key={p} style={{ padding: '3px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: '500', background: '#E8F5E9', color: '#2E7D32' }}>{p}</span>
-                        )) : <span style={{ fontSize: '12px', color: '#9ca3af' }}>No permissions</span>}
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', paddingTop: '10px', borderTop: '1px solid #f3f4f6' }}>
-                        <button onClick={() => openRoleModal(r)} style={{ flex: 1, padding: '9px', background: '#E8F5E9', border: '1px solid #4CAF50', borderRadius: '8px', color: '#2E7D32', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Edit</button>
-                        <button onClick={() => handleDeleteRole(r.role_id)} style={{ flex: 1, padding: '9px', background: '#FFEBEE', border: '1px solid #C62828', borderRadius: '8px', color: '#C62828', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>Delete</button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
+                          ) : 'No permissions'}
+                        </td>
+                        <td style={tdStyle}>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button onClick={() => openRoleModal(r)} style={{ padding: '5px 10px', borderRadius: '5px', border: '1px solid #E0E0E0', background: '#FFFFFF', color: '#4CAF50', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
+                              onMouseEnter={(e) => { e.target.style.background = '#E8F5E9'; e.target.style.borderColor = '#4CAF50'; }}
+                              onMouseLeave={(e) => { e.target.style.background = '#FFFFFF'; e.target.style.borderColor = '#E0E0E0'; }}>Edit</button>
+                            <button onClick={() => handleDeleteRole(r.role_id)} style={{ padding: '5px 10px', borderRadius: '5px', border: '1px solid #E0E0E0', background: '#FFFFFF', color: '#C62828', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
+                              onMouseEnter={(e) => { e.target.style.background = '#FFEBEE'; e.target.style.borderColor = '#C62828'; }}
+                              onMouseLeave={(e) => { e.target.style.background = '#FFFFFF'; e.target.style.borderColor = '#E0E0E0'; }}>Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
 
-      {/* Audit Logs */}
+      {/* ── Audit Logs ── */}
       {activeTab === 'audit' && (
         <div style={{ padding: '20px', width: '100%', boxSizing: 'border-box', margin: 0 }}>
           <h1 className="ctrl-page-title" style={{ fontSize: '18px', fontWeight: '700', marginBottom: '16px', color: '#333' }}>Audit Logs</h1>
           {loading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: '#888', fontSize: '12px' }}>Loading...</div>
           ) : (
-            <>
-              {/* Desktop table */}
-              <div className="ctrl-table-wrap" style={{ background: '#FFFFFF', borderRadius: '10px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
-                      {['Timestamp','User','Action','Entity','IP Address'].map(h => (
-                        <th key={h} style={{ textAlign: 'left', padding: '10px', fontSize: '11px', fontWeight: '600', color: '#666' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {auditLogs.map(log => (
-                      <tr key={log.log_id} style={{ borderBottom: '1px solid #F0F0F0', transition: 'background 0.2s', cursor: 'pointer' }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#F0F7FF'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        onClick={() => { setSelectedAuditLog(log); if (!showAuditDetailModal) auditModalMounted.current = false; setShowAuditDetailModal(true); }}>
-                        <td style={{ padding: '10px', fontSize: '12px' }}>{new Date(log.created_at).toLocaleString()}</td>
-                        <td style={{ padding: '10px', fontSize: '12px' }}>{log.username || 'System'}</td>
-                        <td style={{ padding: '10px', fontSize: '12px' }}>{log.action}</td>
-                        <td style={{ padding: '10px', fontSize: '12px' }}>{log.entity_type} {log.entity_id && `#${log.entity_id}`}</td>
-                        <td style={{ padding: '10px', fontSize: '12px' }}>{log.ip_address || '-'}</td>
-                      </tr>
+            /* Single scrollable table for desktop + mobile */
+            <div style={tableWrapStyle}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
+                    {['Timestamp', 'User', 'Action', 'Entity', 'IP Address'].map(h => (
+                      <th key={h} style={thStyle}>{h}</th>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile audit cards */}
-              <div className="ctrl-mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: '10px' }}>
-                {auditLogs.map(log => (
-                  <div key={log.log_id}
-                    onClick={() => { setSelectedAuditLog(log); if (!showAuditDetailModal) auditModalMounted.current = false; setShowAuditDetailModal(true); }}
-                    style={{ background: '#fff', borderRadius: '12px', border: '1.5px solid #e5e7eb', padding: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', gap: '8px' }}>
-                      <div style={{ fontWeight: '600', fontSize: '13px', color: '#111827' }}>{log.action}</div>
-                      <div style={{ fontSize: '10px', color: '#9ca3af', flexShrink: 0 }}>{new Date(log.created_at).toLocaleDateString()}</div>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px' }}>
-                      {[
-                        { label: 'User', val: log.username || 'System' },
-                        { label: 'Entity', val: `${log.entity_type}${log.entity_id ? ` #${log.entity_id}` : ''}` },
-                        { label: 'IP', val: log.ip_address || '—' },
-                        { label: 'Time', val: new Date(log.created_at).toLocaleTimeString() },
-                      ].map(({ label, val }) => (
-                        <div key={label}>
-                          <div style={{ fontSize: '9px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: '1px' }}>{label}</div>
-                          <div style={{ fontSize: '12px', fontWeight: '500', color: '#374151' }}>{val}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #f3f4f6', fontSize: '11px', color: '#6b7280', textAlign: 'right' }}>Tap for details →</div>
-                  </div>
-                ))}
-              </div>
-            </>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLogs.map(log => (
+                    <tr key={log.log_id} style={{ borderBottom: '1px solid #F0F0F0', transition: 'background 0.2s', cursor: 'pointer' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#F0F7FF'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      onClick={() => { setSelectedAuditLog(log); if (!showAuditDetailModal) auditModalMounted.current = false; setShowAuditDetailModal(true); }}>
+                      <td style={tdStyle}>{new Date(log.created_at).toLocaleString()}</td>
+                      <td style={tdStyle}>{log.username || 'System'}</td>
+                      <td style={tdStyle}>{log.action}</td>
+                      <td style={tdStyle}>{log.entity_type} {log.entity_id && `#${log.entity_id}`}</td>
+                      <td style={tdStyle}>{log.ip_address || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
 
-      {/* Sessions */}
+      {/* ── Sessions ── */}
       {activeTab === 'sessions' && (
         <div style={{ padding: '20px', width: '100%', boxSizing: 'border-box', margin: 0 }}>
           <h1 className="ctrl-page-title" style={{ fontSize: '18px', fontWeight: '700', marginBottom: '16px', color: '#333' }}>Active Sessions</h1>
           {loading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: '#888', fontSize: '12px' }}>Loading...</div>
           ) : (
-            <>
-              {/* Desktop table */}
-              <div className="ctrl-table-wrap" style={{ background: '#FFFFFF', borderRadius: '10px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
-                      {['User','Role','Login Time','Last Activity','IP Address','Actions'].map(h => (
-                        <th key={h} style={{ textAlign: 'left', padding: '10px', fontSize: '11px', fontWeight: '600', color: '#666' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sessions.map(session => (
-                      <tr key={session.session_id} style={{ borderBottom: '1px solid #F0F0F0', transition: 'background 0.2s' }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#F9F9F9'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                        <td style={{ padding: '10px', fontSize: '12px' }}>{session.username}</td>
-                        <td style={{ padding: '10px', fontSize: '12px' }}>{session.role_name}</td>
-                        <td style={{ padding: '10px', fontSize: '12px' }}>{new Date(session.login_at).toLocaleString()}</td>
-                        <td style={{ padding: '10px', fontSize: '12px' }}>{new Date(session.last_activity_at).toLocaleString()}</td>
-                        <td style={{ padding: '10px', fontSize: '12px' }}>{session.ip_address || '-'}</td>
-                        <td style={{ padding: '10px', fontSize: '12px' }}>
-                          <button onClick={() => handleTerminateSession(session.session_id)} style={{ padding: '5px 10px', borderRadius: '5px', border: '1px solid #E0E0E0', background: '#FFFFFF', color: '#C62828', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
-                            onMouseEnter={(e) => { e.target.style.background = '#FFEBEE'; e.target.style.borderColor = '#C62828'; }}
-                            onMouseLeave={(e) => { e.target.style.background = '#FFFFFF'; e.target.style.borderColor = '#E0E0E0'; }}>Terminate</button>
-                        </td>
-                      </tr>
+            /* Single scrollable table for desktop + mobile */
+            <div style={tableWrapStyle}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #E0E0E0' }}>
+                    {['User', 'Role', 'Login Time', 'Last Activity', 'IP Address', 'Actions'].map(h => (
+                      <th key={h} style={thStyle}>{h}</th>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile session cards */}
-              <div className="ctrl-mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: '10px' }}>
-                {sessions.map(session => (
-                  <div key={session.session_id} style={{ background: '#fff', borderRadius: '12px', border: '1.5px solid #e5e7eb', padding: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                      <div>
-                        <div style={{ fontWeight: '700', fontSize: '14px', color: '#111827' }}>{session.username}</div>
-                        <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>{session.role_name}</div>
-                      </div>
-                      <span style={{ padding: '3px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: '500', background: '#E8F5E9', color: '#2E7D32', flexShrink: 0 }}>Active</span>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', marginBottom: '12px' }}>
-                      {[
-                        { label: 'Login', val: new Date(session.login_at).toLocaleString() },
-                        { label: 'Last Active', val: new Date(session.last_activity_at).toLocaleString() },
-                        { label: 'IP Address', val: session.ip_address || '—' },
-                      ].map(({ label, val }) => (
-                        <div key={label}>
-                          <div style={{ fontSize: '9px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: '1px' }}>{label}</div>
-                          <div style={{ fontSize: '12px', fontWeight: '500', color: '#111827' }}>{val}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{ paddingTop: '10px', borderTop: '1px solid #f3f4f6' }}>
-                      <button onClick={() => handleTerminateSession(session.session_id)} style={{ width: '100%', padding: '10px', background: '#FFEBEE', border: '1px solid #C62828', borderRadius: '8px', color: '#C62828', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>Terminate Session</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions.map(session => (
+                    <tr key={session.session_id} style={{ borderBottom: '1px solid #F0F0F0', transition: 'background 0.2s' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#F9F9F9'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                      <td style={tdStyle}>{session.username}</td>
+                      <td style={tdStyle}>{session.role_name}</td>
+                      <td style={tdStyle}>{new Date(session.login_at).toLocaleString()}</td>
+                      <td style={tdStyle}>{new Date(session.last_activity_at).toLocaleString()}</td>
+                      <td style={tdStyle}>{session.ip_address || '-'}</td>
+                      <td style={tdStyle}>
+                        <button onClick={() => handleTerminateSession(session.session_id)} style={{ padding: '5px 10px', borderRadius: '5px', border: '1px solid #E0E0E0', background: '#FFFFFF', color: '#C62828', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
+                          onMouseEnter={(e) => { e.target.style.background = '#FFEBEE'; e.target.style.borderColor = '#C62828'; }}
+                          onMouseLeave={(e) => { e.target.style.background = '#FFFFFF'; e.target.style.borderColor = '#E0E0E0'; }}>Terminate</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
       </div>{/* end ctrl-content-wrap */}
 
-      {/* ── Mobile bottom navigation (hidden on desktop) ── */}
+      {/* ── Mobile bottom navigation (unchanged) ── */}
       <nav className="ctrl-bottom-nav" style={{
         display: 'none',
         position: 'fixed',
@@ -972,7 +880,6 @@ const Control = () => {
                 WebkitTapHighlightColor: 'transparent',
               }}
             >
-              {/* Active indicator dot */}
               {active && (
                 <span style={{ position: 'absolute', top: '6px', width: '4px', height: '4px', borderRadius: '50%', background: activeColor }} />
               )}
@@ -984,10 +891,8 @@ const Control = () => {
           );
         })}
 
-        {/* Divider */}
         <div style={{ width: '1px', background: '#f0f0f0', margin: '10px 0' }} />
 
-        {/* Back to Management */}
         <a
           href="http://localhost:5173/"
           style={{
@@ -1153,13 +1058,13 @@ const Control = () => {
                 </div>
               );
 
-              const thStyle = { textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' };
-              const tdStyle = { padding: '8px', fontSize: '12px', color: '#333' };
+              const auditThStyle = { textAlign: 'left', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#666' };
+              const auditTdStyle = { padding: '8px', fontSize: '12px', color: '#333' };
 
               return (
                 <div>
                   {isUpdate && (oldValues || newValues) && tableWrap('Changes Made (before → after)', '#F9F9F9', <>
-                    <thead><tr style={{ borderBottom: '2px solid #E0E0E0' }}><th style={thStyle}>Field</th><th style={thStyle}>Old value</th><th style={thStyle}>New value</th></tr></thead>
+                    <thead><tr style={{ borderBottom: '2px solid #E0E0E0' }}><th style={auditThStyle}>Field</th><th style={auditThStyle}>Old value</th><th style={auditThStyle}>New value</th></tr></thead>
                     <tbody>
                       {Object.keys({ ...(oldValues || {}), ...(newValues || {}) }).filter(k => k !== 'order_id' && k !== 'lead_id').map(key => {
                         const oldVal = oldValues && oldValues[key];
@@ -1172,9 +1077,9 @@ const Control = () => {
                         const displayNew = newVal !== null && newVal !== undefined ? String(key === 'booking_date' ? (toDatePart(newVal) ?? '—') : newVal) : '—';
                         return (
                           <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
-                            <td style={{ ...tdStyle, fontWeight: '500' }}>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
-                            <td style={{ ...tdStyle, color: changed ? '#C62828' : '#666', textDecoration: changed ? 'line-through' : 'none' }}>{displayOld}</td>
-                            <td style={{ ...tdStyle, color: changed ? '#2E7D32' : '#666', fontWeight: changed ? '500' : '400' }}>{displayNew}</td>
+                            <td style={{ ...auditTdStyle, fontWeight: '500' }}>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
+                            <td style={{ ...auditTdStyle, color: changed ? '#C62828' : '#666', textDecoration: changed ? 'line-through' : 'none' }}>{displayOld}</td>
+                            <td style={{ ...auditTdStyle, color: changed ? '#2E7D32' : '#666', fontWeight: changed ? '500' : '400' }}>{displayNew}</td>
                           </tr>
                         );
                       })}
@@ -1182,11 +1087,11 @@ const Control = () => {
                   </>)}
 
                   {(isCancelOrder || isDeleteLead) && newValues && tableWrap(isCancelOrder ? 'Cancelled order details' : 'Deleted lead details', '#FFF5F5', <>
-                    <thead><tr style={{ borderBottom: '2px solid #E0E0E0' }}><th style={thStyle}>Field</th><th style={thStyle}>Value</th></tr></thead>
+                    <thead><tr style={{ borderBottom: '2px solid #E0E0E0' }}><th style={auditThStyle}>Field</th><th style={auditThStyle}>Value</th></tr></thead>
                     <tbody>{Object.entries(newValues).map(([key, value]) => (
                       <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
-                        <td style={{ ...tdStyle, fontWeight: '500' }}>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
-                        <td style={tdStyle}>{value !== null && value !== undefined ? String(value) : '—'}</td>
+                        <td style={{ ...auditTdStyle, fontWeight: '500' }}>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
+                        <td style={auditTdStyle}>{value !== null && value !== undefined ? String(value) : '—'}</td>
                       </tr>
                     ))}</tbody>
                   </>)}
@@ -1208,21 +1113,21 @@ const Control = () => {
                   )}
 
                   {isCreate && newValues && Object.keys(newValues).length > 0 && tableWrap('Created Data', '#F9F9F9', <>
-                    <thead><tr style={{ borderBottom: '2px solid #E0E0E0' }}><th style={thStyle}>Field</th><th style={thStyle}>Value</th></tr></thead>
+                    <thead><tr style={{ borderBottom: '2px solid #E0E0E0' }}><th style={auditThStyle}>Field</th><th style={auditThStyle}>Value</th></tr></thead>
                     <tbody>{Object.entries(newValues).map(([key, value]) => (
                       <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
-                        <td style={{ ...tdStyle, fontWeight: '500' }}>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
-                        <td style={tdStyle}>{value === null || value === undefined ? 'N/A' : String(value)}</td>
+                        <td style={{ ...auditTdStyle, fontWeight: '500' }}>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
+                        <td style={auditTdStyle}>{value === null || value === undefined ? 'N/A' : String(value)}</td>
                       </tr>
                     ))}</tbody>
                   </>)}
 
                   {isDelete && oldValues && tableWrap('Deleted Data', '#F9F9F9', <>
-                    <thead><tr style={{ borderBottom: '2px solid #E0E0E0' }}><th style={thStyle}>Field</th><th style={thStyle}>Value</th></tr></thead>
+                    <thead><tr style={{ borderBottom: '2px solid #E0E0E0' }}><th style={auditThStyle}>Field</th><th style={auditThStyle}>Value</th></tr></thead>
                     <tbody>{Object.entries(oldValues).map(([key, value]) => (
                       <tr key={key} style={{ borderBottom: '1px solid #F0F0F0' }}>
-                        <td style={{ ...tdStyle, fontWeight: '500' }}>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
-                        <td style={{ ...tdStyle, color: '#C62828' }}>{value !== null && value !== undefined ? String(value) : 'N/A'}</td>
+                        <td style={{ ...auditTdStyle, fontWeight: '500' }}>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
+                        <td style={{ ...auditTdStyle, color: '#C62828' }}>{value !== null && value !== undefined ? String(value) : 'N/A'}</td>
                       </tr>
                     ))}</tbody>
                   </>)}
