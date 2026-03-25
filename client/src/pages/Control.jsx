@@ -152,7 +152,7 @@ const Control = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE}/api/control/users`, {
+      const response = await fetch(`${API_BASE}/control/users`, {
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       const data = await handleApiResponse(response);
@@ -167,7 +167,7 @@ const Control = () => {
   const fetchRoles = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE}/api/control/roles`, {
+      const response = await fetch(`${API_BASE}/control/roles`, {
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       const data = await handleApiResponse(response);
@@ -182,7 +182,7 @@ const Control = () => {
   const fetchAuditLogs = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE}/api/control/audit-logs?limit=50`, {
+      const response = await fetch(`${API_BASE}/control/audit-logs?limit=50`, {
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       const data = await handleApiResponse(response);
@@ -197,7 +197,7 @@ const Control = () => {
   const fetchSessions = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE}/api/control/sessions`, {
+      const response = await fetch(`${API_BASE}/control/sessions`, {
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       const data = await handleApiResponse(response);
@@ -239,8 +239,8 @@ const Control = () => {
     setSuccess('');
     try {
       const url = editingUser
-        ? `${API_BASE}/api/control/users/${editingUser.user_id}`
-        : `${API_BASE}/api/control/users`;
+        ? `${API_BASE}/control/users/${editingUser.user_id}`
+        : `${API_BASE}/control/users`;
       const method = editingUser ? 'PUT' : 'POST';
       const body = { ...userFormData };
       if (!editingUser && !body.password) { setError('Password is required for new users'); return; }
@@ -272,8 +272,8 @@ const Control = () => {
     setSuccess('');
     try {
       const url = editingRole
-        ? `${API_BASE}/api/control/roles/${editingRole.role_id}`
-        : `${API_BASE}/api/control/roles`;
+        ? `${API_BASE}/control/roles/${editingRole.role_id}`
+        : `${API_BASE}/control/roles`;
       const method = editingRole ? 'PUT' : 'POST';
       const response = await fetch(url, {
         method,
@@ -352,7 +352,7 @@ const Control = () => {
   const handleDeleteUser = async (userId) => {
     if (!window.confirm('Are you sure you want to delete this user?')) return;
     try {
-      const response = await fetch(`${API_BASE}/api/control/users/${userId}`, {
+      const response = await fetch(`${API_BASE}/control/users/${userId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
@@ -367,7 +367,7 @@ const Control = () => {
   const handleDeleteRole = async (roleId) => {
     if (!window.confirm('Are you sure you want to delete this role?')) return;
     try {
-      const response = await fetch(`${API_BASE}/api/control/roles/${roleId}`, {
+      const response = await fetch(`${API_BASE}/control/roles/${roleId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
@@ -382,7 +382,7 @@ const Control = () => {
   const handleTerminateSession = async (sessionId) => {
     if (!window.confirm('Are you sure you want to terminate this session?')) return;
     try {
-      const response = await fetch(`${API_BASE}/api/control/sessions/${sessionId}`, {
+      const response = await fetch(`${API_BASE}/control/sessions/${sessionId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });

@@ -105,12 +105,12 @@ const SubSystemSelection = ({ forceMobileLayout = false } = {}) => {
     if (!token) { clearSessionAndRedirectToLogin(); return; }
     const validate = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/me`, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(`${API_BASE}/me`, { headers: { Authorization: `Bearer ${token}` } });
         if (res.ok) { setSessionChecked(true); return; }
         if (res.status === 401) {
           const refreshToken = localStorage.getItem('refreshToken');
           if (!refreshToken) { clearSessionAndRedirectToLogin(); return; }
-          const refreshRes = await fetch(`${API_BASE}/api/refresh`, {
+          const refreshRes = await fetch(`${API_BASE}/refresh`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ refreshToken }),

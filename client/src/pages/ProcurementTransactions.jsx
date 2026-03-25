@@ -40,7 +40,7 @@ export default function ProcurementTransactions() {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/procurement/transactions`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/procurement/transactions`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const d = await res.json();
         setSummary(d.summary || null);
@@ -61,7 +61,7 @@ export default function ProcurementTransactions() {
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
 
-      const res = await fetch(`${API}/api/procurement/transactions/list?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/procurement/transactions/list?${params}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) { setError('Failed to load procurements'); return; }
       const d = await res.json();
       setRows(Array.isArray(d.data) ? d.data : []);
@@ -86,7 +86,7 @@ export default function ProcurementTransactions() {
     if (bank + cash <= 0) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`${API}/api/procurement/${encodeURIComponent(modalRow.procurement_id)}/payments`, {
+      const res = await fetch(`${API}/procurement/${encodeURIComponent(modalRow.procurement_id)}/payments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ bank, cash }),

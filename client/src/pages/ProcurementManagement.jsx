@@ -80,7 +80,7 @@ export default function ProcurementManagement() {
     try {
       const params = new URLSearchParams();
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-      const url = `${API}/api/procurement/filters${params.toString() ? `?${params}` : ''}`;
+      const url = `${API}/procurement/filters${params.toString() ? `?${params}` : ''}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) setFilters(await res.json());
     } catch {
@@ -99,7 +99,7 @@ export default function ProcurementManagement() {
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
 
-      const res = await fetch(`${API}/api/procurement?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/procurement?${params}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) {
         setError('Failed to load procurements');
         return;
@@ -183,7 +183,7 @@ export default function ProcurementManagement() {
   const handleSaveEdit = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`${API}/api/procurement/${encodeURIComponent(editRow.procurement_id)}`, {
+      const res = await fetch(`${API}/procurement/${encodeURIComponent(editRow.procurement_id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -212,7 +212,7 @@ export default function ProcurementManagement() {
   const handleDeleteConfirm = async () => {
     if (!deleteConfirm) return;
     try {
-      const res = await fetch(`${API}/api/procurement/${encodeURIComponent(deleteConfirm.procurement_id)}`, {
+      const res = await fetch(`${API}/procurement/${encodeURIComponent(deleteConfirm.procurement_id)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -259,7 +259,7 @@ export default function ProcurementManagement() {
       while (keepGoing) {
         params.set('page', String(pageNum));
         params.set('limit', String(limit));
-        const res = await fetch(`${API}/api/procurement?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(`${API}/procurement?${params}`, { headers: { Authorization: `Bearer ${token}` } });
         if (!res.ok) { alert('Failed to load data for export'); return; }
         const json = await res.json();
         const data = Array.isArray(json.data) ? json.data : [];

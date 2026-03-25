@@ -33,7 +33,7 @@ const NewOrder = () => {
     const token = localStorage.getItem('token');
     if (!token) return;
     try {
-      const res = await fetch(`${API}/api/booking/generate-customer-id`, {
+      const res = await fetch(`${API}/booking/generate-customer-id`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ contact }),
@@ -53,7 +53,7 @@ const NewOrder = () => {
     const token = localStorage.getItem('token');
     if (!token) return;
     try {
-      const res = await fetch(`${API}/api/booking/generate-order-id`, {
+      const res = await fetch(`${API}/booking/generate-order-id`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ order_type: orderType }),
@@ -68,7 +68,7 @@ const NewOrder = () => {
     const token = localStorage.getItem('token');
     if (!token) return;
     try {
-      const res = await fetch(`${API}/api/booking/get-available-cow-hissa`, {
+      const res = await fetch(`${API}/booking/get-available-cow-hissa`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ order_type: orderType, day: day || null, booking_date: bookingDate || null }),
@@ -89,7 +89,7 @@ const NewOrder = () => {
     const token = localStorage.getItem('token');
     if (!token) return null;
     try {
-      const res = await fetch(`${API}/api/booking/check-cow-hissa`, {
+      const res = await fetch(`${API}/booking/check-cow-hissa`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ cow_number: cow, hissa_number: hissa, order_type: orderType, day: day || null, booking_date: bookingDate || null }),
@@ -146,7 +146,7 @@ const NewOrder = () => {
     const token = localStorage.getItem('token');
     if (!token) { setError('You must be logged in to create an order'); setLoading(false); return; }
     try {
-      const res = await fetch(`${API}/api/booking/orders`, {
+      const res = await fetch(`${API}/booking/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(formData),

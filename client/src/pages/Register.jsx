@@ -89,7 +89,7 @@ const Register = () => {
     setIsSubmitting(true);
     
     try {
-      const response = await fetch(`${API_BASE}/api/register`, {
+      const response = await fetch(`${API_BASE}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -22,7 +22,7 @@ export default function ProcurementDashboard() {
     try {
       const params = new URLSearchParams();
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-      const res = await fetch(`${API}/api/procurement/dashboard?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/procurement/dashboard?${params}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) { setError('Failed to load dashboard'); return; }
       const json = await res.json();
       setData(json || {});

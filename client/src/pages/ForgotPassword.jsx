@@ -36,7 +36,7 @@ const ForgotPassword = () => {
     setIsSubmitting(true);
     
     try {
-      const response = await fetch(`${API_BASE}/api/forgot-password`, {
+      const response = await fetch(`${API_BASE}/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),

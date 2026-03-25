@@ -26,7 +26,7 @@ export const AuthProvider = ({ children }) => {
         clearSessionAndLogout();
         return res;
       }
-      const refreshRes = await fetch(`${API_BASE}/api/refresh`, {
+      const refreshRes = await fetch(`${API_BASE}/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
@@ -54,7 +54,7 @@ export const AuthProvider = ({ children }) => {
       setUser(parsed);
       if (!parsed.permissions || parsed.role_id == null) {
         const tryMe = (accessToken) =>
-          fetch(`${API_BASE}/api/me`, { headers: { Authorization: `Bearer ${accessToken}` } });
+          fetch(`${API_BASE}/me`, { headers: { Authorization: `Bearer ${accessToken}` } });
         tryMe(token)
           .then((res) => {
             if (res.status === 401) {
@@ -63,7 +63,7 @@ export const AuthProvider = ({ children }) => {
                 clearSessionAndLogout();
                 return null;
               }
-              return fetch(`${API_BASE}/api/refresh`, {
+              return fetch(`${API_BASE}/refresh`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ refreshToken })
@@ -117,7 +117,7 @@ export const AuthProvider = ({ children }) => {
     const refreshToken = localStorage.getItem('refreshToken');
 
     try {
-      await fetch(`${API_BASE}/api/logout`, {
+      await fetch(`${API_BASE}/logout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

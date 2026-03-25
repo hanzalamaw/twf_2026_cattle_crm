@@ -504,7 +504,7 @@ const Dashboard = () => {
       if (!silent) setLoading(true);
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const y = encodeURIComponent(year);
-      const base = isFarm ? `${API_BASE}/api/farm/dashboard` : `${API_BASE}/api/dashboard`;
+      const base = isFarm ? `${API_BASE}/farm/dashboard` : `${API_BASE}/dashboard`;
       const dayPromise = isFarm
         ? Promise.resolve({ json: async () => ({ days: [] }) })
         : fetch(`${base}/day-wise?year=${y}`, { headers });

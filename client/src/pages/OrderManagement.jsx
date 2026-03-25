@@ -143,7 +143,7 @@ export default function OrderManagement() {
     try {
       const params = new URLSearchParams();
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-      const url = `${API}/api/booking/orders/filters${params.toString() ? `?${params}` : ''}`;
+      const url = `${API}/booking/orders/filters${params.toString() ? `?${params}` : ''}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) { const data = await res.json(); setFilters(data); }
     } catch (e) { console.error(e); }
@@ -162,7 +162,7 @@ export default function OrderManagement() {
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page',  String(page));
       params.set('limit', String(PAGE_SIZE));
-      const res = await fetch(`${API}/api/booking/orders?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/booking/orders?${params}`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const json  = await res.json();
         const data  = Array.isArray(json) ? json : json.data;
@@ -194,7 +194,7 @@ export default function OrderManagement() {
   const checkCowHissaDuplicate = useCallback(async (c, h, type, d, bd, excludeId) => {
     if (!c || !h || !type || !token || shouldSkip(type, c, h)) return null;
     try {
-      const res = await fetch(`${API}/api/booking/check-cow-hissa`, {
+      const res = await fetch(`${API}/booking/check-cow-hissa`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ cow_number: c, hissa_number: h, order_type: type, day: d || null, booking_date: bd || null }),
       });
@@ -243,7 +243,7 @@ export default function OrderManagement() {
         const s = String(payload.booking_date);
         payload.booking_date = s.includes('T') ? s.split('T')[0] : (s.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || s);
       }
-      const res = await fetch(`${API}/api/booking/orders/${encodeURIComponent(editRow.order_id)}`, {
+      const res = await fetch(`${API}/booking/orders/${encodeURIComponent(editRow.order_id)}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload),
       });
@@ -254,7 +254,7 @@ export default function OrderManagement() {
 
   const handleInvoice = async (customerId) => {
     try {
-      const res = await fetch(`${API}/api/booking/invoice/${encodeURIComponent(customerId)}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/booking/invoice/${encodeURIComponent(customerId)}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) { const data = await res.json().catch(() => ({})); alert(data.message || 'Failed to generate invoice'); return; }
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
@@ -267,7 +267,7 @@ export default function OrderManagement() {
   const handleCancelConfirm = async () => {
     if (!cancelConfirm) return;
     try {
-      const res = await fetch(`${API}/api/booking/orders/${encodeURIComponent(cancelConfirm.order_id)}/cancel`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/booking/orders/${encodeURIComponent(cancelConfirm.order_id)}/cancel`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) { setCancelConfirm(null); fetchOrders(); setSelectedIds((p) => { const n = new Set(p); n.delete(cancelConfirm.order_id); return n; }); }
       else { const data = await res.json().catch(() => ({})); alert(data.message || 'Failed to cancel order'); }
     } finally { setCancelConfirm(null); }
@@ -289,7 +289,7 @@ export default function OrderManagement() {
       const limit = 100; let pageNum = 1; let allOrders = []; let total = 0;
       do {
         params.set('page', String(pageNum)); params.set('limit', String(limit));
-        const res = await fetch(`${API}/api/booking/orders?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(`${API}/booking/orders?${params}`, { headers: { Authorization: `Bearer ${token}` } });
         if (!res.ok) { alert('Failed to load data for export'); return; }
         const json  = await res.json();
         const data  = Array.isArray(json) ? json : json.data;
@@ -321,7 +321,7 @@ export default function OrderManagement() {
         if (reference)         af.reference   = reference;
         if (cowNumber?.trim()) af.cow_number  = cowNumber.trim();
         if (yearFilter)        af.year        = yearFilter;
-        await fetch(`${API}/api/booking/orders/export-audit`, {
+        await fetch(`${API}/booking/orders/export-audit`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ count: toExport.length, ...(Object.keys(af).length > 0 && { filters: af }), ...(ids.length > 0 && { order_ids: ids }) }),
         });

@@ -20,7 +20,7 @@ const AuthCallback = () => {
 
     const finishLogin = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/me`, {
+        const res = await fetch(`${API_BASE}/me`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {

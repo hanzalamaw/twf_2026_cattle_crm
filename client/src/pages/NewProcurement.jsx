@@ -49,7 +49,7 @@ export default function NewProcurement() {
   const generateProcurementId = async (dateStr) => {
     if (!token) return;
     try {
-      const res = await fetch(`${API}/api/procurement/generate-procurement-id`, {
+      const res = await fetch(`${API}/procurement/generate-procurement-id`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ date: dateStr || null }),
@@ -146,7 +146,7 @@ export default function NewProcurement() {
         per_unit_weight: formData.per_unit_weight,
         date: formData.date,
       };
-      const res = await fetch(`${API}/api/procurement`, {
+      const res = await fetch(`${API}/procurement`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload),

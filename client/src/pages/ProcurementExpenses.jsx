@@ -28,7 +28,7 @@ export default function ProcurementExpenses() {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/procurement/expenses/summary`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/procurement/expenses/summary`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) setSummary(await res.json());
     } catch {
       // ignore
@@ -39,7 +39,7 @@ export default function ProcurementExpenses() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API}/api/procurement/expenses?page=${page}&limit=50`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/procurement/expenses?page=${page}&limit=50`, { headers: { Authorization: `Bearer ${token}` } });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) { setError(d.message || 'Failed to load expenses'); return; }
       setRows(Array.isArray(d.data) ? d.data : []);
@@ -57,7 +57,7 @@ export default function ProcurementExpenses() {
   const openAdd = async () => {
     setBank(''); setCash(''); setDescription(''); setDoneAt(''); setDoneBy('');
     try {
-      const res = await fetch(`${API}/api/procurement/expenses/next-id`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/procurement/expenses/next-id`, { headers: { Authorization: `Bearer ${token}` } });
       const d = await res.json().catch(() => ({}));
       setExpenseId(res.ok ? (d.expense_id || '') : '');
     } catch {
@@ -72,7 +72,7 @@ export default function ProcurementExpenses() {
     if (b + c <= 0) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`${API}/api/procurement/expenses`, {
+      const res = await fetch(`${API}/procurement/expenses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ bank: b, cash: c, description, done_at: doneAt || null, done_by: doneBy || null }),
@@ -92,7 +92,7 @@ export default function ProcurementExpenses() {
   const remove = async (row) => {
     if (!window.confirm(`Delete ${row.expense_id}?`)) return;
     try {
-      const res = await fetch(`${API}/api/procurement/expenses/${encodeURIComponent(row.expense_id)}`, {
+      const res = await fetch(`${API}/procurement/expenses/${encodeURIComponent(row.expense_id)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });

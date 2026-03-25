@@ -59,7 +59,7 @@ export default function Stats() {
     setLoading(true);
     setError('');
     try {
-      const res = await authFetch(`${API}/api/booking/hissa-sheet?year=${encodeURIComponent(STATS_YEAR)}`, {
+      const res = await authFetch(`${API}/booking/hissa-sheet?year=${encodeURIComponent(STATS_YEAR)}`, {
         headers: hdrs(),
       });
       const data = await res.json().catch(() => ({}));

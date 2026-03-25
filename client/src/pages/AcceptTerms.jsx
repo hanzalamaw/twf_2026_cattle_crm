@@ -106,7 +106,7 @@ const AcceptTerms = () => {
     setAccepting(true);
     const token = localStorage.getItem('token');
     try {
-      const res = await fetch(`${API_BASE}/api/accept-terms`, {
+      const res = await fetch(`${API_BASE}/accept-terms`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

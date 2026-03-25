@@ -47,7 +47,7 @@ export default function PerformanceAdmin() {
 
   const fetchPerformers = useCallback(async () => {
     try {
-      const res = await authFetch(`${API}/api/performance/performers`, { headers: hdrs() });
+      const res = await authFetch(`${API}/performance/performers`, { headers: hdrs() });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Failed');
       setPerformers(await res.json());
     } catch (e) { setError(e.message); }
@@ -55,14 +55,14 @@ export default function PerformanceAdmin() {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await authFetch(`${API}/api/control/users`, { headers: hdrs() });
+      const res = await authFetch(`${API}/control/users`, { headers: hdrs() });
       if (res.ok) setUsers(await res.json());
     } catch (e) { console.error(e); }
   }, [authFetch]);
 
   const fetchDailyReports = useCallback(async () => {
     try {
-      let url = `${API}/api/performance/daily-reports?`;
+      let url = `${API}/performance/daily-reports?`;
       if (dailyFilterPerformer) url += `performer_id=${dailyFilterPerformer}&`;
       const res = await authFetch(url, { headers: hdrs() });
       if (!res.ok) throw new Error('Failed to load daily reports');
@@ -117,7 +117,7 @@ export default function PerformanceAdmin() {
     const targetError = validateTargets(payload.calls_target, payload.leads_target, payload.orders_target);
     if (targetError) { setError(targetError); return; }
     try {
-      const url = editingPerformer ? `${API}/api/performance/performers/${editingPerformer.performer_id}` : `${API}/api/performance/performers`;
+      const url = editingPerformer ? `${API}/performance/performers/${editingPerformer.performer_id}` : `${API}/performance/performers`;
       const res = await authFetch(url, { method: editingPerformer ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json', ...hdrs() }, body: JSON.stringify(payload) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Request failed');
@@ -129,7 +129,7 @@ export default function PerformanceAdmin() {
   const deletePerformer = async (id) => {
     if (!window.confirm('Delete this performer and all their daily reports?')) return;
     try {
-      const res = await authFetch(`${API}/api/performance/performers/${id}`, { method: 'DELETE', headers: hdrs() });
+      const res = await authFetch(`${API}/performance/performers/${id}`, { method: 'DELETE', headers: hdrs() });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Delete failed');
       setSuccess('Performer deleted.'); fetchPerformers(); fetchDailyReports();
     } catch (e) { setError(e.message); }
@@ -148,11 +148,11 @@ export default function PerformanceAdmin() {
     if (!payload.performer_id || !payload.date) { setError('Performer and date are required.'); return; }
     try {
       if (editingReport) {
-        const res = await authFetch(`${API}/api/performance/daily-reports/${editingReport.report_id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...hdrs() }, body: JSON.stringify({ date: payload.date, calls_done: payload.calls_done, leads_generated: payload.leads_generated, orders_confirmed: payload.orders_confirmed }) });
+        const res = await authFetch(`${API}/performance/daily-reports/${editingReport.report_id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...hdrs() }, body: JSON.stringify({ date: payload.date, calls_done: payload.calls_done, leads_generated: payload.leads_generated, orders_confirmed: payload.orders_confirmed }) });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Update failed');
         setSuccess('Daily report updated.');
       } else {
-        const res = await authFetch(`${API}/api/performance/daily-reports`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...hdrs() }, body: JSON.stringify(payload) });
+        const res = await authFetch(`${API}/performance/daily-reports`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...hdrs() }, body: JSON.stringify(payload) });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Add failed');
         setSuccess('Daily report added.');
       }
@@ -163,7 +163,7 @@ export default function PerformanceAdmin() {
   const deleteReport = async (id) => {
     if (!window.confirm('Delete this daily report?')) return;
     try {
-      const res = await authFetch(`${API}/api/performance/daily-reports/${id}`, { method: 'DELETE', headers: hdrs() });
+      const res = await authFetch(`${API}/performance/daily-reports/${id}`, { method: 'DELETE', headers: hdrs() });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Delete failed');
       setSuccess('Daily report deleted.'); fetchDailyReports();
     } catch (e) { setError(e.message); }

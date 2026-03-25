@@ -50,7 +50,7 @@ export default function PerformanceDashboard() {
   const fetchStats = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      let url = `${API}/api/performance/stats?`;
+      let url = `${API}/performance/stats?`;
       if (fromDate) url += `from_date=${encodeURIComponent(fromDate)}&`;
       if (toDate) url += `to_date=${encodeURIComponent(toDate)}&`;
       const res = await authFetch(url, { headers: hdrs() });

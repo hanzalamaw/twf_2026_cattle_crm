@@ -74,7 +74,7 @@ const NewQuery = () => {
     const currentToken = localStorage.getItem('token');
     if (!currentToken) return;
     try {
-      const res = await fetch(`${API}/api/leads/generate-lead-id`, {
+      const res = await fetch(`${API}/leads/generate-lead-id`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentToken}` },
         body: JSON.stringify({}),
@@ -94,7 +94,7 @@ const NewQuery = () => {
     const currentToken = localStorage.getItem('token');
     if (!currentToken) return;
     try {
-      const res = await fetch(`${API}/api/booking/generate-customer-id`, {
+      const res = await fetch(`${API}/booking/generate-customer-id`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentToken}` },
         body: JSON.stringify({ contact: String(contact).trim() }),
@@ -141,7 +141,7 @@ const NewQuery = () => {
     const totalNum = Number(formData.total_amount);
     if (!Number.isFinite(totalNum) || totalNum < 0) { setError('Total amount must be a valid positive number'); setLoading(false); return; }
     try {
-      const res = await fetch(`${API}/api/leads`, {
+      const res = await fetch(`${API}/leads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentToken}` },
         body: JSON.stringify(formData),

@@ -88,7 +88,7 @@ export default function QueryManagement() {
     try {
       const params = new URLSearchParams();
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-      const url = `${API}/api/booking/leads/filters${params.toString() ? `?${params}` : ''}`;
+      const url = `${API}/booking/leads/filters${params.toString() ? `?${params}` : ''}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) { const data = await res.json(); setFilters(data); }
     } catch (e) { console.error(e); }
@@ -107,7 +107,7 @@ export default function QueryManagement() {
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
-      const res = await fetch(`${API}/api/booking/leads?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/booking/leads?${params}`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const json = await res.json();
         const data = Array.isArray(json) ? json : json.data;
@@ -136,7 +136,7 @@ export default function QueryManagement() {
     const genOrder = async () => {
       if (!ot) return;
       try {
-        const res = await fetch(`${API}/api/booking/generate-order-id`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: ot }) });
+        const res = await fetch(`${API}/booking/generate-order-id`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: ot }) });
         if (res.ok) { const d2 = await res.json(); setConfirmForm((p) => ({ ...p, order_id: d2.order_id || '' })); }
       } catch (e) { console.error(e); }
     };
@@ -144,7 +144,7 @@ export default function QueryManagement() {
       if (!ot) return;
       if (ot === 'Goat (Hissa)') { setConfirmForm((p) => ({ ...p, cow_number: '0', hissa_number: '0' })); return; }
       try {
-        const res = await fetch(`${API}/api/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: ot, day: d || null, booking_date: ds || null }) });
+        const res = await fetch(`${API}/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: ot, day: d || null, booking_date: ds || null }) });
         if (res.ok) { const d2 = await res.json(); setConfirmForm((p) => ({ ...p, cow_number: d2.cow_number || '', hissa_number: d2.hissa_number || '' })); }
       } catch (e) { console.error(e); }
     };
@@ -164,7 +164,7 @@ export default function QueryManagement() {
   const checkDup = useCallback(async (c, h, ot, d, bd) => {
     if (!c || !h || !ot || !token || shouldSkip(ot, c, h)) return null;
     try {
-      const res = await fetch(`${API}/api/booking/check-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ cow_number: c, hissa_number: h, order_type: ot, day: d || null, booking_date: bd || null }) });
+      const res = await fetch(`${API}/booking/check-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ cow_number: c, hissa_number: h, order_type: ot, day: d || null, booking_date: bd || null }) });
       if (res.ok) { const d2 = await res.json(); return d2.exists ? d2 : null; }
     } catch (e) { console.error(e); }
     return null;
@@ -216,7 +216,7 @@ export default function QueryManagement() {
     }
     setConfirmDuplicateError(null); setConfirmingLeadId(lead.lead_id); setError('');
     try {
-      const res = await fetch(`${API}/api/booking/leads/${encodeURIComponent(lead.lead_id)}/confirm-order`, {
+      const res = await fetch(`${API}/booking/leads/${encodeURIComponent(lead.lead_id)}/confirm-order`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ order_id: (confirmForm.order_id || '').trim(), slot: (confirmForm.slot || '').trim() || null, booking_date: bd || null, cow_number: c || null, hissa_number: h || null })
       });
@@ -268,7 +268,7 @@ export default function QueryManagement() {
     try {
       const payload = { ...editRow }; delete payload.lead_id;
       if (payload.booking_date) payload.booking_date = String(payload.booking_date).split('T')[0] || payload.booking_date;
-      const res = await fetch(`${API}/api/booking/leads/${encodeURIComponent(editRow.lead_id)}`, {
+      const res = await fetch(`${API}/booking/leads/${encodeURIComponent(editRow.lead_id)}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload)
       });
@@ -283,7 +283,7 @@ export default function QueryManagement() {
     if (!deleteConfirm) return;
     const id = deleteConfirm.lead_id; setDeleteConfirm(null);
     try {
-      const res = await fetch(`${API}/api/booking/leads/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/booking/leads/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => ({}));
       if (res.ok) { setSelectedIds((p) => { const n = new Set(p); n.delete(id); return n; }); fetchLeads(); }
       else setError(data.message || 'Failed to delete lead');
@@ -298,7 +298,7 @@ export default function QueryManagement() {
       if (day) params.set('day', day); if (reference) params.set('reference', reference);
       if (area) params.set('area', area); if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page', String(pageNum)); params.set('limit', String(limit));
-      const res = await fetch(`${API}/api/booking/leads?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/booking/leads?${params}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) { setError('Failed to load queries for export'); return; }
       const json = await res.json(); const data = Array.isArray(json) ? json : json.data;
       total = typeof json.total === 'number' ? json.total : 0;
@@ -328,7 +328,7 @@ export default function QueryManagement() {
       if (search?.trim()) af.search = search.trim(); if (area) af.area = area;
       if (orderType) af.order_type = orderType; if (day) af.day = day;
       if (reference) af.reference = reference; if (yearFilter) af.year = yearFilter;
-      await fetch(`${API}/api/booking/leads/export-audit`, {
+      await fetch(`${API}/booking/leads/export-audit`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ count: toExport.length, ...(Object.keys(af).length > 0 && { filters: af }), ...(ids.length > 0 && { lead_ids: ids }) })
       });
@@ -526,7 +526,7 @@ export default function QueryManagement() {
                     setConfirmForm((p) => ({ ...p, booking_date: nd }));
                     setConfirmFormErrors((p) => ({ ...p, booking_date: undefined }));
                     if (confirmModalLead?.type && confirmModalLead.type !== 'Goat (Hissa)' && token) {
-                      fetch(`${API}/api/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: confirmModalLead.type, day: confirmModalLead.day || null, booking_date: nd || null }) })
+                      fetch(`${API}/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: confirmModalLead.type, day: confirmModalLead.day || null, booking_date: nd || null }) })
                         .then((r) => r.ok ? r.json() : {})
                         .then((d2) => { if (d2 && (d2.cow_number != null || d2.hissa_number != null)) setConfirmForm((p) => ({ ...p, cow_number: d2.cow_number || '', hissa_number: d2.hissa_number || '' })); })
                         .catch(() => {});

@@ -135,7 +135,7 @@ function AuthFetchInterceptor() {
           return res;
         }
         try {
-          const refreshRes = await originalFetch(`${API_BASE}/api/refresh`, {
+          const refreshRes = await originalFetch(`${API_BASE}/refresh`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ refreshToken }),

@@ -139,7 +139,7 @@ export default function Transactions() {
 
   const fetchFilters = useCallback(async () => {
     try {
-      const endpoint = isProcurement ? `${API}/api/procurement/filters` : `${API}/api/booking/orders/filters`;
+      const endpoint = isProcurement ? `${API}/procurement/filters` : `${API}/booking/orders/filters`;
       const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
@@ -152,7 +152,7 @@ export default function Transactions() {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const endpoint = isProcurement ? `${API}/api/procurement/transactions` : `${API}/api/booking/transactions`;
+      const endpoint = isProcurement ? `${API}/procurement/transactions` : `${API}/booking/transactions`;
       const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
@@ -169,7 +169,7 @@ export default function Transactions() {
   const fetchOrdersSummary = useCallback(async () => {
     try {
       if (isProcurement) {
-        const res = await fetch(`${API}/api/procurement/transactions`, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(`${API}/procurement/transactions`, { headers: { Authorization: `Bearer ${token}` } });
         if (res.ok) {
           const data = await res.json();
           setOrdersSummary({
@@ -183,7 +183,7 @@ export default function Transactions() {
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       const summaryTypes = isFarm ? FARM_SUMMARY_TYPES : BOOKING_SUMMARY_TYPES;
       summaryTypes.forEach((t) => params.append('order_type', t));
-      const res = await fetch(`${API}/api/booking/orders/summary?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/booking/orders/summary?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
         setOrdersSummary(data);
@@ -204,7 +204,7 @@ export default function Transactions() {
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
       if (isProcurement) params.delete('order_type');
-      const endpoint = isProcurement ? `${API}/api/procurement/transactions/list?${params.toString()}` : `${API}/api/booking/orders?${params.toString()}`;
+      const endpoint = isProcurement ? `${API}/procurement/transactions/list?${params.toString()}` : `${API}/booking/orders?${params.toString()}`;
       const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
@@ -317,8 +317,8 @@ export default function Transactions() {
     setSubmitting(true);
     try {
       const endpoint = isProcurement
-        ? `${API}/api/procurement/${encodeURIComponent(modalOrder.order_id)}/payments`
-        : `${API}/api/booking/orders/${encodeURIComponent(modalOrder.order_id)}/payments`;
+        ? `${API}/procurement/${encodeURIComponent(modalOrder.order_id)}/payments`
+        : `${API}/booking/orders/${encodeURIComponent(modalOrder.order_id)}/payments`;
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

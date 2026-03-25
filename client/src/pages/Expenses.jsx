@@ -63,8 +63,8 @@ export default function Expenses() {
   const isFarm = location.pathname.startsWith('/farm');
   const isProcurement = location.pathname.startsWith('/procurement');
   const expenseBasePath = isProcurement
-    ? `${API}/api/procurement/expenses`
-    : (isFarm ? `${API}/api/farm/expenses` : `${API}/api/booking/expenses`);
+    ? `${API}/procurement/expenses`
+    : (isFarm ? `${API}/farm/expenses` : `${API}/booking/expenses`);
 
   const toggleSelect = (expenseId) => {
     setSelectedIds((prev) => {

@@ -41,7 +41,7 @@ const Login = () => {
   };
 
   const handleSocialLogin = (provider) => {
-    window.location.href = `${API_BASE}/api/auth/${provider.toLowerCase()}`;
+    window.location.href = `${API_BASE}/auth/${provider.toLowerCase()}`;
   };
 
   const handleSubmit = async (e) => {
@@ -56,7 +56,7 @@ const Login = () => {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${API_BASE}/api/login`, {
+      const response = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),

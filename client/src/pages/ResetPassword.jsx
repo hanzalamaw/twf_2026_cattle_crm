@@ -25,7 +25,7 @@ const ResetPassword = () => {
     let cancelled = false;
     const check = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/reset-password/validate?token=${encodeURIComponent(token)}`);
+        const res = await fetch(`${API_BASE}/reset-password/validate?token=${encodeURIComponent(token)}`);
         const data = await res.json();
         if (!cancelled) setTokenValid(data.valid === true);
       } catch {
@@ -60,7 +60,7 @@ const ResetPassword = () => {
     if (!validate()) return;
     setIsSubmitting(true);
     try {
-      const response = await fetch(`${API_BASE}/api/reset-password`, {
+      const response = await fetch(`${API_BASE}/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, newPassword: password }),
