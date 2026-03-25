@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as XLSX from 'xlsx';
 import { useLocation } from 'react-router-dom';
-
-const API = 'http://localhost:5000';
+import { API_BASE as API } from '../config/api';
 
 const EXPENSE_COLUMNS = [
   { key: 'expense_id', label: 'Expense ID' },

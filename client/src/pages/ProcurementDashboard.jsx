@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-const API = 'http://localhost:5000';
+import { API_BASE as API } from '../config/api';
 
 function formatAmount(val) {
   if (val == null || val === '') return '0';

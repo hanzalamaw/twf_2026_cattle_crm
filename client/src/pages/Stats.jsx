@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-
-const API = 'http://localhost:5000';
+import { API_BASE as API } from '../config/api';
 // Change this to switch which booking year the stats sheet uses.
 const STATS_YEAR = 2025;
 

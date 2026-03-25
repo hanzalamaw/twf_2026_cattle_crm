@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-const API = 'http://localhost:5000';
+import { API_BASE as API } from '../config/api';
 const PAGE_SIZE = 50;
 
 function formatAmount(val) {

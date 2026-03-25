@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import loginImage from '../assets/loginPageImage.png';
+import { API_BASE } from '../config/api';
 
 const Login = () => {
   const [username, setUsername] = useState('');
@@ -40,7 +41,7 @@ const Login = () => {
   };
 
   const handleSocialLogin = (provider) => {
-    window.location.href = `http://localhost:5000/api/auth/${provider.toLowerCase()}`;
+    window.location.href = `${API_BASE}/api/auth/${provider.toLowerCase()}`;
   };
 
   const handleSubmit = async (e) => {
@@ -55,7 +56,7 @@ const Login = () => {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('http://localhost:5000/api/login', {
+      const response = await fetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),

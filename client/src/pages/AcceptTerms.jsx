@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE } from '../config/api';
 
 const TERMS_CONTENT = `First-Time Login Terms & Conditions
 
@@ -105,7 +106,7 @@ const AcceptTerms = () => {
     setAccepting(true);
     const token = localStorage.getItem('token');
     try {
-      const res = await fetch('http://localhost:5000/api/accept-terms', {
+      const res = await fetch(`${API_BASE}/api/accept-terms`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

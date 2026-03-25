@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx';
-
-const API = 'http://localhost:5000';
+import { API_BASE as API } from '../config/api';
 const PAGE_SIZE = 50;
 const HIDDEN_TYPES_BOOKING = ['Cow', 'Goat'];
 

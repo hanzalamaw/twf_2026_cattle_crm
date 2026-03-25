@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import loginImage from '../assets/loginPageImage.png';
+import { API_BASE } from '../config/api';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -88,7 +89,7 @@ const Register = () => {
     setIsSubmitting(true);
     
     try {
-      const response = await fetch('http://localhost:5000/api/register', {
+      const response = await fetch(`${API_BASE}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

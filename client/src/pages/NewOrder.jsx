@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-
-const API = 'http://localhost:5000';
+import { API_BASE as API } from '../config/api';
 
 const ORDER_TYPES = ['Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];
 const FARM_ORDER_TYPES = ['Cow', 'Goat', 'Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE } from '../config/api';
 
 const AuthCallback = () => {
   const [searchParams] = useSearchParams();
@@ -19,7 +20,7 @@ const AuthCallback = () => {
 
     const finishLogin = async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/me', {
+        const res = await fetch(`${API_BASE}/api/me`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {

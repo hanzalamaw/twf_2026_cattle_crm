@@ -1,12 +1,11 @@
 import { createContext, useState, useContext, useEffect } from 'react';
+import { API_BASE } from '../config/api';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  const API_BASE = 'http://localhost:5000';
 
   const clearSessionAndLogout = () => {
     localStorage.removeItem('token');

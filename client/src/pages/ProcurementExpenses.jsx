@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-const API = 'http://localhost:5000';
+import { API_BASE as API } from '../config/api';
 
 function formatAmount(val) {
   const n = Number(val || 0);

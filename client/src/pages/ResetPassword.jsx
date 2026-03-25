@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import loginImage from '../assets/loginPageImage.png';
+import { API_BASE } from '../config/api';
 
 const ResetPassword = () => {
   const [searchParams] = useSearchParams();
@@ -24,7 +25,7 @@ const ResetPassword = () => {
     let cancelled = false;
     const check = async () => {
       try {
-        const res = await fetch(`http://localhost:5000/api/reset-password/validate?token=${encodeURIComponent(token)}`);
+        const res = await fetch(`${API_BASE}/api/reset-password/validate?token=${encodeURIComponent(token)}`);
         const data = await res.json();
         if (!cancelled) setTokenValid(data.valid === true);
       } catch {
@@ -59,7 +60,7 @@ const ResetPassword = () => {
     if (!validate()) return;
     setIsSubmitting(true);
     try {
-      const response = await fetch('http://localhost:5000/api/reset-password', {
+      const response = await fetch(`${API_BASE}/api/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, newPassword: password }),

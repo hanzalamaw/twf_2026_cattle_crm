@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const API = 'http://localhost:5000';
+import { API_BASE as API } from '../config/api';
 
 const TYPE_OPTIONS = ['Cow (Premium)', 'Cow(Standard)', 'Goat'];
 

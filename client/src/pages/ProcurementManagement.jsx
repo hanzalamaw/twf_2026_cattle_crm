@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-
-const API = 'http://localhost:5000';
+import { API_BASE as API } from '../config/api';
 const PAGE_SIZE = 50;
 
 const COLUMNS = [

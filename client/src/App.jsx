@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { API_BASE } from './config/api';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import SubSystemSelectionV2 from './pages/SubSystemSelectionV2';
@@ -109,8 +110,6 @@ const ROUTE_TITLES = {
   '/performance/dashboard': 'Performance Dashboard',
   '/stats': 'Stats',
 };
-
-const API_BASE = 'http://localhost:5000';
 
 function clearSessionAndRedirectToLogin() {
   localStorage.removeItem('token');

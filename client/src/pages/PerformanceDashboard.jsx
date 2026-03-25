@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-
-const API = 'http://localhost:5000';
+import { API_BASE as API } from '../config/api';
 const fmt = (n) => Number(n || 0).toLocaleString('en-PK');
 
 function pct(done, target) {

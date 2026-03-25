@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE } from '../config/api';
 import { useNavigate } from 'react-router-dom';
 
 // Modal Component - defined outside to prevent recreation on each render
@@ -151,7 +152,7 @@ const Control = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:5000/api/control/users', {
+      const response = await fetch(`${API_BASE}/api/control/users`, {
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       const data = await handleApiResponse(response);
@@ -166,7 +167,7 @@ const Control = () => {
   const fetchRoles = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:5000/api/control/roles', {
+      const response = await fetch(`${API_BASE}/api/control/roles`, {
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       const data = await handleApiResponse(response);
@@ -181,7 +182,7 @@ const Control = () => {
   const fetchAuditLogs = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:5000/api/control/audit-logs?limit=50', {
+      const response = await fetch(`${API_BASE}/api/control/audit-logs?limit=50`, {
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       const data = await handleApiResponse(response);
@@ -196,7 +197,7 @@ const Control = () => {
   const fetchSessions = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:5000/api/control/sessions', {
+      const response = await fetch(`${API_BASE}/api/control/sessions`, {
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       const data = await handleApiResponse(response);
@@ -238,8 +239,8 @@ const Control = () => {
     setSuccess('');
     try {
       const url = editingUser
-        ? `http://localhost:5000/api/control/users/${editingUser.user_id}`
-        : 'http://localhost:5000/api/control/users';
+        ? `${API_BASE}/api/control/users/${editingUser.user_id}`
+        : `${API_BASE}/api/control/users`;
       const method = editingUser ? 'PUT' : 'POST';
       const body = { ...userFormData };
       if (!editingUser && !body.password) { setError('Password is required for new users'); return; }
@@ -271,8 +272,8 @@ const Control = () => {
     setSuccess('');
     try {
       const url = editingRole
-        ? `http://localhost:5000/api/control/roles/${editingRole.role_id}`
-        : 'http://localhost:5000/api/control/roles';
+        ? `${API_BASE}/api/control/roles/${editingRole.role_id}`
+        : `${API_BASE}/api/control/roles`;
       const method = editingRole ? 'PUT' : 'POST';
       const response = await fetch(url, {
         method,
@@ -351,7 +352,7 @@ const Control = () => {
   const handleDeleteUser = async (userId) => {
     if (!window.confirm('Are you sure you want to delete this user?')) return;
     try {
-      const response = await fetch(`http://localhost:5000/api/control/users/${userId}`, {
+      const response = await fetch(`${API_BASE}/api/control/users/${userId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
@@ -366,7 +367,7 @@ const Control = () => {
   const handleDeleteRole = async (roleId) => {
     if (!window.confirm('Are you sure you want to delete this role?')) return;
     try {
-      const response = await fetch(`http://localhost:5000/api/control/roles/${roleId}`, {
+      const response = await fetch(`${API_BASE}/api/control/roles/${roleId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
@@ -381,7 +382,7 @@ const Control = () => {
   const handleTerminateSession = async (sessionId) => {
     if (!window.confirm('Are you sure you want to terminate this session?')) return;
     try {
-      const response = await fetch(`http://localhost:5000/api/control/sessions/${sessionId}`, {
+      const response = await fetch(`${API_BASE}/api/control/sessions/${sessionId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });

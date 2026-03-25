@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
-
-const API = 'http://localhost:5000';
+import { API_BASE as API } from '../config/api';
 
 const HIDDEN_TYPES_BOOKING = ['Cow', 'Goat'];
 
