@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import SubSystemSelection from './pages/SubSystemSelection';
+import SubSystemSelectionV2 from './pages/SubSystemSelectionV2';
 import MainLayout from './components/layout/MainLayout';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -10,7 +10,9 @@ import ResetPassword from './pages/ResetPassword';
 import AuthCallback from './pages/AuthCallback';
 import Control from './pages/Control';
 import Operations from './pages/Operations';
-import Procurement from './pages/Procurement';
+import ProcurementDashboard from './pages/ProcurementDashboard';
+import NewProcurement from './pages/NewProcurement';
+import ProcurementManagement from './pages/ProcurementManagement';
 import Accounting from './pages/Accounting';
 import PerformanceAdmin from './pages/PerformanceAdmin';
 import PerformanceDashboard from './pages/PerformanceDashboard';
@@ -65,7 +67,7 @@ const TermsOrHome = () => {
   if (user && !user.has_prev_logged_in) {
     return <Navigate to="/accept-terms" replace />;
   }
-  return <SubSystemSelection />;
+  return <SubSystemSelectionV2 />;
 };
 
 const ROUTE_TITLES = {
@@ -96,6 +98,11 @@ const ROUTE_TITLES = {
   '/farm/transactions': 'Transactions',
   '/farm/expenses': 'Expenses',
   '/procurement': 'Procurement Management',
+  '/procurement/dashboard': 'Dashboard',
+  '/procurement/new-procurement': 'New Procurement',
+  '/procurement/manage': 'Procurement Management',
+  '/procurement/transactions': 'Transactions',
+  '/procurement/expenses': 'Expenses',
   '/accounting': 'Accounting & Finance',
   '/performance': 'Performance Management',
   '/performance/admin': 'Performance Admin',
@@ -228,7 +235,12 @@ function App() {
           </Route>
 
           <Route path="/procurement" element={<ProtectedRoute><RequirePermission permission="procurement_management"><MainLayout systemName="Procurement Management" /></RequirePermission></ProtectedRoute>}>
-            <Route index element={<Procurement />} />
+            <Route index element={<Navigate to="/procurement/dashboard" replace />} />
+            <Route path="dashboard" element={<ProcurementDashboard />} />
+            <Route path="new-procurement" element={<NewProcurement />} />
+            <Route path="manage" element={<ProcurementManagement />} />
+            <Route path="transactions" element={<Transactions />} />
+            <Route path="expenses" element={<Expenses />} />
           </Route>
 
           <Route path="/accounting" element={<ProtectedRoute><RequirePermission permission="accounting_and_finance"><MainLayout systemName="Accounting & Finance" /></RequirePermission></ProtectedRoute>}>

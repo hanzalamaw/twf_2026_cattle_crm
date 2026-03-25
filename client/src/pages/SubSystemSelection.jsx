@@ -84,7 +84,7 @@ const OPTIONS = [
   },
 ];
 
-const SubSystemSelection = () => {
+const SubSystemSelection = ({ forceMobileLayout = false } = {}) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [accessBlocked, setAccessBlocked] = useState(null);
@@ -94,11 +94,12 @@ const SubSystemSelection = () => {
   const [pressedId, setPressedId] = useState(null);
 
   useEffect(() => {
+    if (forceMobileLayout) return undefined;
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
-  }, []);
+  }, [forceMobileLayout]);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -161,7 +162,7 @@ const SubSystemSelection = () => {
   }
 
   /* ── Mobile Layout ─────────────────────────────────────────── */
-  if (isMobile) {
+  if (forceMobileLayout || isMobile) {
     const accessibleCount = OPTIONS.filter(o => hasAccess(o.permission)).length;
 
     return (
@@ -209,9 +210,16 @@ const SubSystemSelection = () => {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 20px;
+            margin-bottom: 0;
             position: relative;
             z-index: 1;
+          }
+
+          .mob-hero-left {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 0;
           }
 
           .mob-user-pill {
@@ -298,11 +306,25 @@ const SubSystemSelection = () => {
 
           /* Grid */
           .mob-grid {
-            padding: 16px 16px 32px;
+            padding: 16px 24px 32px;
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 12px;
-            flex: 1;
+            /* Prevent grid rows from stretching and leaving empty space in each card */
+            flex: initial;
+            align-content: start;
+            justify-content: center;
+            max-width: 1100px;
+            margin: 0 auto;
+          }
+
+          /* Desktop-ish grid: 4 cards in row 1, 3 in row 2 (for 7 options) */
+          @media (min-width: 900px) {
+            .mob-grid {
+              grid-template-columns: repeat(4, minmax(0, 1fr));
+              padding-left: 40px;
+              padding-right: 40px;
+            }
           }
 
           /* Card */
@@ -322,6 +344,7 @@ const SubSystemSelection = () => {
             transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
             position: relative;
             overflow: hidden;
+            align-self: start;
             opacity: 0;
             transform: translateY(16px);
             animation: cardReveal 0.4s ease forwards;
@@ -392,6 +415,25 @@ const SubSystemSelection = () => {
             flex-shrink: 0;
           }
 
+          /* Keep last card the same size in 4-col mode */
+          @media (min-width: 900px) {
+            .mob-card.wide {
+              grid-column: span 1;
+              flex-direction: column;
+              align-items: flex-start;
+              gap: 0;
+              padding: 16px 14px;
+            }
+            .mob-card.wide .mob-card-body { flex: initial; }
+            .mob-card.wide .mob-card-icon { margin-bottom: 12px; }
+            .mob-card.wide .mob-card-arrow {
+              position: absolute;
+              opacity: 0;
+              flex-shrink: 0;
+            }
+            .mob-card.wide:not(.locked):active .mob-card-arrow { opacity: 1; }
+          }
+
           .mob-lock-badge {
             position: absolute;
             top: 10px; right: 10px;
@@ -417,14 +459,10 @@ const SubSystemSelection = () => {
           {/* Hero */}
           <div className="mob-hero" style={{ opacity: mounted ? 1 : 0, transition: 'opacity 0.4s ease' }}>
             <div className="mob-hero-top">
-              <div className="mob-user-pill">
-                <div className="mob-user-avatar">
-                  <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&h=80&fit=crop&crop=face" alt="avatar" />
-                </div>
-                <div className="mob-user-text">
-                  <span className="mob-user-name">{user?.username || 'User'}</span>
-                  <span className="mob-user-role">{user?.role || 'USER'}</span>
-                </div>
+              <div className="mob-hero-left">
+                <p className="mob-brand">TWF Cattle CRM</p>
+                <h1 className="mob-title">Select Management</h1>
+                <p className="mob-subtitle">{accessibleCount} of {OPTIONS.length} systems available</p>
               </div>
               <button type="button" className="mob-logout" onClick={logout}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -434,11 +472,6 @@ const SubSystemSelection = () => {
                 </svg>
                 Logout
               </button>
-            </div>
-            <div className="mob-hero-body">
-              <p className="mob-brand">TWF Cattle CRM</p>
-              <h1 className="mob-title">Select Management</h1>
-              <p className="mob-subtitle">{accessibleCount} of {OPTIONS.length} systems available</p>
             </div>
           </div>
 

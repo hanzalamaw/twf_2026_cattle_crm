@@ -1865,7 +1865,7 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
       const pi4 = left + 400;
 
       doc.font("Helvetica-Bold").fontSize(9).fillColor("#555555");
-      doc.text("ACCOUNT NAME (HBL)", pi1, y, { lineBreak: false });
+      doc.text("ACCOUNT NAME (Meezan)", pi1, y, { lineBreak: false });
       doc.text("BRANCH",              pi2, y, { lineBreak: false });
       doc.text("IBAN",                pi3, y, { lineBreak: false });
       doc.text("ACCOUNT NO",          pi4, y, { lineBreak: false });
@@ -1873,10 +1873,10 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
 
       // Values
       doc.font("Helvetica").fontSize(9).fillColor("#000000");
-      doc.text("TW TRADERS",                   pi1, y, { lineBreak: false });
-      doc.text("ZIAUDDIN SHAHEED ROA",         pi2, y, { lineBreak: false });
-      doc.text("PK10HABB0016787900655603",      pi3, y, { width: 120, lineBreak: false });
-      doc.text("16787900655603",                pi4, y, { lineBreak: false });
+      doc.text("THE WARSI FARM",                   pi1, y, { lineBreak: false });
+      doc.text("FB AREA BLOCK 12 BRANCH",         pi2, y, { lineBreak: false });
+      doc.text("PK03MEZN0010180114502823",      pi3, y, { width: 120, lineBreak: false });
+      doc.text("10180114502823",                pi4, y, { lineBreak: false });
       y += 18;
 
       // ── TERMS & CONDITIONS ────────────────────────────────────────────────────

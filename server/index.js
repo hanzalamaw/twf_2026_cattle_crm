@@ -15,6 +15,7 @@ import { registerDashboardRoutes } from "./routes/dashboardRoutes.js";
 import { registerNewQueryRoutes } from "./routes/newqueryRoutes.js";
 import { registerPerformanceRoutes } from "./routes/performanceRoutes.js";
 import { registerFarmRoutes } from "./routes/farmRoutes.js";
+import { registerProcurementRoutes } from "./routes/procurement.js";
 import { log, logError } from "./utils/logger.js";
 import { writeAuditLog } from "./utils/auditLog.js";
 import { sendLoginNotificationEmail } from "./utils/email.js";
@@ -27,11 +28,14 @@ app.use(express.json());
 
 const startServer = async () => {
   try {
-    const db = await mysql.createConnection({
-      host: process.env.DB_HOST || "localhost",
-      user: process.env.DB_USER || "root",
-      password: process.env.DB_PASSWORD || "",
-      database: process.env.DB_NAME || "twf_cattle_crm",
+    const db = await mysql.createPool({
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0
     });
 
     console.log("Connected to MySQL Database");
@@ -376,6 +380,7 @@ const startServer = async () => {
     registerFarmRoutes(app, db, verifyToken);
     registerNewQueryRoutes(app, db, verifyToken);
     registerPerformanceRoutes(app, db, verifyToken);
+    registerProcurementRoutes(app, db, verifyToken);
 
     // ---------- 404 ----------
     app.use((req, res) => {

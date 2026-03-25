@@ -221,6 +221,55 @@ CREATE TABLE `payments` (
   `order_id` varchar(50) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+--
+-- Table structure for table `procurements`
+--
+
+CREATE TABLE `procurements` (
+  `procurement_id` varchar(50) NOT NULL,
+  `type` varchar(50) NOT NULL,
+  `no_of_animals` int(11) NOT NULL DEFAULT 0,
+  `price_per_unit` decimal(12,2) DEFAULT NULL,
+  `total_price` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `price_paid` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `price_due` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `per_unit_weight` decimal(12,2) DEFAULT NULL,
+  `date` date NOT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+--
+-- Table structure for table `procurement_payments`
+--
+
+CREATE TABLE `procurement_payments` (
+  `payment_id` varchar(50) NOT NULL,
+  `procurement_id` varchar(50) NOT NULL,
+  `bank` decimal(12,2) DEFAULT 0.00,
+  `cash` decimal(12,2) DEFAULT 0.00,
+  `total_received` decimal(12,2) DEFAULT 0.00,
+  `date` date DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+--
+-- Table structure for table `procurement_expenses`
+--
+
+CREATE TABLE `procurement_expenses` (
+  `expense_id` varchar(50) NOT NULL,
+  `bank` decimal(12,2) DEFAULT 0.00,
+  `cash` decimal(12,2) DEFAULT 0.00,
+  `total` decimal(12,2) DEFAULT 0.00,
+  `done_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `description` text DEFAULT NULL,
+  `done_by` varchar(255) DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 --
 -- Dumping data for table `payments`
 --
@@ -381,6 +430,29 @@ ALTER TABLE `payments`
   ADD KEY `order_id` (`order_id`);
 
 --
+-- Indexes for table `procurements`
+--
+ALTER TABLE `procurements`
+  ADD PRIMARY KEY (`procurement_id`),
+  ADD KEY `idx_procurements_date` (`date`),
+  ADD KEY `idx_procurements_type` (`type`),
+  ADD KEY `created_by` (`created_by`);
+
+--
+-- Indexes for table `procurement_payments`
+--
+ALTER TABLE `procurement_payments`
+  ADD PRIMARY KEY (`payment_id`),
+  ADD KEY `idx_procurement_payments_procurement_id` (`procurement_id`);
+
+--
+-- Indexes for table `procurement_expenses`
+--
+ALTER TABLE `procurement_expenses`
+  ADD PRIMARY KEY (`expense_id`),
+  ADD KEY `created_by` (`created_by`);
+
+--
 -- Indexes for table `roles`
 --
 ALTER TABLE `roles`
@@ -453,6 +525,24 @@ ALTER TABLE `booking_expenses`
 --
 ALTER TABLE `payments`
   ADD CONSTRAINT `payments_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`);
+
+--
+-- Constraints for table `procurements`
+--
+ALTER TABLE `procurements`
+  ADD CONSTRAINT `procurements_ibfk_1` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`);
+
+--
+-- Constraints for table `procurement_payments`
+--
+ALTER TABLE `procurement_payments`
+  ADD CONSTRAINT `procurement_payments_ibfk_1` FOREIGN KEY (`procurement_id`) REFERENCES `procurements` (`procurement_id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `procurement_expenses`
+--
+ALTER TABLE `procurement_expenses`
+  ADD CONSTRAINT `procurement_expenses_ibfk_1` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`);
 
 --
 -- Constraints for table `users`

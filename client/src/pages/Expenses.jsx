@@ -62,7 +62,10 @@ export default function Expenses() {
   const token = localStorage.getItem('token');
   const location = useLocation();
   const isFarm = location.pathname.startsWith('/farm');
-  const expenseBasePath = isFarm ? `${API}/api/farm/expenses` : `${API}/api/booking/expenses`;
+  const isProcurement = location.pathname.startsWith('/procurement');
+  const expenseBasePath = isProcurement
+    ? `${API}/api/procurement/expenses`
+    : (isFarm ? `${API}/api/farm/expenses` : `${API}/api/booking/expenses`);
 
   const toggleSelect = (expenseId) => {
     setSelectedIds((prev) => {

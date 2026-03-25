@@ -117,6 +117,15 @@ const FARM_MENU_ITEMS = [
   { id: 'fm-transactions', label: 'Transactions',    iconDefault: '/icons/transactions_default.png',      iconActive: '/icons/transactions_active.png',      path: '/farm/transactions',     permission: 'farm_management' },
 ];
 
+// ── NEW: Procurement Management sub-menu ──
+const PROCUREMENT_MENU_ITEMS = [
+  { id: 'pm-dashboard', label: 'Dashboard', iconDefault: '/icons/dashboard_default.png', iconActive: '/icons/dashboard_active.png', path: '/procurement/dashboard', permission: 'procurement_management' },
+  { id: 'pm-new', label: 'New Procurement', iconDefault: '/icons/new_order_default.png', iconActive: '/icons/new_order_active.png', path: '/procurement/new-procurement', permission: 'procurement_management' },
+  { id: 'pm-manage', label: 'Procurement Management', iconDefault: '/icons/order_management_default.png', iconActive: '/icons/order_management_active.png', path: '/procurement/manage', permission: 'procurement_management' },
+  { id: 'pm-transactions', label: 'Transactions', iconDefault: '/icons/transactions_default.png', iconActive: '/icons/transactions_active.png', path: '/procurement/transactions', permission: 'procurement_management' },
+  { id: 'pm-expenses', label: 'Expenses', iconDefault: '/icons/expenses_default.png', iconActive: '/icons/expenses_active.png', path: '/procurement/expenses', permission: 'procurement_management' },
+];
+
 /* ── Component ──────────────────────────────────────────────── */
 function Sidebar() {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -133,6 +142,7 @@ function Sidebar() {
   const isBookingContext = location.pathname.startsWith('/bookings');
   const isPerformanceContext = location.pathname.startsWith('/performance');
   const isFarmContext = location.pathname.startsWith('/farm');
+  const isProcurementContext = location.pathname.startsWith('/procurement');
   const isAdminOrManager = [1, 2, 3, 5, 7].includes(roleId);
 
   const items = isBookingContext
@@ -141,6 +151,8 @@ function Sidebar() {
     ? PERFORMANCE_MENU_ITEMS
     : isFarmContext
     ? FARM_MENU_ITEMS
+    : isProcurementContext
+    ? PROCUREMENT_MENU_ITEMS
     : MENU_ITEMS;
 
   const visibleItems = items.filter((item) => {
@@ -153,6 +165,13 @@ function Sidebar() {
   useEffect(() => {
     if (location.pathname === '/farm') {
       navigate('/farm/dashboard', { replace: true });
+    }
+  }, [location.pathname, navigate]);
+
+  // Auto-redirect to /procurement/dashboard when entering /procurement exactly
+  useEffect(() => {
+    if (location.pathname === '/procurement') {
+      navigate('/procurement/dashboard', { replace: true });
     }
   }, [location.pathname, navigate]);
 
@@ -203,6 +222,8 @@ function Sidebar() {
     ? 'PERFORMANCE'
     : isFarmContext
     ? 'FARM MANAGEMENT'
+    : isProcurementContext
+    ? 'PROCUREMENT MANAGEMENT'
     : 'MANAGEMENT';
 
   /* ── Mobile Layout ── */
