@@ -1,5 +1,6 @@
 import { log, logError } from "../utils/logger.js";
 import { writeAuditLog } from "../utils/auditLog.js";
+import { limitOffsetClause } from "../utils/sqlPagination.js";
 
 /** Normalize to date-only YYYY-MM-DD (avoids timezone shift). */
 function toDateOnly(v) {
@@ -183,8 +184,8 @@ export const registerProcurementRoutes = (app, db, verifyToken) => {
          FROM procurements p
          ${whereClause}
          ORDER BY p.created_at DESC
-         LIMIT ? OFFSET ?`,
-        [...params, limitNum, offset]
+         ${limitOffsetClause(limitNum, offset, { maxLimit: 100, defaultLimit: 50 })}`,
+        params
       );
 
       res.json({
@@ -481,8 +482,8 @@ export const registerProcurementRoutes = (app, db, verifyToken) => {
          ) pp ON p.procurement_id = pp.procurement_id
          ${whereClause}
          ORDER BY p.created_at DESC
-         LIMIT ? OFFSET ?`,
-        [...params, limitNum, offset]
+         ${limitOffsetClause(limitNum, offset, { maxLimit: 100, defaultLimit: 50 })}`,
+        params
       );
 
       res.json({
@@ -572,8 +573,7 @@ export const registerProcurementRoutes = (app, db, verifyToken) => {
       const [countRows] = await db.execute("SELECT COUNT(*) AS total FROM procurement_expenses");
       const total = Number(countRows[0]?.total ?? 0);
       const [rows] = await db.execute(
-        "SELECT expense_id, bank, cash, total, done_at, description, done_by, created_by FROM procurement_expenses ORDER BY done_at DESC LIMIT ? OFFSET ?",
-        [limitNum, offset]
+        `SELECT expense_id, bank, cash, total, done_at, description, done_by, created_by FROM procurement_expenses ORDER BY done_at DESC ${limitOffsetClause(limitNum, offset, { maxLimit: 100, defaultLimit: 50 })}`
       );
       res.json({ data: rows.map((r) => ({ ...r, done_at: toDateOnly(r.done_at) ?? r.done_at })), total });
     } catch (error) {

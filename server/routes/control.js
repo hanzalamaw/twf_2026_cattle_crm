@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { log, logError } from "../utils/logger.js";
+import { limitOffsetClause } from "../utils/sqlPagination.js";
 
 /**
  * Control Management API: users, roles, audit-logs, sessions.
@@ -281,8 +282,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       const params = [];
       if (entity_type) { query += " AND al.entity_type = ?"; params.push(entity_type); }
       if (action) { query += " AND al.action = ?"; params.push(action); }
-      query += " ORDER BY al.created_at DESC LIMIT ? OFFSET ?";
-      params.push(parseInt(limit), parseInt(offset));
+      query += ` ORDER BY al.created_at DESC ${limitOffsetClause(limit, offset, { maxLimit: 500, defaultLimit: 100 })}`;
       const [logs] = await db.execute(query, params);
       res.json(logs);
     } catch (error) {

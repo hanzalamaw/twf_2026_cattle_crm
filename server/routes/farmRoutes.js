@@ -1,5 +1,6 @@
 import { log, logError } from "../utils/logger.js";
 import { writeAuditLog } from "../utils/auditLog.js";
+import { limitOffsetClause } from "../utils/sqlPagination.js";
 
 function toDateOnly(v) {
   if (v == null || v === "") return v;
@@ -358,8 +359,7 @@ export const registerFarmRoutes = (app, db, verifyToken) => {
       const [countRows] = await db.execute("SELECT COUNT(*) AS total FROM farm_expenses");
       const total = Number(countRows[0]?.total ?? 0);
       const [rows] = await db.execute(
-        "SELECT expense_id, bank, cash, total, done_at, description, done_by, created_by FROM farm_expenses ORDER BY done_at DESC LIMIT ? OFFSET ?",
-        [limitNum, offset]
+        `SELECT expense_id, bank, cash, total, done_at, description, done_by, created_by FROM farm_expenses ORDER BY done_at DESC ${limitOffsetClause(limitNum, offset, { maxLimit: 100, defaultLimit: 50 })}`
       );
       const expenses = (rows || []).map((r) => ({ ...r, done_at: toDateOnly(r.done_at) ?? r.done_at }));
       res.json({ data: expenses, total });

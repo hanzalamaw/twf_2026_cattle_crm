@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 import { log, logError } from "../utils/logger.js";
 import { writeAuditLog } from "../utils/auditLog.js";
+import { limitOffsetClause } from "../utils/sqlPagination.js";
 
 /** Normalize to date-only YYYY-MM-DD for consistent display and audit (avoids timezone shift). */
 function toDateOnly(v) {
@@ -548,10 +549,10 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           CASE WHEN COALESCE(o.pending_amount, 0) > 0 THEN 'Pending' ELSE 'Paid' END AS payment_status
         ${fromClause}
         ORDER BY o.created_at DESC
-        LIMIT ? OFFSET ?
+        ${limitOffsetClause(limitNum, offset, { maxLimit: 100, defaultLimit: 50 })}
       `;
 
-      const [rows] = await db.execute(query, [...params, limitNum, offset]);
+      const [rows] = await db.execute(query, params);
       const normalized = rows.map((r) => ({ ...r, booking_date: toDateOnly(r.booking_date) ?? r.booking_date }));
       log("BOOKING", "Orders list fetched", { user_id: req.userId, count: rows.length, total, page: pageNum });
       res.json({ data: normalized, total });
@@ -699,9 +700,9 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         FROM leads l
         ${whereClause}
         ORDER BY l.created_at DESC
-        LIMIT ? OFFSET ?
+        ${limitOffsetClause(limitNum, offset, { maxLimit: 100, defaultLimit: 50 })}
       `;
-      const [rows] = await db.execute(query, [...params, limitNum, offset]);
+      const [rows] = await db.execute(query, params);
       const normalized = rows.map((r) => ({ ...r, booking_date: toDateOnly(r.booking_date) ?? r.booking_date }));
       log("BOOKING", "Leads list fetched", { user_id: req.userId, count: rows.length, total, page: pageNum });
       res.json({ data: normalized, total });
@@ -987,8 +988,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const [countRows] = await db.execute("SELECT COUNT(*) AS total FROM booking_expenses");
       const total = Number(countRows[0]?.total ?? 0);
       const [rows] = await db.execute(
-        "SELECT expense_id, bank, cash, total, done_at, description, done_by, created_by FROM booking_expenses ORDER BY done_at DESC LIMIT ? OFFSET ?",
-        [limitNum, offset]
+        `SELECT expense_id, bank, cash, total, done_at, description, done_by, created_by FROM booking_expenses ORDER BY done_at DESC ${limitOffsetClause(limitNum, offset, { maxLimit: 100, defaultLimit: 50 })}`
       );
       const expenses = rows.map((r) => ({ ...r, done_at: toDateOnly(r.done_at) ?? r.done_at }));
       res.json({ data: expenses, total });
