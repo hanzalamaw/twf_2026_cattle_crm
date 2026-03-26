@@ -63,6 +63,39 @@ const RequireBookingDashboard = ({ children }) => {
   return children;
 };
 
+const STAFF_BOOKINGS_ROLE = 'Staff - Bookings';
+const CO_MANAGER_BOOKINGS_ROLE = 'Co-Manager - Bookings';
+
+function bookingDefaultPath(role) {
+  if (role === STAFF_BOOKINGS_ROLE || role === CO_MANAGER_BOOKINGS_ROLE) return '/bookings/new-query';
+  return '/bookings/dashboard';
+}
+
+function isBookingPathAllowedForRole(role, pathname) {
+  if (role === STAFF_BOOKINGS_ROLE) {
+    return pathname === '/bookings/new-query' || pathname === '/bookings/queries';
+  }
+  if (role === CO_MANAGER_BOOKINGS_ROLE) {
+    return pathname === '/bookings/new-query' || pathname === '/bookings/queries' || pathname === '/bookings/transactions';
+  }
+  return true;
+}
+
+const BookingsIndexRedirect = () => {
+  const { user } = useAuth();
+  return <Navigate to={bookingDefaultPath(user?.role)} replace />;
+};
+
+const RequireBookingRoleAccess = ({ children }) => {
+  const { user } = useAuth();
+  const location = useLocation();
+  const role = user?.role;
+  if (!isBookingPathAllowedForRole(role, location.pathname)) {
+    return <Navigate to={bookingDefaultPath(role)} replace />;
+  }
+  return children;
+};
+
 const TermsOrHome = () => {
   const { user } = useAuth();
   if (user && !user.has_prev_logged_in) {
@@ -208,14 +241,14 @@ function App() {
           </Route>
 
           <Route path="/bookings" element={<ProtectedRoute><RequirePermission permission="booking_management"><MainLayout systemName="" /></RequirePermission></ProtectedRoute>}>
-            <Route index element={<Navigate to="/bookings/dashboard" replace />} />
-            <Route path="dashboard" element={<RequireBookingDashboard><Dashboard /></RequireBookingDashboard>} />
-            <Route path="new-query" element={<NewQuery />} />
-            <Route path="new-order" element={<NewOrder />} />
-            <Route path="queries" element={<QueryManagement />} />
-            <Route path="orders" element={<OrderManagement />} />
-            <Route path="transactions" element={<Transactions />} />
-            <Route path="expenses" element={<Expenses />} />
+            <Route index element={<BookingsIndexRedirect />} />
+            <Route path="dashboard" element={<RequireBookingRoleAccess><RequireBookingDashboard><Dashboard /></RequireBookingDashboard></RequireBookingRoleAccess>} />
+            <Route path="new-query" element={<RequireBookingRoleAccess><NewQuery /></RequireBookingRoleAccess>} />
+            <Route path="new-order" element={<RequireBookingRoleAccess><NewOrder /></RequireBookingRoleAccess>} />
+            <Route path="queries" element={<RequireBookingRoleAccess><QueryManagement /></RequireBookingRoleAccess>} />
+            <Route path="orders" element={<RequireBookingRoleAccess><OrderManagement /></RequireBookingRoleAccess>} />
+            <Route path="transactions" element={<RequireBookingRoleAccess><Transactions /></RequireBookingRoleAccess>} />
+            <Route path="expenses" element={<RequireBookingRoleAccess><Expenses /></RequireBookingRoleAccess>} />
           </Route>
 
           <Route path="/operations" element={<ProtectedRoute><RequirePermission permission="operation_management"><MainLayout systemName="Operations Management" /></RequirePermission></ProtectedRoute>}>

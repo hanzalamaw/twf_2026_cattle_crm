@@ -106,6 +106,9 @@ const BOOKING_MENU_ITEMS = [
   { id: 'bm-expenses', label: 'Expenses', iconDefault: '/icons/expenses_default.png', iconActive: '/icons/expenses_active.png', path: '/bookings/expenses', permission: 'booking_management' },
 ];
 
+const STAFF_BOOKINGS_ROLE = 'Staff - Bookings';
+const CO_MANAGER_BOOKINGS_ROLE = 'Co-Manager - Bookings';
+
 // ── NEW: Farm Management sub-menu (mirrors Booking pattern) ──
 const FARM_MENU_ITEMS = [
   { id: 'fm-dashboard',  label: 'Dashboard',        iconDefault: '/icons/dashboard_default.png',         iconActive: '/icons/dashboard_active.png',         path: '/farm/dashboard',        managersOnly: true },
@@ -144,6 +147,7 @@ function Sidebar() {
   const isFarmContext = location.pathname.startsWith('/farm');
   const isProcurementContext = location.pathname.startsWith('/procurement');
   const isAdminOrManager = [1, 2, 3, 5, 7].includes(roleId);
+  const roleName = user?.role;
 
   const items = isBookingContext
     ? BOOKING_MENU_ITEMS
@@ -155,7 +159,13 @@ function Sidebar() {
     ? PROCUREMENT_MENU_ITEMS
     : MENU_ITEMS;
 
-  const visibleItems = items.filter((item) => {
+  const roleVisibleItems = isBookingContext && roleName === STAFF_BOOKINGS_ROLE
+    ? items.filter((item) => ['/bookings/new-query', '/bookings/queries'].includes(item.path))
+    : isBookingContext && roleName === CO_MANAGER_BOOKINGS_ROLE
+    ? items.filter((item) => ['/bookings/new-query', '/bookings/queries', '/bookings/transactions'].includes(item.path))
+    : items;
+
+  const visibleItems = roleVisibleItems.filter((item) => {
     if (item.managersOnly) return (isBookingContext || isFarmContext) ? isAdminOrManager : isManager;
     if (item.permission) return item.permission === 'performance_management' ? true : !!permissions[item.permission];
     return true;

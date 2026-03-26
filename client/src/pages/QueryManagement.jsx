@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { API_BASE as API } from '../config/api';
+import { useAuth } from '../context/AuthContext';
 const PAGE_SIZE = 50;
 const HIDDEN_TYPES_BOOKING = ['Cow', 'Goat'];
 
@@ -51,6 +52,7 @@ function cellVal(col, row) {
 }
 
 export default function QueryManagement() {
+  const { user } = useAuth();
   const [leads, setLeads] = useState([]);
   const [filters, setFilters] = useState({ order_types: [], days: [], references: [] });
   const [search, setSearch] = useState('');
@@ -81,6 +83,9 @@ export default function QueryManagement() {
   const token = localStorage.getItem('token');
   const location = useLocation();
   const isFarm = location.pathname.startsWith('/farm');
+  const isRestrictedBookingRole = ['Staff - Bookings', 'Co-Manager - Bookings'].includes(user?.role);
+  const hideConfirmOrder = !isFarm && isRestrictedBookingRole;
+  const hideDeleteAction = !isFarm && isRestrictedBookingRole;
   const visibleOrderTypes = (filters.order_types || []).filter((t) => (isFarm ? true : !HIDDEN_TYPES_BOOKING.includes(t)));
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
@@ -466,7 +471,9 @@ export default function QueryManagement() {
                   <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap', width: '40px' }}>
                     <input type="checkbox" checked={leads.length > 0 && selectedIds.size === leads.length} onChange={toggleSelectAll} style={{ cursor: 'pointer' }} />
                   </th>
-                  <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap', width: '120px' }}>Confirm Order</th>
+                  {!hideConfirmOrder && (
+                    <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap', width: '120px' }}>Confirm Order</th>
+                  )}
                   {COLUMNS.map((col) => (
                     <th key={col.key} style={{ padding: '10px 8px', textAlign: 'left', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap' }}>{col.label}</th>
                   ))}
@@ -475,22 +482,26 @@ export default function QueryManagement() {
               </thead>
               <tbody>
                 {leads.length === 0 ? (
-                  <tr><td colSpan={COLUMNS.length + 3} style={{ padding: '24px', textAlign: 'center', color: '#666' }}>No queries found.</td></tr>
+                  <tr><td colSpan={COLUMNS.length + (hideConfirmOrder ? 2 : 3)} style={{ padding: '24px', textAlign: 'center', color: '#666' }}>No queries found.</td></tr>
                 ) : leads.map((row) => (
                   <tr key={row.lead_id} style={{ borderBottom: '1px solid #eee' }}>
                     <td style={{ padding: '8px', whiteSpace: 'nowrap' }}><input type="checkbox" checked={selectedIds.has(row.lead_id)} onChange={() => toggleSelect(row.lead_id)} style={{ cursor: 'pointer' }} /></td>
-                    <td style={{ padding: '8px', whiteSpace: 'nowrap', textAlign: 'center' }}>
-                      <button type="button" onClick={() => handleConfirmClick(row)} disabled={confirmingLeadId === row.lead_id}
-                        style={{ padding: '6px 12px', fontSize: '12px', fontWeight: '600', background: confirmingLeadId === row.lead_id ? '#e0e0e0' : '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: confirmingLeadId === row.lead_id ? 'not-allowed' : 'pointer' }}>
-                        {confirmingLeadId === row.lead_id ? '...' : 'Confirm'}
-                      </button>
-                    </td>
+                    {!hideConfirmOrder && (
+                      <td style={{ padding: '8px', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                        <button type="button" onClick={() => handleConfirmClick(row)} disabled={confirmingLeadId === row.lead_id}
+                          style={{ padding: '6px 12px', fontSize: '12px', fontWeight: '600', background: confirmingLeadId === row.lead_id ? '#e0e0e0' : '#166534', color: '#fff', border: 'none', borderRadius: '6px', cursor: confirmingLeadId === row.lead_id ? 'not-allowed' : 'pointer' }}>
+                          {confirmingLeadId === row.lead_id ? '...' : 'Confirm'}
+                        </button>
+                      </td>
+                    )}
                     {COLUMNS.map((col) => (
                       <td key={col.key} style={{ padding: '8px', whiteSpace: 'nowrap' }}>{cellVal(col, row)}</td>
                     ))}
                     <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
                       <button type="button" onClick={() => handleEditLead(row)} title="Edit" style={{ marginRight: '8px', padding: '4px', cursor: 'pointer', background: 'none', border: 'none', verticalAlign: 'middle' }}><img src="/icons/edit.png" alt="Edit" style={{ width: '15px', height: '15px', display: 'block' }} /></button>
-                      <button type="button" onClick={() => setDeleteConfirm(row)} title="Delete" style={{ padding: '4px', cursor: 'pointer', background: 'none', border: 'none', verticalAlign: 'middle' }}><img src="/icons/delete.png" alt="Delete" style={{ width: '18px', height: '18px', display: 'block' }} /></button>
+                      {!hideDeleteAction && (
+                        <button type="button" onClick={() => setDeleteConfirm(row)} title="Delete" style={{ padding: '4px', cursor: 'pointer', background: 'none', border: 'none', verticalAlign: 'middle' }}><img src="/icons/delete.png" alt="Delete" style={{ width: '18px', height: '18px', display: 'block' }} /></button>
+                      )}
                     </td>
                   </tr>
                 ))}
