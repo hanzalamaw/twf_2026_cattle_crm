@@ -27,6 +27,7 @@ const COLUMNS = [
   { key: 'pending',        label: 'Pending'        },
   { key: 'source',         label: 'Source'         },
   { key: 'reference',      label: 'Reference'      },
+  { key: 'closed_by',      label: 'Closed By'      },
   { key: 'description',    label: 'Description'    },
   { key: 'payment_status', label: 'Payment Status' },
 ];
@@ -66,7 +67,7 @@ const defaultEditRow = () => ({
   order_id: '', customer_id: '', cow: '', hissa: '', slot: '',
   booking_name: '', shareholder_name: '', phone_number: '', alt_phone: '',
   address: '', area: '', day: '', type: '', booking_date: '',
-  total_amount: '', received: '', pending: '', source: '', reference: '', description: '',
+  total_amount: '', received: '', pending: '', source: '', reference: '', closed_by: '', description: '',
 });
 
 function validateAmountsRealtime(row) {
@@ -227,7 +228,7 @@ export default function OrderManagement() {
       phone_number: row.phone_number ?? '', alt_phone: row.alt_phone ?? '', address: row.address ?? '',
       area: row.area ?? '', day: row.day ?? '', type: row.type ?? '', booking_date: formatDate(row.booking_date),
       total_amount: row.total_amount ?? '', received: row.received ?? '', pending: row.pending ?? '',
-      source: row.source ?? '', reference: row.reference ?? '', description: row.description ?? '',
+      source: row.source ?? '', reference: row.reference ?? '', closed_by: row.closed_by ?? '', description: row.description ?? '',
     };
     setEditPreviousRow(init); setEditRow({ ...init }); setEditErrors({}); setEditDuplicateError(null); setEditOpen(true);
   };
@@ -557,7 +558,7 @@ export default function OrderManagement() {
               <div style={{ fontSize: '11px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>Update to</div>
 
               <div className="om-edit-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
-                {['order_id','customer_id','cow','hissa','slot','booking_name','shareholder_name','phone_number','alt_phone','address','area','day','type','booking_date','total_amount','received','pending','source','reference'].map((key) => {
+                {['order_id','customer_id','cow','hissa','slot','booking_name','shareholder_name','phone_number','alt_phone','address','area','day','type','booking_date','total_amount','received','pending','source','reference','closed_by'].map((key) => {
                   const isReadOnly = key === 'order_id' || key === 'customer_id' || key === 'received' || key === 'pending';
                   const isCowHissaErr = (key === 'cow' || key === 'hissa') && editDuplicateError;
                   return (

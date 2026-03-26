@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 const PAGE_SIZE = 50;
 const HIDDEN_TYPES_BOOKING = ['Cow', 'Goat'];
 const CONFIRM_ORDER_TYPES = ['Cow', 'Goat', 'Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];
+const CLOSED_BY_OPTIONS = ['Ashhad Bhai', 'Ammar Bhai', 'Ashhal', 'Abuzar', 'Omer', 'Abdullah', 'Huzaifa', 'Hanzala', 'External'];
 const DAYS = ['DAY 1', 'DAY 2', 'DAY 3'];
 const ORDER_TYPE_PRESET_AMOUNTS = { 'Hissa - Standard': '25000', 'Hissa - Premium': '30000', 'Hissa - Waqf': '21000' };
 
@@ -76,6 +77,7 @@ export default function QueryManagement() {
     address: '',
     area: '',
     day: '',
+    closed_by: '',
     shareholder_name: '',
     order_id: '',
     slot: '',
@@ -210,6 +212,7 @@ export default function QueryManagement() {
       address: lead.address || '',
       area: lead.area || '',
       day: lead.day || '',
+      closed_by: '',
       shareholder_name: lead.shareholder_name || '',
       order_id: '',
       slot: '',
@@ -222,7 +225,7 @@ export default function QueryManagement() {
   const closeConfirmModal = () => {
     if (confirmingLeadId) return;
     setConfirmModalLead(null);
-    setConfirmForm({ order_type: '', total_amount: '', address: '', area: '', day: '', shareholder_name: '', order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
+    setConfirmForm({ order_type: '', total_amount: '', address: '', area: '', day: '', closed_by: '', shareholder_name: '', order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
     setConfirmDuplicateError(null);
     setConfirmFormErrors({});
   };
@@ -241,6 +244,7 @@ export default function QueryManagement() {
     if (!(confirmForm.address || '').trim()) fe.address = 'Address is required';
     if (!(confirmForm.area || '').trim()) fe.area = 'Area is required';
     if (!d) fe.day = 'Day is required';
+    if (!(confirmForm.closed_by || '').trim()) fe.closed_by = 'Closed by is required';
     if (!(confirmForm.shareholder_name || '').trim()) fe.shareholder_name = 'Shareholder name is required';
     if (!(confirmForm.order_id || '').trim()) fe.order_id = 'Order ID is required';
     if (!(confirmForm.slot || '').trim()) fe.slot = 'Slot is required';
@@ -263,6 +267,7 @@ export default function QueryManagement() {
           address: (confirmForm.address || '').trim(),
           area: (confirmForm.area || '').trim(),
           day: d,
+          closed_by: (confirmForm.closed_by || '').trim(),
           shareholder_name: (confirmForm.shareholder_name || '').trim(),
           order_id: (confirmForm.order_id || '').trim(),
           slot: (confirmForm.slot || '').trim() || null,
@@ -274,7 +279,7 @@ export default function QueryManagement() {
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.order_id) {
         setConfirmModalLead(null);
-        setConfirmForm({ order_type: '', total_amount: '', address: '', area: '', day: '', shareholder_name: '', order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
+        setConfirmForm({ order_type: '', total_amount: '', address: '', area: '', day: '', closed_by: '', shareholder_name: '', order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
         setConfirmDuplicateError(null); setConfirmFormErrors({});
         setSelectedIds((p) => { const n = new Set(p); n.delete(lead.lead_id); return n; });
         fetchLeads();
@@ -645,6 +650,18 @@ export default function QueryManagement() {
                     {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
                   </select>
                   {confirmFormErrors.day && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.day}</div>}
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Closed By <span style={{ color: '#dc2626' }}>*</span></label>
+                  <select
+                    value={confirmForm.closed_by}
+                    onChange={(e) => { setConfirmForm((p) => ({ ...p, closed_by: e.target.value })); setConfirmFormErrors((p) => ({ ...p, closed_by: undefined })); }}
+                    style={miStyle(confirmFormErrors.closed_by)}
+                  >
+                    <option value="">Select Closed By</option>
+                    {CLOSED_BY_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                  {confirmFormErrors.closed_by && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.closed_by}</div>}
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Order ID <span style={{ color: '#dc2626' }}>*</span></label>

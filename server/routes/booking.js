@@ -353,6 +353,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         total_amount,
         order_source,
         reference,
+        closed_by,
         description,
         slot,
       } = body;
@@ -386,8 +387,8 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           order_id, customer_id, contact, order_type, booking_name, shareholder_name,
           cow_number, hissa_number, alt_contact, address, area, day, booking_date,
           total_amount, received_amount, pending_amount, order_source, reference,
-          description, rider_id, slot
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+          closed_by, description, rider_id, slot
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
         [
           order_id,
           customer_id,
@@ -407,6 +408,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           pendingAmount,
           order_source || null,
           reference || null,
+          closed_by || null,
           description || null,
           slot || null,
         ]
@@ -435,6 +437,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           total_amount: totalAmount,
           order_source: order_source || null,
           reference: reference || null,
+          closed_by: closed_by || null,
           description: description || null,
         },
         ip_address: req.ip,
@@ -545,6 +548,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           o.pending_amount AS pending,
           o.order_source AS source,
           o.reference AS reference,
+          o.closed_by AS closed_by,
           o.description AS description,
           CASE WHEN COALESCE(o.pending_amount, 0) > 0 THEN 'Pending' ELSE 'Paid' END AS payment_status
         ${fromClause}
@@ -844,6 +848,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const addressVal = body.address != null && String(body.address).trim() ? String(body.address).trim() : (lead.address ?? null);
       const areaVal = body.area != null && String(body.area).trim() ? String(body.area).trim() : (lead.area ?? null);
       const dayVal = body.day != null && String(body.day).trim() ? String(body.day).trim() : (lead.day ?? null);
+      const closedBy = body.closed_by != null && String(body.closed_by).trim() ? String(body.closed_by).trim() : null;
       const totalAmount = Number(body.total_amount);
 
       if (!orderType) {
@@ -860,6 +865,9 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       }
       if (!dayVal || !String(dayVal).trim()) {
         return res.status(400).json({ message: "Day is required" });
+      }
+      if (!closedBy) {
+        return res.status(400).json({ message: "Closed by is required" });
       }
       if (!Number.isFinite(totalAmount) || totalAmount < 0) {
         return res.status(400).json({ message: "Total amount must be a valid positive number" });
@@ -881,8 +889,8 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const hissaNumber = body.hissa_number != null && String(body.hissa_number).trim() !== "" ? String(body.hissa_number).trim() : null;
 
       await db.execute(
-        `INSERT INTO orders (order_id, customer_id, contact, order_type, booking_name, shareholder_name, cow_number, hissa_number, alt_contact, address, area, day, booking_date, total_amount, received_amount, pending_amount, order_source, reference, description, rider_id, slot)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, ?)`,
+        `INSERT INTO orders (order_id, customer_id, contact, order_type, booking_name, shareholder_name, cow_number, hissa_number, alt_contact, address, area, day, booking_date, total_amount, received_amount, pending_amount, order_source, reference, closed_by, description, rider_id, slot)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NULL, ?)`,
         [
           orderId,
           lead.customer_id ?? null,
@@ -901,6 +909,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           totalAmount, // pending_amount
           lead.order_source ?? null,
           lead.reference ?? null,
+          closedBy,
           lead.description ?? null,
           slotVal,
         ]
@@ -924,6 +933,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         total_amount: totalAmount,
         order_source: lead.order_source || null,
         reference: lead.reference || null,
+        closed_by: closedBy,
       };
       await writeAuditLog(db, {
         user_id: req.userId,
@@ -1497,7 +1507,7 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
       const { orderId } = req.params;
       const body = req.body;
       const [oldRows] = await db.execute(
-        `SELECT customer_id, cow_number AS cow, hissa_number AS hissa, slot, booking_name, shareholder_name, contact AS phone_number, alt_contact AS alt_phone, address, area, day, order_type AS type, booking_date, total_amount, received_amount AS received, pending_amount AS pending, order_source AS source, reference, description FROM orders WHERE order_id = ?`,
+        `SELECT customer_id, cow_number AS cow, hissa_number AS hissa, slot, booking_name, shareholder_name, contact AS phone_number, alt_contact AS alt_phone, address, area, day, order_type AS type, booking_date, total_amount, received_amount AS received, pending_amount AS pending, order_source AS source, reference, closed_by, description FROM orders WHERE order_id = ?`,
         [orderId]
       );
       const rawOld = oldRows.length > 0 ? oldRows[0] : null;
@@ -1533,6 +1543,7 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
         pending: "pending_amount",
         source: "order_source",
         reference: "reference",
+        closed_by: "closed_by",
         description: "description",
       };
       for (const [clientKey, dbCol] of Object.entries(fieldMap)) {
@@ -1563,7 +1574,7 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
     try {
       const { orderId } = req.params;
       const [rows] = await db.execute(
-        "SELECT customer_id, contact, order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, description, reference FROM orders WHERE order_id = ?",
+        "SELECT customer_id, contact, order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, description, reference, closed_by FROM orders WHERE order_id = ?",
         [orderId]
       );
       if (rows.length === 0) return res.status(404).json({ message: "Order not found" });
@@ -1575,8 +1586,8 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
       const nextNum = idRows[0]?.nextId ?? 1;
       const cancelId = `C-${String(nextNum).padStart(4, "0")}-${year}`;
       await db.execute(
-        `INSERT INTO cancelled_orders (id, customer_id, contact, order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, description, reference) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [cancelId, o.customer_id, o.contact, o.order_type, o.booking_name, o.shareholder_name, o.alt_contact, o.address, o.area, o.day, o.booking_date, o.total_amount, o.order_source, o.description, o.reference]
+        `INSERT INTO cancelled_orders (id, customer_id, contact, order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, description, reference, closed_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [cancelId, o.customer_id, o.contact, o.order_type, o.booking_name, o.shareholder_name, o.alt_contact, o.address, o.area, o.day, o.booking_date, o.total_amount, o.order_source, o.description, o.reference, o.closed_by]
       );
       await db.execute("DELETE FROM payments WHERE order_id = ?", [orderId]);
       await db.execute("DELETE FROM orders WHERE order_id = ?", [orderId]);
@@ -1591,12 +1602,12 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
     }
   });
 
-  // Invoice PDF: THE WARSI FARM style - all orders for customer_id, any year
+  // Invoice PDF: THE WARSI FARM style - customer orders only for booking year 2026
   app.get("/api/booking/invoice/:customerId", verifyToken, async (req, res) => {
     try {
       const { customerId } = req.params;
 
-      // Fetch all orders for this customer (any year), ordered by booking_date then order_id
+      // Fetch orders for this customer only in booking year 2026
       const [orders] = await db.execute(
         `SELECT o.order_id, o.cow_number AS cow, o.hissa_number AS hissa, o.booking_name,
                 o.shareholder_name, o.contact, o.alt_contact, o.address, o.area, o.day,
@@ -1604,13 +1615,15 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
                 o.received_amount, o.pending_amount
          FROM orders o
          WHERE o.customer_id = ?
+           AND o.booking_date >= '2026-01-01'
+           AND o.booking_date < '2027-01-01'
          ORDER BY o.booking_date, o.order_id`,
         [customerId]
       );
 
       if (orders.length === 0) {
         await writeAuditLog(db, { user_id: req.userId, action: "INVOICE_NO_ORDERS", entity_type: "invoice", entity_id: customerId, new_values: { reason: "no_orders" }, ip_address: req.ip, user_agent: req.get("user-agent") });
-        return res.status(404).json({ message: "No orders found for this customer" });
+        return res.status(404).json({ message: "No orders found for this customer in 2026" });
       }
 
       // Generate sequential invoice number: find max from audit_logs for this customer

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE as API } from '../config/api';
 // Change this to switch which booking year the stats sheet uses.
-const STATS_YEAR = 2025;
+const STATS_YEAR = 2026;
 
 const DAYS = ['DAY 1', 'DAY 2', 'DAY 3'];
 const TYPES = [

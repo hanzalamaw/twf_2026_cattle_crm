@@ -119,6 +119,7 @@ CREATE TABLE `cancelled_orders` (
   `order_source` varchar(50) DEFAULT NULL,
   `description` text DEFAULT NULL,
   `reference` varchar(100) DEFAULT NULL,
+  `closed_by` varchar(100) DEFAULT NULL,
   `cancelled_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -190,6 +191,7 @@ CREATE TABLE `orders` (
   `pending_amount` decimal(10,2) DEFAULT 0.00,
   `order_source` varchar(50) DEFAULT NULL,
   `reference` varchar(100) DEFAULT NULL,
+  `closed_by` varchar(100) DEFAULT NULL,
   `description` text DEFAULT NULL,
   `rider_id` int(11) DEFAULT NULL,
   `slot` varchar(50) DEFAULT NULL,

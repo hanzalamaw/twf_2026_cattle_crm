@@ -316,8 +316,9 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
   // -----------------------
   // GET: /api/dashboard/reference-wise?year=...
-  // Lead generated = orders with that reference + queries (leads) with that reference.
-  // Lead converted = orders with that reference only.
+  // Uses orders.closed_by as the primary grouping key.
+  // Lead generated = orders with that closer + queries (leads) with same name in lead reference.
+  // Lead converted = orders with that closer only.
   // -----------------------
   app.get("/api/dashboard/reference-wise", verifyToken, async (req, res) => {
     try {
@@ -326,7 +327,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
       const paramsO = [];
       const conditionsO = buildYearWhere(year, paramsO);
       conditionsO.push(`${TYPE_KEY_SQL} IS NOT NULL`);
-      conditionsO.push("o.reference IS NOT NULL AND o.reference != ''");
+      conditionsO.push("o.closed_by IS NOT NULL AND o.closed_by != ''");
       const whereO = conditionsO.length ? `WHERE ${conditionsO.join(" AND ")}` : "";
 
       const paramsL = [];
@@ -343,12 +344,12 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
       const [orderRows] = await db.execute(
         `
         SELECT
-          o.reference AS name,
+          o.closed_by AS name,
           COUNT(*) AS orderCount,
           COALESCE(SUM(o.total_amount), 0) AS totalRevenueGenerated
         FROM orders o
         ${whereO}
-        GROUP BY o.reference
+        GROUP BY o.closed_by
         `,
         paramsO
       );
@@ -377,8 +378,8 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
         leadMap.set(r.name, Number(r.queryCount || 0));
       }
 
-      const allRefs = new Set([...orderMap.keys(), ...leadMap.keys()]);
-      const data = [...allRefs].map((name) => {
+      // Keep names sourced from closed_by only.
+      const data = [...orderMap.keys()].map((name) => {
         const o = orderMap.get(name) || {
           orderCount: 0,
           totalRevenueGenerated: 0,

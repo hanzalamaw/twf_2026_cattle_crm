@@ -40,6 +40,7 @@ const NewQuery = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [keepFormData, setKeepFormData] = useState(false);
+  const [referenceSuggestions, setReferenceSuggestions] = useState(REFERENCES);
   const [formData, setFormData] = useState({ ...EMPTY_FORM });
 
   const generateLeadIdRef = useCallback(async () => {
@@ -85,6 +86,32 @@ const NewQuery = () => {
   useEffect(() => {
     generateLeadIdRef();
   }, [generateLeadIdRef]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    const fetchReferenceSuggestions = async () => {
+      try {
+        const [leadsRes, ordersRes] = await Promise.all([
+          fetch(`${API}/booking/leads/filters?year=all`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/booking/orders/filters?year=all`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        const [leadsJson, ordersJson] = await Promise.all([
+          leadsRes.ok ? leadsRes.json() : {},
+          ordersRes.ok ? ordersRes.json() : {},
+        ]);
+        const merged = Array.from(new Set([
+          ...REFERENCES,
+          ...((leadsJson?.references || []).filter(Boolean)),
+          ...((ordersJson?.references || []).filter(Boolean)),
+        ]));
+        if (merged.length > 0) setReferenceSuggestions(merged);
+      } catch (err) {
+        console.error('Failed to load reference suggestions', err);
+      }
+    };
+    fetchReferenceSuggestions();
+  }, []);
 
   const handleContactChange = (e) => {
     const value = e.target.value;
@@ -324,14 +351,21 @@ const NewQuery = () => {
 
               <div>
                 <label className="nq-label" style={labelStyle}>Reference <span style={{ color: '#FF5722' }}>*</span></label>
-                <select className="nq-input" value={formData.reference}
+                <input
+                  className="nq-input"
+                  type="text"
+                  list="new-query-reference-suggestions"
+                  value={formData.reference}
                   onChange={(e) => setFormData((p) => ({ ...p, reference: e.target.value }))}
-                  style={inputStyle} required
+                  style={inputStyle}
+                  placeholder="Type or select reference"
+                  required
                   onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
-                  onBlur={(e)  => (e.target.style.borderColor = '#e0e0e0')}>
-                  <option value="" disabled>Select Reference</option>
-                  {REFERENCES.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
+                  onBlur={(e)  => (e.target.style.borderColor = '#e0e0e0')}
+                />
+                <datalist id="new-query-reference-suggestions">
+                  {referenceSuggestions.map((r) => <option key={r} value={r} />)}
+                </datalist>
               </div>
 
             </div>

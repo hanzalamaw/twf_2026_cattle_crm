@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { API_BASE as API } from '../config/api';
 
@@ -13,7 +13,7 @@ const EMPTY_FORM = {
   order_id: '', customer_id: '', contact: '', order_type: '', booking_name: '',
   shareholder_name: '', cow_number: '', hissa_number: '', alt_contact: '',
   address: '', area: '', day: '', booking_date: '', total_amount: '',
-  order_source: '', reference: '', description: '', slot: '',
+  order_source: '', reference: '', closed_by: '', description: '', slot: '',
 };
 
 const NewOrder = () => {
@@ -26,7 +26,34 @@ const NewOrder = () => {
   const [success, setSuccess] = useState('');
   const [keepFormData, setKeepFormData] = useState(false);
   const [duplicateError, setDuplicateError] = useState(null);
+  const [referenceSuggestions, setReferenceSuggestions] = useState(REFERENCES);
   const [formData, setFormData] = useState({ ...EMPTY_FORM });
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    const fetchReferenceSuggestions = async () => {
+      try {
+        const [ordersRes, leadsRes] = await Promise.all([
+          fetch(`${API}/booking/orders/filters?year=all`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/booking/leads/filters?year=all`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        const [ordersJson, leadsJson] = await Promise.all([
+          ordersRes.ok ? ordersRes.json() : {},
+          leadsRes.ok ? leadsRes.json() : {},
+        ]);
+        const merged = Array.from(new Set([
+          ...REFERENCES,
+          ...((ordersJson?.references || []).filter(Boolean)),
+          ...((leadsJson?.references || []).filter(Boolean)),
+        ]));
+        if (merged.length > 0) setReferenceSuggestions(merged);
+      } catch (err) {
+        console.error('Failed to load reference suggestions', err);
+      }
+    };
+    fetchReferenceSuggestions();
+  }, []);
 
   const generateCustomerIdRef = useCallback(async (contact) => {
     if (!contact || contact.length < 3) { setFormData((p) => ({ ...p, customer_id: '' })); return; }
@@ -344,9 +371,26 @@ const NewOrder = () => {
               </div>
               <div>
                 <label className="no-label" style={labelStyle}>Reference <span style={{ color: '#FF5722' }}>*</span></label>
-                <select className="no-input" value={formData.reference} onChange={(e) => setFormData((p) => ({ ...p, reference: e.target.value }))} required style={inputStyle}
+                <input
+                  className="no-input"
+                  type="text"
+                  list="new-order-reference-suggestions"
+                  value={formData.reference}
+                  onChange={(e) => setFormData((p) => ({ ...p, reference: e.target.value }))}
+                  placeholder="Type or select reference"
+                  required
+                  style={inputStyle}
+                  onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}
+                />
+                <datalist id="new-order-reference-suggestions">
+                  {referenceSuggestions.map((r) => <option key={r} value={r} />)}
+                </datalist>
+              </div>
+              <div>
+                <label className="no-label" style={labelStyle}>Closed By <span style={{ color: '#FF5722' }}>*</span></label>
+                <select className="no-input" value={formData.closed_by} onChange={(e) => setFormData((p) => ({ ...p, closed_by: e.target.value }))} required style={inputStyle}
                   onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}>
-                  <option value="" disabled>Select Reference</option>
+                  <option value="" disabled>Select Closed By</option>
                   {REFERENCES.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
