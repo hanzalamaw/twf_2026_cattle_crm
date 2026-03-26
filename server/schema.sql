@@ -151,6 +151,7 @@ CREATE TABLE `leads` (
   `booking_date` date DEFAULT NULL,
   `total_amount` decimal(10,2) DEFAULT NULL,
   `order_source` varchar(50) DEFAULT NULL,
+  `closed_by` varchar(100) DEFAULT NULL,
   `description` text DEFAULT NULL,
   `reference` varchar(100) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
@@ -160,11 +161,11 @@ CREATE TABLE `leads` (
 -- Dumping data for table `leads`
 --
 
-INSERT INTO `leads` (`lead_id`, `customer_id`, `contact`, `order_type`, `booking_name`, `shareholder_name`, `alt_contact`, `address`, `area`, `day`, `booking_date`, `total_amount`, `order_source`, `description`, `reference`, `created_at`) VALUES
-('#L-0001-2026', 'C-101', '0300-1234567', 'Qurbani Hissa', 'Cow A', 'John Doe', NULL, '123 Street, Karachi', 'Gulshan', 'Monday', '2026-06-15', 25000.00, 'Facebook', 'Interested in 2 shares', NULL, '2026-02-10 13:50:25'),
-('#L-0002-2026', 'C-102', '0321-7654321', 'Full Cow', 'Cow B', 'Jane Smith', NULL, '456 Road, Lahore', 'DHA', 'Wednesday', '2026-06-16', 180000.00, 'WhatsApp', 'Wants a heavy weight animal', NULL, '2026-02-10 13:50:25'),
-('#L-0003-2026', 'C-105', '0333-9998887', 'Qurbani Hissa', 'Cow F', 'Michael Brown', NULL, '789 Blvd, Islamabad', 'E-11', 'Thursday', '2026-06-17', 28000.00, 'Instagram', 'Inquiry for Day 2', NULL, '2026-02-10 13:50:25'),
-('#L-0004-2026', 'C-106', '0344-5556667', 'Full Cow', 'Cow G', 'Sarah Wilson', NULL, '101 Lane, Karachi', 'Clifton', 'Friday', '2026-06-18', 195000.00, 'Website', 'Premium quality requested', NULL, '2026-02-10 13:50:25');
+INSERT INTO `leads` (`lead_id`, `customer_id`, `contact`, `order_type`, `booking_name`, `shareholder_name`, `alt_contact`, `address`, `area`, `day`, `booking_date`, `total_amount`, `order_source`, `closed_by`, `description`, `reference`, `created_at`) VALUES
+('#L-0001-2026', 'C-101', '0300-1234567', 'Qurbani Hissa', 'Cow A', 'John Doe', NULL, '123 Street, Karachi', 'Gulshan', 'Monday', '2026-06-15', 25000.00, 'Facebook', NULL, 'Interested in 2 shares', NULL, '2026-02-10 13:50:25'),
+('#L-0002-2026', 'C-102', '0321-7654321', 'Full Cow', 'Cow B', 'Jane Smith', NULL, '456 Road, Lahore', 'DHA', 'Wednesday', '2026-06-16', 180000.00, 'WhatsApp', NULL, 'Wants a heavy weight animal', NULL, '2026-02-10 13:50:25'),
+('#L-0003-2026', 'C-105', '0333-9998887', 'Qurbani Hissa', 'Cow F', 'Michael Brown', NULL, '789 Blvd, Islamabad', 'E-11', 'Thursday', '2026-06-17', 28000.00, 'Instagram', NULL, 'Inquiry for Day 2', NULL, '2026-02-10 13:50:25'),
+('#L-0004-2026', 'C-106', '0344-5556667', 'Full Cow', 'Cow G', 'Sarah Wilson', NULL, '101 Lane, Karachi', 'Clifton', 'Friday', '2026-06-18', 195000.00, 'Website', NULL, 'Premium quality requested', NULL, '2026-02-10 13:50:25');
 
 -- --------------------------------------------------------
 

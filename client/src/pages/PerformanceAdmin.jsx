@@ -40,6 +40,7 @@ export default function PerformanceAdmin() {
   const [showDailyModal, setShowDailyModal] = useState(false);
   const [editingReport, setEditingReport] = useState(null);
   const [dailyForm, setDailyForm] = useState({ performer_id: '', date: '', calls_done: '', leads_generated: '', orders_confirmed: '' });
+  const [prefillBusy, setPrefillBusy] = useState(false);
 
   const [dailyFilterPerformer, setDailyFilterPerformer] = useState('');
 
@@ -137,10 +138,41 @@ export default function PerformanceAdmin() {
 
   const openAddDaily = () => {
     setEditingReport(null);
-    setDailyForm({ performer_id: performers[0]?.performer_id || '', date: todayLocalDateString(), calls_done: '', leads_generated: '', orders_confirmed: '' });
+    setDailyForm({ performer_id: '', date: todayLocalDateString(), calls_done: '', leads_generated: '', orders_confirmed: '' });
     setShowDailyModal(true);
   };
   const openEditReport = (r) => { setEditingReport(r); setDailyForm({ performer_id: r.performer_id, date: String(r.date).slice(0, 10), calls_done: r.calls_done ?? '', leads_generated: r.leads_generated ?? '', orders_confirmed: r.orders_confirmed ?? '' }); setShowDailyModal(true); };
+
+  useEffect(() => {
+    if (!showDailyModal || editingReport) return;
+    const performerId = Number(dailyForm.performer_id) || 0;
+    const reportDate = dailyForm.date;
+    if (!performerId || !reportDate) return;
+
+    let cancelled = false;
+    const fillFromOrders = async () => {
+      setPrefillBusy(true);
+      try {
+        const url = `${API}/performance/daily-reports/prefill?performer_id=${encodeURIComponent(performerId)}&date=${encodeURIComponent(reportDate)}`;
+        const res = await authFetch(url, { headers: hdrs() });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Failed to prefill');
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        setDailyForm((f) => ({
+          ...f,
+          leads_generated: String(Number(data?.leads_generated || 0)),
+          orders_confirmed: String(Number(data?.orders_confirmed || 0)),
+        }));
+      } catch (e) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setPrefillBusy(false);
+      }
+    };
+
+    fillFromOrders();
+    return () => { cancelled = true; };
+  }, [showDailyModal, editingReport, dailyForm.performer_id, dailyForm.date, authFetch]);
 
   const submitDaily = async (e) => {
     e.preventDefault(); setError('');
@@ -481,7 +513,7 @@ export default function PerformanceAdmin() {
           <div className="pa-form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {formField('Performer *',
               <select className="pa-modal-input" style={inputStyle} value={dailyForm.performer_id} onChange={(e) => setDailyForm((f) => ({ ...f, performer_id: e.target.value }))} required disabled={!!editingReport}>
-                <option value="">Select performer</option>
+                <option value="">Select Performer</option>
                 {performers.map((p) => <option key={p.performer_id} value={p.performer_id}>{p.display_name}</option>)}
               </select>
             )}
@@ -492,6 +524,11 @@ export default function PerformanceAdmin() {
             {formField('Leads Generated', <input className="pa-modal-input" type="number" min="0" style={inputStyle} value={dailyForm.leads_generated} onChange={(e) => setDailyForm((f) => ({ ...f, leads_generated: e.target.value }))} />)}
             {formField('Orders Confirmed', <input className="pa-modal-input" type="number" min="0" style={inputStyle} value={dailyForm.orders_confirmed} onChange={(e) => setDailyForm((f) => ({ ...f, orders_confirmed: e.target.value }))} />)}
           </div>
+          {!editingReport && (
+            <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 10 }}>
+              {prefillBusy ? 'Auto-filling leads/orders from Orders tab...' : 'Leads and Orders are auto-filled from Orders by Date + Closed By.'}
+            </div>
+          )}
           <div className="pa-form-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 12, borderTop: '1px solid #f3f4f6' }}>
             <button type="button" style={s.btnSecondary} onClick={() => setShowDailyModal(false)}>Cancel</button>
             <button type="submit" style={s.btnPrimary}>{editingReport ? 'Update' : 'Add Report'}</button>

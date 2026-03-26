@@ -25,6 +25,7 @@ const COLUMNS = [
   { key: 'total_amount',     label: 'Total Amount'     },
   { key: 'source',           label: 'Source'           },
   { key: 'reference',        label: 'Reference'        },
+  { key: 'query_by',         label: 'Query By'         },
   { key: 'description',      label: 'Description'      },
   { key: 'created_at',       label: 'Created'          },
 ];
@@ -294,7 +295,7 @@ export default function QueryManagement() {
       alt_phone: row.alt_phone ?? '', type: row.type ?? '', booking_name: row.booking_name ?? '',
       shareholder_name: row.shareholder_name ?? '', address: row.address ?? '', area: row.area ?? '',
       day: row.day ?? '', booking_date: formatDate(row.booking_date), total_amount: row.total_amount ?? '',
-      source: row.source ?? '', reference: row.reference ?? '', description: row.description ?? ''
+      source: row.source ?? '', reference: row.reference ?? '', query_by: row.query_by ?? '', description: row.description ?? ''
     };
     setEditPreviousRow(init); setEditRow({ ...init }); setEditErrors({}); setEditOpen(true);
   };
@@ -732,7 +733,7 @@ export default function QueryManagement() {
                 <div style={{ marginBottom: '10px', padding: '8px', background: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '12px' }}>{editErrors.submit || 'Please fix the errors below.'}</div>
               )}
               <div className="qm-edit-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
-                {['customer_id', 'phone_number', 'alt_phone', 'type', 'booking_name', 'shareholder_name', 'address', 'area', 'day', 'booking_date', 'total_amount', 'source', 'reference'].map((key) => {
+                {['customer_id', 'phone_number', 'alt_phone', 'type', 'booking_name', 'shareholder_name', 'address', 'area', 'day', 'booking_date', 'total_amount', 'source', 'reference', 'query_by'].map((key) => {
                   const isDisabled = key === 'lead_id' || key === 'customer_id';
                   return (
                     <div key={key}>

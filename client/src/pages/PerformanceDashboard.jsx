@@ -44,8 +44,18 @@ export default function PerformanceDashboard() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [showDateModal, setShowDateModal] = useState(false);
+  const [dayWiseDays, setDayWiseDays] = useState([]);
 
   const hdrs = () => ({ Authorization: `Bearer ${token}` });
+
+  const dashboardYear = useMemo(() => {
+    const fromY = fromDate ? String(fromDate).slice(0, 4) : '';
+    const toY = toDate ? String(toDate).slice(0, 4) : '';
+    if (fromY && toY) return fromY === toY ? fromY : 'all';
+    if (fromY) return fromY;
+    if (toY) return toY;
+    return '2026';
+  }, [fromDate, toDate]);
 
   const fetchStats = useCallback(async () => {
     setLoading(true); setError('');
@@ -53,12 +63,19 @@ export default function PerformanceDashboard() {
       let url = `${API}/performance/stats?`;
       if (fromDate) url += `from_date=${encodeURIComponent(fromDate)}&`;
       if (toDate) url += `to_date=${encodeURIComponent(toDate)}&`;
-      const res = await authFetch(url, { headers: hdrs() });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Failed');
-      setStats(await res.json());
+      const [statsRes, dayWiseRes] = await Promise.all([
+        authFetch(url, { headers: hdrs() }),
+        authFetch(`${API}/dashboard/day-wise?year=${encodeURIComponent(dashboardYear)}`, { headers: hdrs() }),
+      ]);
+      if (!statsRes.ok) throw new Error((await statsRes.json().catch(() => ({}))).message || 'Failed');
+
+      const statsData = await statsRes.json();
+      const dayWiseData = dayWiseRes.ok ? await dayWiseRes.json().catch(() => ({})) : {};
+      setStats(statsData);
+      setDayWiseDays(Array.isArray(dayWiseData?.days) ? dayWiseData.days : []);
     } catch (e) { setError(e.message); setStats(null); }
     finally { setLoading(false); }
-  }, [authFetch, fromDate, toDate]);
+  }, [authFetch, fromDate, toDate, dashboardYear]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
@@ -102,8 +119,6 @@ export default function PerformanceDashboard() {
           .pd-kpi-grid          { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
           .pd-kpi-card          { padding: 8px 10px !important; }
           .pd-kpi-value         { font-size: 14px !important; }
-          .pd-table-section     { display: none !important; }
-          .pd-team-mobile       { display: flex !important; }
           .pd-individual-grid   { grid-template-columns: 1fr !important; gap: 10px !important; }
 
           /* Date modal — bottom sheet on mobile */
@@ -244,111 +259,90 @@ export default function PerformanceDashboard() {
             </div>
           )}
 
-          {/* ── Desktop: Team Breakdown Table ── */}
+          {/* ── Day Wise Summary (Total Orders only) ── */}
           <div className="pd-table-section" style={{ background: '#fff', borderRadius: 8, border: '1px solid #e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', overflow: 'hidden', marginBottom: 16 }}>
             <div style={{ padding: '10px 14px', borderBottom: '1px solid #e5e7eb', background: '#f9fafb' }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#111827', letterSpacing: 0.2 }}>Team Performance Breakdown</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#111827', letterSpacing: 0.2 }}>Day Wise Summary</span>
             </div>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 11, minWidth: 820 }}>
                 <thead>
                   <tr>
-                    <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 600, color: '#374151', borderBottom: '2px solid #e5e7eb', background: '#f9fafb', width: 32 }}>#</th>
-                    <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 600, color: '#374151', borderBottom: '2px solid #e5e7eb', background: '#f9fafb', minWidth: 100 }}>Performer</th>
-                    <th colSpan={3} style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 600, color: '#374151', borderBottom: '2px solid #e5e7eb', background: '#f9fafb', fontSize: 10 }}>Calls</th>
-                    <th colSpan={3} style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 600, color: '#374151', borderBottom: '2px solid #e5e7eb', background: '#f9fafb', fontSize: 10 }}>Leads</th>
-                    <th colSpan={3} style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 600, color: '#374151', borderBottom: '2px solid #e5e7eb', background: '#f9fafb', fontSize: 10 }}>Orders</th>
+                    <th rowSpan={2} style={{ padding: '9px 10px', textAlign: 'center', fontWeight: 700, color: '#6b7280', borderBottom: '1px solid #e5e7eb', borderRight: '1px solid #e5e7eb', background: '#f3f4f6', minWidth: 130, textTransform: 'uppercase', letterSpacing: 0.4 }}>Category</th>
+                    {dayWiseDays.map((d, i) => (
+                      <th
+                        key={d.key || d.title || i}
+                        colSpan={5}
+                        style={{
+                          padding: '9px 10px',
+                          textAlign: 'center',
+                          fontWeight: 700,
+                          color: '#ffffff',
+                          borderBottom: '1px solid #e5e7eb',
+                          borderLeft: i > 0 ? '4px solid #fff' : 'none',
+                          background: '#FF5722',
+                          minWidth: 220,
+                        }}
+                      >
+                        {d.title || `DAY ${i + 1}`}
+                      </th>
+                    ))}
                   </tr>
                   <tr>
-                    <th style={{ borderBottom: '1px solid #e5e7eb', background: '#f9fafb' }}></th>
-                    <th style={{ borderBottom: '1px solid #e5e7eb', background: '#f9fafb' }}></th>
-                    {['Done', 'Target', '%'].map((h) => (
-                      <th key={`c-${h}`} style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: '#6b7280', borderBottom: '1px solid #e5e7eb', background: '#f9fafb', fontSize: 9 }}>{h}</th>
-                    ))}
-                    {['Done', 'Target', '%'].map((h) => (
-                      <th key={`l-${h}`} style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: '#6b7280', borderBottom: '1px solid #e5e7eb', background: '#f9fafb', fontSize: 9 }}>{h}</th>
-                    ))}
-                    {['Done', 'Target', '%'].map((h) => (
-                      <th key={`o-${h}`} style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: '#6b7280', borderBottom: '1px solid #e5e7eb', background: '#f9fafb', fontSize: 9 }}>{h}</th>
-                    ))}
+                    {dayWiseDays.map((d, i) =>
+                      ['Premium', 'Standard', 'Waqf', 'Goat', 'Total'].map((h, ci) => (
+                        <th
+                          key={`${d.key || i}-${h}`}
+                          style={{
+                            padding: '7px 8px',
+                            textAlign: 'center',
+                            fontWeight: 600,
+                            color: '#374151',
+                            borderBottom: '1px solid #e5e7eb',
+                            borderRight: '1px solid #e5e7eb',
+                            borderLeft: i > 0 && ci === 0 ? '4px solid #fff' : 'none',
+                            background: '#f9fafb',
+                            fontSize: 10,
+                          }}
+                        >
+                          {h}
+                        </th>
+                      ))
+                    )}
                   </tr>
                 </thead>
                 <tbody>
-                  {performers.length === 0 ? (
-                    <tr><td colSpan={11} style={{ padding: '24px 16px', textAlign: 'center', color: '#9ca3af', fontSize: 11 }}>No performers or no data in this period.</td></tr>
-                  ) : performers.map((p, i) => {
-                    const cp = pct(p.calls_done, p.calls_target);
-                    const lp = pct(p.leads_generated, p.leads_target);
-                    const op = pct(p.orders_confirmed, p.orders_target);
-                    const valTd = { padding: '7px 8px', textAlign: 'right', borderBottom: '1px solid #f3f4f6', fontFamily: "'JetBrains Mono','Consolas',monospace", fontWeight: 500, color: '#374151' };
-                    const pctTd = (perc) => ({ ...valTd, fontWeight: 700, color: pctColor(perc), background: pctBg(perc), fontSize: 10, textAlign: 'center', borderRadius: 0 });
-                    return (
-                      <tr key={p.performer_id} className="pd-tr">
-                        <td style={{ padding: '7px 8px', textAlign: 'center', borderBottom: '1px solid #f3f4f6', color: '#9ca3af' }}>{i + 1}</td>
-                        <td style={{ padding: '7px 10px', borderBottom: '1px solid #f3f4f6', fontWeight: 500, color: '#111827', whiteSpace: 'nowrap' }}>
-                          {p.display_name}
-                          <div style={{ marginTop: 3, display: 'flex', gap: 4 }}>
-                            <ProgressBar value={Number(p.calls_done) || 0} max={Number(p.calls_target) || 0} height={3} />
-                            <ProgressBar value={Number(p.leads_generated) || 0} max={Number(p.leads_target) || 0} height={3} />
-                            <ProgressBar value={Number(p.orders_confirmed) || 0} max={Number(p.orders_target) || 0} height={3} />
-                          </div>
-                        </td>
-                        <td style={valTd}>{fmt(p.calls_done)}</td>
-                        <td style={{ ...valTd, color: '#9ca3af', fontWeight: 400 }}>{fmt(p.calls_target)}</td>
-                        <td style={pctTd(cp)}>{cp}%</td>
-                        <td style={valTd}>{fmt(p.leads_generated)}</td>
-                        <td style={{ ...valTd, color: '#9ca3af', fontWeight: 400 }}>{fmt(p.leads_target)}</td>
-                        <td style={pctTd(lp)}>{lp}%</td>
-                        <td style={valTd}>{fmt(p.orders_confirmed)}</td>
-                        <td style={{ ...valTd, color: '#9ca3af', fontWeight: 400 }}>{fmt(p.orders_target)}</td>
-                        <td style={pctTd(op)}>{op}%</td>
-                      </tr>
-                    );
-                  })}
+                  {dayWiseDays.length === 0 ? (
+                    <tr><td colSpan={16} style={{ padding: '24px 16px', textAlign: 'center', color: '#9ca3af', fontSize: 11 }}>No day-wise data available.</td></tr>
+                  ) : (
+                    <tr className="pd-tr">
+                      <td style={{ padding: '8px 10px', fontWeight: 600, color: '#374151', background: '#f3f4f6', borderRight: '1px solid #e5e7eb' }}>
+                        Total Orders
+                      </td>
+                      {dayWiseDays.map((d, i) => {
+                        const row = Array.isArray(d?.data) ? d.data.find((r) => r.label === 'Total Orders') : null;
+                        const vals = row ? [row.premium, row.standard, row.waqf, row.goat, row.total] : ['—', '—', '—', '—', '—'];
+                        return vals.map((v, ci) => (
+                          <td
+                            key={`${d.key || i}-v-${ci}`}
+                            style={{
+                              padding: '8px 8px',
+                              textAlign: 'center',
+                              color: '#111827',
+                              fontWeight: ci === 4 ? 700 : 500,
+                              borderRight: '1px solid #e5e7eb',
+                              borderLeft: i > 0 && ci === 0 ? '4px solid #fff' : 'none',
+                            }}
+                          >
+                            {v === '—' ? v : fmt(v)}
+                          </td>
+                        ));
+                      })}
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
-          </div>
-
-          {/* ── Mobile: Team Breakdown Cards (hidden on desktop) ── */}
-          <div className="pd-team-mobile" style={{ display: 'none', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', letterSpacing: 0.2 }}>Team Performance Breakdown</div>
-            {performers.length === 0 ? (
-              <div style={{ padding: '24px 0', textAlign: 'center', color: '#9ca3af', fontSize: 12 }}>No performers or no data in this period.</div>
-            ) : performers.map((p, i) => {
-              const cp = pct(p.calls_done, p.calls_target);
-              const lp = pct(p.leads_generated, p.leads_target);
-              const op = pct(p.orders_confirmed, p.orders_target);
-              return (
-                <div key={p.performer_id} style={{ background: '#fff', borderRadius: 12, border: '1.5px solid #e5e7eb', padding: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-                  {/* Card header */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: '#111827' }}>{p.display_name}</div>
-                    <span style={{ fontSize: 10, color: '#6b7280', background: '#f3f4f6', borderRadius: 6, padding: '2px 7px', fontWeight: 500 }}>#{i + 1}</span>
-                  </div>
-
-                  {/* 3 metric rows */}
-                  {[
-                    { label: 'Calls', done: p.calls_done, target: p.calls_target, pv: cp },
-                    { label: 'Leads', done: p.leads_generated, target: p.leads_target, pv: lp },
-                    { label: 'Orders', done: p.orders_confirmed, target: p.orders_target, pv: op },
-                  ].map((m) => (
-                    <div key={m.label} style={{ marginBottom: 10 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <span style={{ fontSize: 10, color: '#6b7280', fontWeight: 500 }}>{m.label}</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 10, color: '#374151', fontFamily: "'JetBrains Mono','Consolas',monospace" }}>
-                            {fmt(m.done)} / {fmt(m.target)}
-                          </span>
-                          <span style={{ fontSize: 10, fontWeight: 700, color: pctColor(m.pv), background: pctBg(m.pv), padding: '1px 6px', borderRadius: 8 }}>{m.pv}%</span>
-                        </div>
-                      </div>
-                      <ProgressBar value={Number(m.done) || 0} max={Number(m.target) || 0} height={6} />
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
           </div>
 
           {/* ── Individual Performance Cards ── */}

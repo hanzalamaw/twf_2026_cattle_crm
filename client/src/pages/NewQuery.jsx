@@ -21,6 +21,7 @@ const REFERENCES = [
   'Hanzala',
   'External',
 ];
+const QUERY_BY_OPTIONS = ['Ashhad Bhai', 'Ammar Bhai', 'Ashhal', 'Abuzar', 'Omer', 'Abdullah', 'Huzaifa', 'Hanzala', 'External'];
 
 const EMPTY_FORM = {
   lead_id: '',
@@ -31,6 +32,7 @@ const EMPTY_FORM = {
   booking_date: '',
   order_source: '',
   reference: '',
+  closed_by: '',
   description: '',
 };
 
@@ -366,6 +368,18 @@ const NewQuery = () => {
                 <datalist id="new-query-reference-suggestions">
                   {referenceSuggestions.map((r) => <option key={r} value={r} />)}
                 </datalist>
+              </div>
+
+              <div>
+                <label className="nq-label" style={labelStyle}>Query By <span style={{ color: '#FF5722' }}>*</span></label>
+                <select className="nq-input" value={formData.closed_by}
+                  onChange={(e) => setFormData((p) => ({ ...p, closed_by: e.target.value }))}
+                  style={inputStyle} required
+                  onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
+                  onBlur={(e)  => (e.target.style.borderColor = '#e0e0e0')}>
+                  <option value="" disabled>Select Query By</option>
+                  {QUERY_BY_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
               </div>
 
             </div>

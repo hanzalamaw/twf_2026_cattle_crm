@@ -699,6 +699,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           l.total_amount AS total_amount,
           l.order_source AS source,
           l.reference AS reference,
+          l.closed_by AS query_by,
           l.description AS description,
           l.created_at AS created_at
         FROM leads l
@@ -750,13 +751,14 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
   /** Map lead row from DB (contact, alt_contact, order_type, order_source) to client shape (phone_number, alt_phone, type, source) for audit display */
   function leadRowToClientShape(row) {
     if (!row) return null;
-    const { contact, alt_contact, order_type, order_source, booking_date, ...rest } = row;
+    const { contact, alt_contact, order_type, order_source, closed_by, booking_date, ...rest } = row;
     return {
       ...rest,
       phone_number: contact,
       alt_phone: alt_contact,
       type: order_type,
       source: order_source,
+      query_by: closed_by,
       booking_date: toDateOnly(booking_date) ?? booking_date,
     };
   }
@@ -767,7 +769,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const { leadId } = req.params;
       const body = req.body;
       const [existingRows] = await db.execute(
-        "SELECT lead_id, customer_id, contact, alt_contact, order_type, booking_name, shareholder_name, address, area, day, booking_date, total_amount, order_source, reference, description FROM leads WHERE lead_id = ?",
+        "SELECT lead_id, customer_id, contact, alt_contact, order_type, booking_name, shareholder_name, address, area, day, booking_date, total_amount, order_source, reference, closed_by, description FROM leads WHERE lead_id = ?",
         [leadId]
       );
       if (existingRows.length === 0) return res.status(404).json({ message: "Lead not found" });
@@ -789,6 +791,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         total_amount: body.total_amount,
         order_source: body.order_source ?? body.source,
         reference: body.reference,
+        closed_by: body.closed_by ?? body.query_by,
         description: body.description,
       };
       for (const [key, val] of Object.entries(normalized)) {
@@ -814,7 +817,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     try {
       const { leadId } = req.params;
       const [existing] = await db.execute(
-        "SELECT lead_id, customer_id, contact, alt_contact, order_type, booking_name, shareholder_name, address, area, day, booking_date, total_amount, order_source, reference, description FROM leads WHERE lead_id = ?",
+        "SELECT lead_id, customer_id, contact, alt_contact, order_type, booking_name, shareholder_name, address, area, day, booking_date, total_amount, order_source, reference, closed_by, description FROM leads WHERE lead_id = ?",
         [leadId]
       );
       if (existing.length === 0) return res.status(404).json({ message: "Lead not found" });
@@ -835,7 +838,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const { leadId } = req.params;
       const body = req.body || {};
       const [leadRows] = await db.execute(
-        "SELECT lead_id, customer_id, contact, order_type AS order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, reference, description FROM leads WHERE lead_id = ?",
+        "SELECT lead_id, customer_id, contact, order_type AS order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, reference, closed_by, description FROM leads WHERE lead_id = ?",
         [leadId]
       );
       if (leadRows.length === 0) {
@@ -848,7 +851,9 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const addressVal = body.address != null && String(body.address).trim() ? String(body.address).trim() : (lead.address ?? null);
       const areaVal = body.area != null && String(body.area).trim() ? String(body.area).trim() : (lead.area ?? null);
       const dayVal = body.day != null && String(body.day).trim() ? String(body.day).trim() : (lead.day ?? null);
-      const closedBy = body.closed_by != null && String(body.closed_by).trim() ? String(body.closed_by).trim() : null;
+      const closedBy = body.closed_by != null && String(body.closed_by).trim()
+        ? String(body.closed_by).trim()
+        : (lead.closed_by != null && String(lead.closed_by).trim() ? String(lead.closed_by).trim() : null);
       const totalAmount = Number(body.total_amount);
 
       if (!orderType) {

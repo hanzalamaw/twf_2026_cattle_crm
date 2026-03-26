@@ -109,6 +109,7 @@ export const registerNewQueryRoutes = (app, db, verifyToken) => {
         total_amount,
         order_source,
         reference,
+        closed_by,
         description,
       } = req.body;
 
@@ -125,14 +126,17 @@ export const registerNewQueryRoutes = (app, db, verifyToken) => {
       if (!bookingDateStr) {
         return res.status(400).json({ message: "Booking date is required" });
       }
+      if (!(closed_by != null && String(closed_by).trim())) {
+        return res.status(400).json({ message: "Query By is required" });
+      }
       const customer_id = await generateCustomerId(contactStr);
 
       const lead_id = await generateLeadId();
 
       await db.execute(
         `INSERT INTO leads 
-         (lead_id, customer_id, contact, order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, reference, description) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (lead_id, customer_id, contact, order_type, booking_name, shareholder_name, alt_contact, address, area, day, booking_date, total_amount, order_source, reference, closed_by, description) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           lead_id,
           customer_id,
@@ -148,6 +152,7 @@ export const registerNewQueryRoutes = (app, db, verifyToken) => {
           Number.isFinite(Number(total_amount)) && Number(total_amount) >= 0 ? Number(total_amount) : 0,
           (order_source != null && String(order_source).trim()) || null,
           (reference != null && String(reference).trim()) || null,
+          String(closed_by).trim(),
           (description != null && String(description).trim()) || null,
         ]
       );

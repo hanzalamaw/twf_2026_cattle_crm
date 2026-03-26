@@ -235,6 +235,60 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
     }
   });
 
+  // Prefill daily report from booking orders by performer/date (closed_by + booking_date).
+  app.get("/api/performance/daily-reports/prefill", verifyToken, async (req, res) => {
+    try {
+      const { performer_id, date } = req.query;
+      if (!performer_id || !date) {
+        return res.status(400).json({ message: "performer_id and date are required" });
+      }
+
+      const [perfRows] = await db.execute(
+        "SELECT display_name FROM performance_targets WHERE performer_id = ? LIMIT 1",
+        [performer_id]
+      );
+      if (perfRows.length === 0) {
+        return res.status(404).json({ message: "Performer not found" });
+      }
+
+      const displayName = String(perfRows[0].display_name || "").trim();
+      if (!displayName) {
+        return res.json({ leads_generated: 0, orders_confirmed: 0 });
+      }
+
+      const [orderRows] = await db.execute(
+        `SELECT COUNT(*) AS ordersCount
+         FROM orders o
+         WHERE o.booking_date = ?
+           AND o.closed_by IS NOT NULL
+           AND TRIM(o.closed_by) <> ''
+           AND LOWER(TRIM(o.closed_by)) = LOWER(TRIM(?))`,
+        [date, displayName]
+      );
+
+      const [leadRows] = await db.execute(
+        `SELECT COUNT(*) AS leadsCount
+         FROM leads l
+         WHERE l.booking_date = ?
+           AND l.closed_by IS NOT NULL
+           AND TRIM(l.closed_by) <> ''
+           AND LOWER(TRIM(l.closed_by)) = LOWER(TRIM(?))`,
+        [date, displayName]
+      );
+
+      const ordersCount = Number(orderRows?.[0]?.ordersCount || 0);
+      const leadsCount = Number(leadRows?.[0]?.leadsCount || 0);
+
+      res.json({
+        leads_generated: leadsCount + ordersCount,
+        orders_confirmed: ordersCount,
+      });
+    } catch (error) {
+      logError("PERFORMANCE", "Daily prefill error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
   app.post("/api/performance/daily-reports", verifyToken, async (req, res) => {
     try {
       const { performer_id, date, calls_done = 0, leads_generated = 0, orders_confirmed = 0 } = req.body;
