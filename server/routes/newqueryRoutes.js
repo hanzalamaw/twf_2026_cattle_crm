@@ -113,15 +113,11 @@ export const registerNewQueryRoutes = (app, db, verifyToken) => {
       } = req.body;
 
       const contactStr = contact != null ? String(contact).trim() : "";
-      const orderTypeStr = order_type != null ? String(order_type).trim() : "";
       const bookingNameStr = booking_name != null ? String(booking_name).trim() : "";
       const bookingDateStr = booking_date != null ? String(booking_date).trim() : "";
 
       if (!contactStr || contactStr.length < 3) {
         return res.status(400).json({ message: "Contact is required (minimum 3 characters)" });
-      }
-      if (!orderTypeStr) {
-        return res.status(400).json({ message: "Order type is required" });
       }
       if (!bookingNameStr) {
         return res.status(400).json({ message: "Booking name is required" });
@@ -129,11 +125,6 @@ export const registerNewQueryRoutes = (app, db, verifyToken) => {
       if (!bookingDateStr) {
         return res.status(400).json({ message: "Booking date is required" });
       }
-      const totalNum = Number(total_amount);
-      if (!Number.isFinite(totalNum) || totalNum < 0) {
-        return res.status(400).json({ message: "Total amount must be a valid positive number" });
-      }
-
       const customer_id = await generateCustomerId(contactStr);
 
       const lead_id = await generateLeadId();
@@ -146,7 +137,7 @@ export const registerNewQueryRoutes = (app, db, verifyToken) => {
           lead_id,
           customer_id,
           contactStr,
-          orderTypeStr,
+          (order_type != null && String(order_type).trim()) || null,
           bookingNameStr,
           (shareholder_name != null && String(shareholder_name).trim()) || null,
           (alt_contact != null && String(alt_contact).trim()) || null,
@@ -154,7 +145,7 @@ export const registerNewQueryRoutes = (app, db, verifyToken) => {
           (area != null && String(area).trim()) || null,
           (day != null && String(day).trim()) || null,
           bookingDateStr,
-          totalNum,
+          Number.isFinite(Number(total_amount)) && Number(total_amount) >= 0 ? Number(total_amount) : 0,
           (order_source != null && String(order_source).trim()) || null,
           (reference != null && String(reference).trim()) || null,
           (description != null && String(description).trim()) || null,

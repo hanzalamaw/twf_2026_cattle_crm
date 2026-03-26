@@ -135,7 +135,7 @@ const SubSystemSelection = ({ forceMobileLayout = false } = {}) => {
   }, [sessionChecked]);
 
   const permissions = user?.permissions || {};
-  const hasAccess = (perm) => (perm === 'performance_management' ? true : !!permissions[perm]);
+  const hasAccess = (perm) => !!permissions[perm];
 
   const handleClick = (option) => {
     if (!hasAccess(option.permission)) {

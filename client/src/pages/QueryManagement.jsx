@@ -5,6 +5,9 @@ import { API_BASE as API } from '../config/api';
 import { useAuth } from '../context/AuthContext';
 const PAGE_SIZE = 50;
 const HIDDEN_TYPES_BOOKING = ['Cow', 'Goat'];
+const CONFIRM_ORDER_TYPES = ['Cow', 'Goat', 'Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];
+const DAYS = ['DAY 1', 'DAY 2', 'DAY 3'];
+const ORDER_TYPE_PRESET_AMOUNTS = { 'Hissa - Standard': '25000', 'Hissa - Premium': '30000', 'Hissa - Waqf': '21000' };
 
 const COLUMNS = [
   { key: 'lead_id',          label: 'Lead ID'          },
@@ -67,7 +70,19 @@ export default function QueryManagement() {
   const [totalCount, setTotalCount] = useState(0);
   const [confirmingLeadId, setConfirmingLeadId] = useState(null);
   const [confirmModalLead, setConfirmModalLead] = useState(null);
-  const [confirmForm, setConfirmForm] = useState({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
+  const [confirmForm, setConfirmForm] = useState({
+    order_type: '',
+    total_amount: '',
+    address: '',
+    area: '',
+    day: '',
+    shareholder_name: '',
+    order_id: '',
+    slot: '',
+    booking_date: '',
+    cow_number: '',
+    hissa_number: ''
+  });
   const [confirmDuplicateError, setConfirmDuplicateError] = useState(null);
   const [confirmFormErrors, setConfirmFormErrors] = useState({});
   const confirmDuplicateCheckTimeoutRef = useRef(null);
@@ -134,10 +149,9 @@ export default function QueryManagement() {
 
   useEffect(() => {
     if (!confirmModalLead || !token) return;
-    const ot = confirmModalLead.type || '';
-    const d = confirmModalLead.day || '';
-    const ds = formatDate(confirmModalLead.booking_date) || '';
-    setConfirmForm((p) => ({ ...p, booking_date: ds }));
+    const ot = confirmForm.order_type || '';
+    const d = confirmForm.day || '';
+    const ds = formatDate(confirmForm.booking_date || confirmModalLead.booking_date) || '';
     const genOrder = async () => {
       if (!ot) return;
       try {
@@ -154,7 +168,7 @@ export default function QueryManagement() {
       } catch (e) { console.error(e); }
     };
     genOrder(); getCowHissa();
-  }, [confirmModalLead, token]);
+  }, [confirmModalLead, token, confirmForm.order_type, confirmForm.booking_date]);
 
   const toggleSelect = (id) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleSelectAll = () => selectedIds.size === leads.length ? setSelectedIds(new Set()) : setSelectedIds(new Set(leads.map((r) => r.lead_id)));
@@ -178,7 +192,7 @@ export default function QueryManagement() {
   useEffect(() => {
     if (!confirmModalLead || !token) return;
     const { cow_number: c, hissa_number: h, booking_date: bd } = confirmForm;
-    const ot = confirmModalLead.type || ''; const d = confirmModalLead.day || '';
+    const ot = confirmForm.order_type || ''; const d = confirmForm.day || '';
     if (!(c || '').trim() || !(h || '').trim() || !ot || shouldSkip(ot, c, h)) { setConfirmDuplicateError(null); return; }
     if (confirmDuplicateCheckTimeoutRef.current) clearTimeout(confirmDuplicateCheckTimeoutRef.current);
     confirmDuplicateCheckTimeoutRef.current = setTimeout(async () => {
@@ -186,28 +200,48 @@ export default function QueryManagement() {
       setConfirmDuplicateError(dup || null);
     }, 400);
     return () => { if (confirmDuplicateCheckTimeoutRef.current) clearTimeout(confirmDuplicateCheckTimeoutRef.current); };
-  }, [confirmForm.cow_number, confirmForm.hissa_number, confirmForm.booking_date, confirmModalLead, token, checkDup]);
+  }, [confirmForm.cow_number, confirmForm.hissa_number, confirmForm.booking_date, confirmForm.day, confirmModalLead, token, checkDup]);
 
   const handleConfirmClick = (lead) => {
     setConfirmModalLead(lead); setConfirmDuplicateError(null); setConfirmFormErrors({});
-    setConfirmForm({ order_id: '', slot: '', booking_date: formatDate(lead.booking_date) || '', cow_number: '', hissa_number: '' });
+    setConfirmForm({
+      order_type: lead.type || '',
+      total_amount: lead.total_amount != null && String(lead.total_amount).trim() !== '' ? String(lead.total_amount) : '',
+      address: lead.address || '',
+      area: lead.area || '',
+      day: lead.day || '',
+      shareholder_name: lead.shareholder_name || '',
+      order_id: '',
+      slot: '',
+      booking_date: formatDate(lead.booking_date) || '',
+      cow_number: '',
+      hissa_number: ''
+    });
   };
 
   const closeConfirmModal = () => {
     if (confirmingLeadId) return;
     setConfirmModalLead(null);
-    setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
+    setConfirmForm({ order_type: '', total_amount: '', address: '', area: '', day: '', shareholder_name: '', order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
     setConfirmDuplicateError(null);
     setConfirmFormErrors({});
   };
 
   const handleConfirmOrder = async () => {
     if (!confirmModalLead) return;
-    const lead = confirmModalLead; const ot = lead.type || ''; const d = lead.day || '';
+    const lead = confirmModalLead; const ot = (confirmForm.order_type || '').trim(); const d = (confirmForm.day || '').trim();
     const bd = (confirmForm.booking_date || '').trim();
+    const totalAmount = Number(confirmForm.total_amount);
     const c = (confirmForm.cow_number || '').trim();
     const h = (confirmForm.hissa_number || '').trim();
     const fe = {};
+    if (!ot) fe.order_type = 'Order type is required';
+    if (!(confirmForm.total_amount || '').toString().trim()) fe.total_amount = 'Total amount is required';
+    else if (!Number.isFinite(totalAmount) || totalAmount < 0) fe.total_amount = 'Total amount must be a valid positive number';
+    if (!(confirmForm.address || '').trim()) fe.address = 'Address is required';
+    if (!(confirmForm.area || '').trim()) fe.area = 'Area is required';
+    if (!d) fe.day = 'Day is required';
+    if (!(confirmForm.shareholder_name || '').trim()) fe.shareholder_name = 'Shareholder name is required';
     if (!(confirmForm.order_id || '').trim()) fe.order_id = 'Order ID is required';
     if (!(confirmForm.slot || '').trim()) fe.slot = 'Slot is required';
     if (!bd) fe.booking_date = 'Booking date is required';
@@ -223,12 +257,24 @@ export default function QueryManagement() {
     try {
       const res = await fetch(`${API}/booking/leads/${encodeURIComponent(lead.lead_id)}/confirm-order`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ order_id: (confirmForm.order_id || '').trim(), slot: (confirmForm.slot || '').trim() || null, booking_date: bd || null, cow_number: c || null, hissa_number: h || null })
+        body: JSON.stringify({
+          order_type: ot,
+          total_amount: totalAmount,
+          address: (confirmForm.address || '').trim(),
+          area: (confirmForm.area || '').trim(),
+          day: d,
+          shareholder_name: (confirmForm.shareholder_name || '').trim(),
+          order_id: (confirmForm.order_id || '').trim(),
+          slot: (confirmForm.slot || '').trim() || null,
+          booking_date: bd || null,
+          cow_number: c || null,
+          hissa_number: h || null
+        })
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.order_id) {
         setConfirmModalLead(null);
-        setConfirmForm({ order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
+        setConfirmForm({ order_type: '', total_amount: '', address: '', area: '', day: '', shareholder_name: '', order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
         setConfirmDuplicateError(null); setConfirmFormErrors({});
         setSelectedIds((p) => { const n = new Set(p); n.delete(lead.lead_id); return n; });
         fetchLeads();
@@ -367,6 +413,7 @@ export default function QueryManagement() {
           .qm-pagination         { flex-direction: column !important; align-items: flex-start !important; }
           .qm-modal-box          { padding: 16px !important; border-radius: 12px !important; width: calc(100vw - 32px) !important; max-height: 90dvh !important; overflow-y: auto; animation: modalSlideInFromLeft .25s ease-out both; }
           .qm-cow-grid           { grid-template-columns: 1fr !important; }
+          .qm-confirm-grid       { grid-template-columns: 1fr !important; }
           .qm-edit-grid          { grid-template-columns: 1fr !important; }
         }
       `}</style>
@@ -512,11 +559,93 @@ export default function QueryManagement() {
 
         {/* Confirm modal */}
         {confirmModalLead && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: '16px' }} onClick={closeConfirmModal}>
-            <div className="qm-modal-box" style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '420px', width: '90%' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1001, padding: '16px', overflowY: 'auto' }} onClick={closeConfirmModal}>
+            <div className="qm-modal-box" style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '760px', width: '100%', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', margin: 'auto 0' }} onClick={(e) => e.stopPropagation()}>
               <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Confirm order</h3>
               <p style={{ margin: '0 0 16px 0', color: '#555', fontSize: '13px' }}>Create order from lead &quot;{confirmModalLead.booking_name || confirmModalLead.lead_id}&quot;.</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+              <div className="qm-confirm-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Order Type <span style={{ color: '#dc2626' }}>*</span></label>
+                  <select
+                    value={confirmForm.order_type}
+                    onChange={(e) => {
+                      const nextType = e.target.value;
+                      const preset = ORDER_TYPE_PRESET_AMOUNTS[nextType];
+                      setConfirmForm((p) => ({
+                        ...p,
+                        order_type: nextType,
+                        total_amount: preset || '0',
+                        order_id: '',
+                        cow_number: '',
+                        hissa_number: ''
+                      }));
+                      setConfirmDuplicateError(null);
+                      setConfirmFormErrors((p) => ({ ...p, order_type: undefined }));
+                    }}
+                    style={miStyle(confirmFormErrors.order_type)}
+                  >
+                    <option value="">Select Order Type</option>
+                    {CONFIRM_ORDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  {confirmFormErrors.order_type && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.order_type}</div>}
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Total Amount <span style={{ color: '#dc2626' }}>*</span></label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={confirmForm.total_amount}
+                    onChange={(e) => { setConfirmForm((p) => ({ ...p, total_amount: e.target.value })); setConfirmFormErrors((p) => ({ ...p, total_amount: undefined })); }}
+                    style={miStyle(confirmFormErrors.total_amount)}
+                  />
+                  {confirmFormErrors.total_amount && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.total_amount}</div>}
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Shareholder Name <span style={{ color: '#dc2626' }}>*</span></label>
+                  <input
+                    value={confirmForm.shareholder_name}
+                    onChange={(e) => { setConfirmForm((p) => ({ ...p, shareholder_name: e.target.value })); setConfirmFormErrors((p) => ({ ...p, shareholder_name: undefined })); }}
+                    style={miStyle(confirmFormErrors.shareholder_name)}
+                  />
+                  {confirmFormErrors.shareholder_name && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.shareholder_name}</div>}
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Area <span style={{ color: '#dc2626' }}>*</span></label>
+                  <input
+                    value={confirmForm.area}
+                    onChange={(e) => { setConfirmForm((p) => ({ ...p, area: e.target.value })); setConfirmFormErrors((p) => ({ ...p, area: undefined })); }}
+                    style={miStyle(confirmFormErrors.area)}
+                  />
+                  {confirmFormErrors.area && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.area}</div>}
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Address <span style={{ color: '#dc2626' }}>*</span></label>
+                  <textarea
+                    rows={2}
+                    value={confirmForm.address}
+                    onChange={(e) => { setConfirmForm((p) => ({ ...p, address: e.target.value })); setConfirmFormErrors((p) => ({ ...p, address: undefined })); }}
+                    style={{ ...miStyle(confirmFormErrors.address), resize: 'vertical', fontFamily: 'inherit' }}
+                  />
+                  {confirmFormErrors.address && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.address}</div>}
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Day <span style={{ color: '#dc2626' }}>*</span></label>
+                  <select
+                    value={confirmForm.day}
+                    onChange={(e) => {
+                      const nextDay = e.target.value;
+                      setConfirmForm((p) => ({ ...p, day: nextDay, cow_number: '', hissa_number: '' }));
+                      setConfirmDuplicateError(null);
+                      setConfirmFormErrors((p) => ({ ...p, day: undefined }));
+                    }}
+                    style={miStyle(confirmFormErrors.day)}
+                  >
+                    <option value="">Select Day</option>
+                    {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                  {confirmFormErrors.day && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.day}</div>}
+                </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Order ID <span style={{ color: '#dc2626' }}>*</span></label>
                   <input value={confirmForm.order_id} readOnly placeholder="Auto-generated" style={{ ...miStyle(confirmFormErrors.order_id), background: '#f5f5f5', cursor: 'not-allowed', color: '#555' }} />
@@ -536,8 +665,8 @@ export default function QueryManagement() {
                     const nd = e.target.value;
                     setConfirmForm((p) => ({ ...p, booking_date: nd }));
                     setConfirmFormErrors((p) => ({ ...p, booking_date: undefined }));
-                    if (confirmModalLead?.type && confirmModalLead.type !== 'Goat (Hissa)' && token) {
-                      fetch(`${API}/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: confirmModalLead.type, day: confirmModalLead.day || null, booking_date: nd || null }) })
+                    if (confirmForm.order_type && confirmForm.order_type !== 'Goat (Hissa)' && token) {
+                      fetch(`${API}/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: confirmForm.order_type, day: confirmForm.day || null, booking_date: nd || null }) })
                         .then((r) => r.ok ? r.json() : {})
                         .then((d2) => { if (d2 && (d2.cow_number != null || d2.hissa_number != null)) setConfirmForm((p) => ({ ...p, cow_number: d2.cow_number || '', hissa_number: d2.hissa_number || '' })); })
                         .catch(() => {});
@@ -550,7 +679,7 @@ export default function QueryManagement() {
                     <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Cow Number <span style={{ color: '#dc2626' }}>*</span></label>
                     <input value={confirmForm.cow_number}
                       onChange={(e) => { setConfirmForm((p) => ({ ...p, cow_number: e.target.value })); setConfirmDuplicateError(null); setConfirmFormErrors((p) => ({ ...p, cow_number: undefined })); }}
-                      onBlur={async () => { if (!confirmModalLead) return; const { cow_number: c, hissa_number: h, booking_date: bd } = confirmForm; const ot = confirmModalLead.type || ''; const d = confirmModalLead.day || ''; if (c && h && ot && !shouldSkip(ot, c, h)) { const dup = await checkDup(c, h, ot, d, bd); if (dup) setConfirmDuplicateError(dup); } }}
+                      onBlur={async () => { if (!confirmModalLead) return; const { cow_number: c, hissa_number: h, booking_date: bd, order_type: ot, day: d } = confirmForm; if (c && h && ot && !shouldSkip(ot, c, h)) { const dup = await checkDup(c, h, ot, d, bd); if (dup) setConfirmDuplicateError(dup); } }}
                       placeholder="Auto-generated" style={miStyle(confirmFormErrors.cow_number || confirmDuplicateError)} />
                     {confirmFormErrors.cow_number && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.cow_number}</div>}
                   </div>
@@ -558,13 +687,13 @@ export default function QueryManagement() {
                     <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Hissa Number <span style={{ color: '#dc2626' }}>*</span></label>
                     <input value={confirmForm.hissa_number}
                       onChange={(e) => { setConfirmForm((p) => ({ ...p, hissa_number: e.target.value })); setConfirmDuplicateError(null); setConfirmFormErrors((p) => ({ ...p, hissa_number: undefined })); }}
-                      onBlur={async () => { if (!confirmModalLead) return; const { cow_number: c, hissa_number: h, booking_date: bd } = confirmForm; const ot = confirmModalLead.type || ''; const d = confirmModalLead.day || ''; if (c && h && ot && !shouldSkip(ot, c, h)) { const dup = await checkDup(c, h, ot, d, bd); if (dup) setConfirmDuplicateError(dup); } }}
+                      onBlur={async () => { if (!confirmModalLead) return; const { cow_number: c, hissa_number: h, booking_date: bd, order_type: ot, day: d } = confirmForm; if (c && h && ot && !shouldSkip(ot, c, h)) { const dup = await checkDup(c, h, ot, d, bd); if (dup) setConfirmDuplicateError(dup); } }}
                       placeholder="Auto-generated" style={miStyle(confirmFormErrors.hissa_number || confirmDuplicateError)} />
                     {confirmFormErrors.hissa_number && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.hissa_number}</div>}
                   </div>
                 </div>
                 {confirmDuplicateError && (
-                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '10px', fontSize: '12px', color: '#991b1b' }}>
+                  <div style={{ gridColumn: '1 / -1', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '10px', fontSize: '12px', color: '#991b1b' }}>
                     ⚠️ Duplicate: Order {confirmDuplicateError.order_id} already uses this cow/hissa combination.
                   </div>
                 )}

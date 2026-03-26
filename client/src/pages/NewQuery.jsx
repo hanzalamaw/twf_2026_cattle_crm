@@ -1,23 +1,6 @@
-import { useState, useCallback, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { API_BASE as API } from '../config/api';
-
-const ORDER_TYPES = [
-  'Hissa - Standard',
-  'Hissa - Premium',
-  'Hissa - Waqf',
-  'Goat (Hissa)',
-];
-
-// Farm shows Cow + Goat alongside the 4 booking order types
-const FARM_ORDER_TYPES = [
-  'Cow',
-  'Goat',
-  'Hissa - Standard',
-  'Hissa - Premium',
-  'Hissa - Waqf',
-  'Goat (Hissa)',
-];
 
 const ORDER_SOURCES = [
   'Tele-Sales',
@@ -39,21 +22,13 @@ const REFERENCES = [
   'External',
 ];
 
-const DAYS = ['DAY 1', 'DAY 2', 'DAY 3'];
-
 const EMPTY_FORM = {
   lead_id: '',
   customer_id: '',
   contact: '',
-  order_type: '',
   booking_name: '',
-  shareholder_name: '',
   alt_contact: '',
-  address: '',
-  area: '',
-  day: '',
   booking_date: '',
-  total_amount: '',
   order_source: '',
   reference: '',
   description: '',
@@ -61,9 +36,6 @@ const EMPTY_FORM = {
 
 const NewQuery = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const isFarm = location.pathname.startsWith('/farm');
-  const orderTypes = isFarm ? FARM_ORDER_TYPES : ORDER_TYPES;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -110,16 +82,9 @@ const NewQuery = () => {
     debounceTimeoutRef.current = setTimeout(() => generateCustomerIdRef(contact), 500);
   }, [generateCustomerIdRef]);
 
-  const getPresetAmount = (orderType) => {
-    const map = { 'Hissa - Standard': '25000', 'Hissa - Premium': '29700', 'Hissa - Waqf': '21000' };
-    return map[orderType] || '';
-  };
-
-  const handleOrderTypeChange = (e) => {
-    const value = e.target.value;
-    setFormData((prev) => ({ ...prev, order_type: value, total_amount: getPresetAmount(value) }));
+  useEffect(() => {
     generateLeadIdRef();
-  };
+  }, [generateLeadIdRef]);
 
   const handleContactChange = (e) => {
     const value = e.target.value;
@@ -135,11 +100,8 @@ const NewQuery = () => {
     const contactStr = String(formData.contact || '').trim();
     const bookingNameStr = String(formData.booking_name || '').trim();
     if (!contactStr || contactStr.length < 3) { setError('Contact is required (minimum 3 characters)'); setLoading(false); return; }
-    if (!formData.order_type) { setError('Order type is required'); setLoading(false); return; }
     if (!bookingNameStr) { setError('Booking name is required'); setLoading(false); return; }
     if (!formData.booking_date) { setError('Booking date is required'); setLoading(false); return; }
-    const totalNum = Number(formData.total_amount);
-    if (!Number.isFinite(totalNum) || totalNum < 0) { setError('Total amount must be a valid positive number'); setLoading(false); return; }
     try {
       const res = await fetch(`${API}/leads`, {
         method: 'POST',
@@ -150,7 +112,7 @@ const NewQuery = () => {
       if (res.ok) {
         setSuccess('Lead created successfully!');
         if (keepFormData) {
-          generateLeadIdRef(formData.order_type);
+          generateLeadIdRef();
           generateCustomerIdRef(formData.contact);
           setTimeout(() => setSuccess(''), 2000);
         } else {
@@ -323,16 +285,6 @@ const NewQuery = () => {
               </div>
 
               <div>
-                <label className="nq-label" style={labelStyle}>Order Type <span style={{ color: '#FF5722' }}>*</span></label>
-                <select className="nq-input" value={formData.order_type} onChange={handleOrderTypeChange} style={inputStyle} required
-                  onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
-                  onBlur={(e)  => (e.target.style.borderColor = '#e0e0e0')}>
-                  <option value="" disabled>Select Order Type</option>
-                  {orderTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-
-              <div>
                 <label className="nq-label" style={labelStyle}>Contact <span style={{ color: '#FF5722' }}>*</span></label>
                 <input className="nq-input" type="text" value={formData.contact} onChange={handleContactChange}
                   required placeholder="e.g., 0300-1234567" style={inputStyle}
@@ -353,15 +305,6 @@ const NewQuery = () => {
                 <label className="nq-label" style={labelStyle}>Booking Date <span style={{ color: '#FF5722' }}>*</span></label>
                 <input className="nq-input" type="date" value={formData.booking_date}
                   onChange={(e) => setFormData((p) => ({ ...p, booking_date: e.target.value }))}
-                  required style={inputStyle}
-                  onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
-                  onBlur={(e)  => (e.target.style.borderColor = '#e0e0e0')} />
-              </div>
-
-              <div>
-                <label className="nq-label" style={labelStyle}>Total Amount <span style={{ color: '#FF5722' }}>*</span></label>
-                <input className="nq-input" type="number" min="0" step="1" value={formData.total_amount}
-                  onChange={(e) => setFormData((p) => ({ ...p, total_amount: e.target.value }))}
                   required style={inputStyle}
                   onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                   onBlur={(e)  => (e.target.style.borderColor = '#e0e0e0')} />
@@ -391,18 +334,6 @@ const NewQuery = () => {
                 </select>
               </div>
 
-              <div>
-                <label className="nq-label" style={labelStyle}>Day <span style={{ color: '#FF5722' }}>*</span></label>
-                <select className="nq-input" value={formData.day}
-                  onChange={(e) => setFormData((p) => ({ ...p, day: e.target.value }))}
-                  style={inputStyle} required
-                  onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
-                  onBlur={(e)  => (e.target.style.borderColor = '#e0e0e0')}>
-                  <option value="" disabled>Select Day</option>
-                  {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </div>
-
             </div>
           </div>
 
@@ -416,34 +347,6 @@ const NewQuery = () => {
                 <input className="nq-input" type="text" value={formData.booking_name}
                   onChange={(e) => setFormData((p) => ({ ...p, booking_name: e.target.value }))}
                   placeholder="Enter booking name" style={inputStyle} required
-                  onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
-                  onBlur={(e)  => (e.target.style.borderColor = '#e0e0e0')} />
-              </div>
-
-              <div>
-                <label className="nq-label" style={labelStyle}>Shareholder Name <span style={{ color: '#FF5722' }}>*</span></label>
-                <input className="nq-input" type="text" value={formData.shareholder_name}
-                  onChange={(e) => setFormData((p) => ({ ...p, shareholder_name: e.target.value }))}
-                  placeholder="Enter shareholder name" style={inputStyle} required
-                  onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
-                  onBlur={(e)  => (e.target.style.borderColor = '#e0e0e0')} />
-              </div>
-
-              <div>
-                <label className="nq-label" style={labelStyle}>Area <span style={{ color: '#FF5722' }}>*</span></label>
-                <input className="nq-input" type="text" value={formData.area}
-                  onChange={(e) => setFormData((p) => ({ ...p, area: e.target.value }))}
-                  placeholder="Enter area" style={inputStyle} required
-                  onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
-                  onBlur={(e)  => (e.target.style.borderColor = '#e0e0e0')} />
-              </div>
-
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label className="nq-label" style={labelStyle}>Address <span style={{ color: '#FF5722' }}>*</span></label>
-                <textarea className="nq-input" value={formData.address}
-                  onChange={(e) => setFormData((p) => ({ ...p, address: e.target.value }))}
-                  placeholder="Enter full address" rows="2"
-                  style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} required
                   onFocus={(e) => (e.target.style.borderColor = '#FF5722')}
                   onBlur={(e)  => (e.target.style.borderColor = '#e0e0e0')} />
               </div>

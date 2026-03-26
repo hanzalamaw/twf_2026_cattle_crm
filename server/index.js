@@ -123,7 +123,7 @@ const startServer = async () => {
           farm_management: !!user.farm_management,
           procurement_management: !!user.procurement_management,
           accounting_and_finance: !!user.accounting_and_finance,
-          performance_management: true
+          performance_management: !!user.performance_management
         };
 
         const token = jwt.sign(
@@ -183,7 +183,7 @@ const startServer = async () => {
           farm_management: !!user.farm_management,
           procurement_management: !!user.procurement_management,
           accounting_and_finance: !!user.accounting_and_finance,
-          performance_management: true
+          performance_management: !!user.performance_management
         };
         res.json({
           user: {
@@ -243,7 +243,7 @@ const startServer = async () => {
           farm_management: !!u.farm_management,
           procurement_management: !!u.procurement_management,
           accounting_and_finance: !!u.accounting_and_finance,
-          performance_management: true
+          performance_management: !!u.performance_management
         };
         res.json({
           user: {
@@ -299,7 +299,7 @@ const startServer = async () => {
           farm_management: !!user.farm_management,
           procurement_management: !!user.procurement_management,
           accounting_and_finance: !!user.accounting_and_finance,
-          performance_management: true
+          performance_management: !!user.performance_management
         };
         const token = jwt.sign(
           { id: user.user_id, username: user.username, role: user.role_name, role_id: user.role_id, sessionId: session.session_id, permissions },

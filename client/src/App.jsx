@@ -42,7 +42,7 @@ const ProtectedRoute = ({ children }) => {
 const RequirePermission = ({ permission, children }) => {
   const { user } = useAuth();
   const permissions = user?.permissions || {};
-  const allowed = permission === 'performance_management' ? true : !!permissions[permission];
+  const allowed = !!permissions[permission];
   if (!allowed) return <Navigate to="/" replace />;
   return children;
 };

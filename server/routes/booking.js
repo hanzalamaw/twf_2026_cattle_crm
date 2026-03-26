@@ -839,7 +839,31 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         return res.status(404).json({ message: "Lead not found" });
       }
       const lead = leadRows[0];
-      const totalAmount = Number(lead.total_amount) || 0;
+      const orderType = body.order_type != null && String(body.order_type).trim() ? String(body.order_type).trim() : (lead.order_type != null ? String(lead.order_type).trim() : "");
+      const shareholderName = body.shareholder_name != null && String(body.shareholder_name).trim() ? String(body.shareholder_name).trim() : (lead.shareholder_name ?? null);
+      const addressVal = body.address != null && String(body.address).trim() ? String(body.address).trim() : (lead.address ?? null);
+      const areaVal = body.area != null && String(body.area).trim() ? String(body.area).trim() : (lead.area ?? null);
+      const dayVal = body.day != null && String(body.day).trim() ? String(body.day).trim() : (lead.day ?? null);
+      const totalAmount = Number(body.total_amount);
+
+      if (!orderType) {
+        return res.status(400).json({ message: "Order type is required" });
+      }
+      if (!shareholderName || !String(shareholderName).trim()) {
+        return res.status(400).json({ message: "Shareholder name is required" });
+      }
+      if (!addressVal || !String(addressVal).trim()) {
+        return res.status(400).json({ message: "Address is required" });
+      }
+      if (!areaVal || !String(areaVal).trim()) {
+        return res.status(400).json({ message: "Area is required" });
+      }
+      if (!dayVal || !String(dayVal).trim()) {
+        return res.status(400).json({ message: "Day is required" });
+      }
+      if (!Number.isFinite(totalAmount) || totalAmount < 0) {
+        return res.status(400).json({ message: "Total amount must be a valid positive number" });
+      }
 
       let orderId = body.order_id && String(body.order_id).trim() ? String(body.order_id).trim() : null;
       if (!orderId) {
@@ -863,15 +887,15 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           orderId,
           lead.customer_id ?? null,
           lead.contact ?? null,
-          lead.order_type ?? null,
+          orderType,
           lead.booking_name ?? null,
-          lead.shareholder_name ?? null,
+          shareholderName,
           cowNumber,
           hissaNumber,
           lead.alt_contact ?? null,
-          lead.address ?? null,
-          lead.area ?? null,
-          lead.day ?? null,
+          addressVal,
+          areaVal,
+          dayVal,
           bookingDateVal ?? null,
           totalAmount,
           totalAmount, // pending_amount
@@ -889,13 +913,13 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         order_id: orderId,
         customer_id: lead.customer_id,
         contact: lead.contact,
-        order_type: lead.order_type,
+        order_type: orderType,
         booking_name: lead.booking_name,
-        shareholder_name: lead.shareholder_name,
+        shareholder_name: shareholderName,
         cow_number: cowNumber,
         hissa_number: hissaNumber,
         slot: slotVal,
-        day: lead.day,
+        day: dayVal,
         booking_date: bookingDateVal,
         total_amount: totalAmount,
         order_source: lead.order_source || null,

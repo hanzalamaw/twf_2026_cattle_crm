@@ -167,7 +167,7 @@ function Sidebar() {
 
   const visibleItems = roleVisibleItems.filter((item) => {
     if (item.managersOnly) return (isBookingContext || isFarmContext) ? isAdminOrManager : isManager;
-    if (item.permission) return item.permission === 'performance_management' ? true : !!permissions[item.permission];
+    if (item.permission) return !!permissions[item.permission];
     return true;
   });
 
