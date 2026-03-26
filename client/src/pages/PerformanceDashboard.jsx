@@ -91,8 +91,8 @@ export default function PerformanceDashboard() {
   const topPerformer = useMemo(() => {
     if (performers.length === 0) return null;
     return performers.reduce((best, p) => {
-      const score = pct(p.orders_confirmed, p.orders_target);
-      const bestScore = pct(best.orders_confirmed, best.orders_target);
+      const score = Number(p.orders_confirmed) || 0;
+      const bestScore = Number(best.orders_confirmed) || 0;
       return score > bestScore ? p : best;
     }, performers[0]);
   }, [performers]);
