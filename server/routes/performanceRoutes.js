@@ -425,6 +425,37 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
   app.get("/api/performance/stats", verifyToken, async (req, res) => {
     try {
       const { from_date, to_date } = req.query;
+
+      const [[{ min_report: minReport, today: todayStr }]] = await db.execute(
+        `SELECT DATE_FORMAT((SELECT MIN(\`date\`) FROM pms_daily_report), '%Y-%m-%d') AS min_report,
+                DATE_FORMAT(CURDATE(), '%Y-%m-%d') AS today`
+      );
+
+      let rangeStart;
+      let rangeEnd;
+      if (from_date && to_date) {
+        rangeStart = String(from_date).slice(0, 10);
+        rangeEnd = String(to_date).slice(0, 10);
+      } else if (from_date) {
+        rangeStart = String(from_date).slice(0, 10);
+        rangeEnd = to_date ? String(to_date).slice(0, 10) : todayStr;
+      } else if (to_date) {
+        rangeEnd = String(to_date).slice(0, 10);
+        rangeStart = minReport || rangeEnd;
+      } else {
+        rangeStart = minReport;
+        rangeEnd = todayStr;
+      }
+
+      let periodDays = 0;
+      if (rangeStart && rangeEnd) {
+        if (rangeEnd < rangeStart) periodDays = 0;
+        else {
+          const [[row]] = await db.execute(`SELECT DATEDIFF(?, ?) + 1 AS d`, [rangeEnd, rangeStart]);
+          periodDays = Math.max(0, Number(row?.d) || 0);
+        }
+      }
+
       const params = [];
       let joinCondition = "pt.performer_id = r.performer_id";
       if (from_date) {
@@ -449,7 +480,19 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
         params
       );
 
-      const totals = performerStatsFiltered.reduce(
+      const performers = performerStatsFiltered.map((p) => {
+        const ct = Number(p.calls_target || 0) * periodDays;
+        const lt = Number(p.leads_target || 0) * periodDays;
+        const ot = Number(p.orders_target || 0) * periodDays;
+        return {
+          ...p,
+          calls_target: ct,
+          leads_target: lt,
+          orders_target: ot,
+        };
+      });
+
+      const totals = performers.reduce(
         (acc, p) => ({
           calls_done: acc.calls_done + Number(p.calls_done || 0),
           leads_generated: acc.leads_generated + Number(p.leads_generated || 0),
@@ -462,8 +505,13 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
       );
 
       res.json({
-        performers: performerStatsFiltered,
+        performers,
         totals,
+        period: {
+          from: rangeStart,
+          to: rangeEnd,
+          days: periodDays,
+        },
       });
     } catch (error) {
       logError("PERFORMANCE", "Stats error", error);
