@@ -132,7 +132,7 @@ const NewOrder = () => {
     generateCustomerId(v);
   };
 
-  const getPresetAmount = (t) => ({ 'Hissa - Standard': '25000', 'Hissa - Premium': '29700', 'Hissa - Waqf': '21000' })[t] || '';
+  const getPresetAmount = (t) => ({ 'Hissa - Standard': '25000', 'Hissa - Premium': '30000', 'Hissa - Waqf': '21000' })[t] || '';
 
   const handleOrderTypeChange = (e) => {
     const v = e.target.value;

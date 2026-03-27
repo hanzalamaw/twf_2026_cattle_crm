@@ -1585,7 +1585,20 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
       if (rows.length === 0) return res.status(404).json({ message: "Order not found" });
       const o = rows[0];
       const [idRows] = await db.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(id, 4, 4) AS UNSIGNED)), 0) + 1 AS nextId FROM cancelled_orders WHERE id LIKE '#C-%'"
+        `SELECT COALESCE(
+           MAX(
+             CAST(
+               SUBSTRING_INDEX(
+                 SUBSTRING_INDEX(REPLACE(id, '#', ''), '-', 2),
+                 '-',
+                 -1
+               ) AS UNSIGNED
+             )
+           ),
+           0
+         ) + 1 AS nextId
+         FROM cancelled_orders
+         WHERE REPLACE(id, '#', '') LIKE 'C-%'`
       );
       const year = new Date().getFullYear();
       const nextNum = idRows[0]?.nextId ?? 1;
@@ -1608,6 +1621,11 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
   });
 
   // Invoice PDF: THE WARSI FARM style - customer orders only for booking year 2026
+  // ─────────────────────────────────────────────────────────────────────────────
+  // FIXED INVOICE ROUTE — pixel-matched to CRM_INVOICE_DESIGN.png
+  // Drop this in place of the existing app.get("/api/booking/invoice/:customerId")
+  // ─────────────────────────────────────────────────────────────────────────────
+
   app.get("/api/booking/invoice/:customerId", verifyToken, async (req, res) => {
     try {
       const { customerId } = req.params;
@@ -1618,21 +1636,28 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
                 o.shareholder_name, o.contact, o.alt_contact, o.address, o.area, o.day,
                 o.order_type AS type, o.booking_date, o.total_amount,
                 o.received_amount, o.pending_amount
-         FROM orders o
-         WHERE o.customer_id = ?
-           AND o.booking_date >= '2026-01-01'
-           AND o.booking_date < '2027-01-01'
-         ORDER BY o.booking_date, o.order_id`,
+        FROM orders o
+        WHERE o.customer_id = ?
+          AND o.booking_date >= '2026-01-01'
+          AND o.booking_date < '2027-01-01'
+        ORDER BY o.booking_date, o.order_id`,
         [customerId]
       );
 
       if (orders.length === 0) {
-        await writeAuditLog(db, { user_id: req.userId, action: "INVOICE_NO_ORDERS", entity_type: "invoice", entity_id: customerId, new_values: { reason: "no_orders" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+        await writeAuditLog(db, {
+          user_id: req.userId,
+          action: "INVOICE_NO_ORDERS",
+          entity_type: "invoice",
+          entity_id: customerId,
+          new_values: { reason: "no_orders" },
+          ip_address: req.ip,
+          user_agent: req.get("user-agent"),
+        });
         return res.status(404).json({ message: "No orders found for this customer in 2026" });
       }
 
-      // Generate sequential invoice number: find max from audit_logs for this customer
-      // Format: #I-NNNN-YYYY where YYYY = year of first order's booking_date
+      // Invoice number generation
       const firstBookingYear = (() => {
         const d = orders[0].booking_date;
         if (!d) return new Date().getFullYear();
@@ -1640,25 +1665,23 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
         return isNaN(yr) ? new Date().getFullYear() : yr;
       })();
 
-      // Get next invoice sequence number by counting previous INVOICE_GENERATED entries for any customer
       const [seqRows] = await db.execute(
         `SELECT COUNT(*) AS cnt FROM audit_logs WHERE action = 'INVOICE_GENERATED'`
       );
-      const invoiceSeq = (Number(seqRows[0]?.cnt ?? 0) + 1);
+      const invoiceSeq = Number(seqRows[0]?.cnt ?? 0) + 1;
       const invoiceNumber = `#I-${String(invoiceSeq).padStart(4, "0")}-${firstBookingYear}`;
+      const displayOrderNo = `S-${String(invoiceSeq).padStart(4, "0")}-${firstBookingYear}`;
 
       const customer = orders[0];
-      const bookingDateStr = toDateOnly(customer.booking_date) || "";
+      const bookingDateStr = toDateOnly(customer.booking_date) || "—";
       const issuedDate = toDateOnly(new Date()) || new Date().toISOString().split("T")[0];
 
-      // Grand totals across all orders
-      let grandTotal = 0;
-      let grandReceived = 0;
-      let grandPending = 0;
+      // Grand totals
+      let grandTotal = 0, grandReceived = 0, grandPending = 0;
       for (const row of orders) {
-        grandTotal += Number(row.total_amount || 0);
+        grandTotal    += Number(row.total_amount    || 0);
         grandReceived += Number(row.received_amount || 0);
-        grandPending += Number(row.pending_amount || 0);
+        grandPending  += Number(row.pending_amount  || 0);
       }
 
       await writeAuditLog(db, {
@@ -1673,293 +1696,313 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
 
       const fmt = (n) => Math.round(Number(n || 0)).toLocaleString("en-PK");
 
-      // Serve inline so it opens in browser tab (not forced download)
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="Invoice-${invoiceNumber.replace("#", "")}-${customerId}.pdf"`);
 
-      const doc = new PDFDocument({ margin: 50, size: "A4", autoFirstPage: true });
+      const doc = new PDFDocument({ margin: 0, size: "A4", autoFirstPage: true });
       doc.pipe(res);
 
-      // ── Layout constants ──────────────────────────────────────────────────────
-      const left   = 50;
-      const right  = doc.page.width - 50;          // 545
-      const pageW  = right - left;                  // 495
-      const pageH  = doc.page.height;               // 841.89
-      const gray   = "#888888";
-      const footerZoneTop  = pageH - 48;
-      const contentBottom  = footerZoneTop - 8;
+      // ── Constants ─────────────────────────────────────────────────────────────
+      const PW        = doc.page.width;   // 595.28
+      const PH        = doc.page.height;  // 841.89
+      const ML        = 38;               // margin left
+      const MR        = 38;               // margin right
+      const CW        = PW - ML - MR;    // content width  ≈ 519.28
+      const RIGHT     = ML + CW;
 
-      // ── Helper: word-wrap text at given font size ─────────────────────────────
-      const wrapText = (text, maxW, font, size) => {
+      // Colours — taken from the image
+      const C_BG      = "#f5f5f5";   // card / row background
+      const C_BORDER  = "#d8d8d8";   // stroke colour
+      const C_HEAD_BG = "#f5f5f5";   // table header bg (light grey, bordered)
+      const C_HEAD_TX = "#141414";   // table header text
+      const C_MUTED   = "#7a7a7a";   // muted / label text
+      const C_BODY    = "#222222";   // normal body text
+      const C_GREEN   = "#196a43";   // paid / positive
+      const C_RED     = "#a63234";   // due / negative
+      const C_TITLE   = "#111111";   // section titles
+      const C_SUB     = "#535353";   // subtitle / address text
+
+      const truncate = (text, maxW, font = "Helvetica", size = 10) => {
+        const str = String(text || "");
         doc.font(font).fontSize(size);
-        const words = String(text || "").split(/\s+/);
-        const lines = [];
-        let line = "";
-        for (const w of words) {
-          const candidate = line ? `${line} ${w}` : w;
-          if (doc.widthOfString(candidate) <= maxW) { line = candidate; }
-          else { if (line) lines.push(line); line = w; }
-        }
-        if (line) lines.push(line);
-        return lines;
+        if (doc.widthOfString(str) <= maxW) return str;
+        let out = str;
+        while (out.length > 0 && doc.widthOfString(`${out}...`) > maxW) out = out.slice(0, -1);
+        return `${out}...`;
       };
 
       // ── HEADER ────────────────────────────────────────────────────────────────
-      // "THE WARSI FARM" top-left, "INVOICE" top-right
-      doc.fontSize(18).font("Helvetica-Bold").fillColor("#000000")
-         .text("THE WARSI FARM", left, 50, { lineBreak: false });
+      // Left: "INVOICE" bold large, "THE WARSI FARM" below
+      doc.font("Helvetica-Bold").fontSize(26).fillColor("#151515")
+        .text("INVOICE", ML, 45, { lineBreak: false });
 
-      doc.fontSize(14).font("Helvetica-Bold")
-         .text("INVOICE", left, 50, { width: pageW, align: "right", lineBreak: false });
+      doc.font("Helvetica").fontSize(13).fillColor("#272727")
+        .text("THE WARSI FARM", ML, 80, { lineBreak: false });
 
-      // Invoice number right-aligned, below INVOICE label
-      doc.fontSize(10).font("Helvetica").fillColor("#333333")
-         .text(invoiceNumber, left, 67, { width: pageW, align: "right", lineBreak: false });
-      doc.fillColor("#000000");
+      // Right: Order number bold top, "ORDER NUMBER" muted directly below — no gap
+      doc.font("Helvetica-Bold").fontSize(16).fillColor("#151515")
+        .text(displayOrderNo, ML, 45, { width: CW, align: "right", lineBreak: false });
 
-      // Horizontal rule below header
-      doc.strokeColor(gray).lineWidth(0.5)
-         .moveTo(left, 82).lineTo(right, 82).stroke()
-         .strokeColor("#000000").lineWidth(1);
+      doc.font("Helvetica").fontSize(9).fillColor(C_MUTED)
+        .text("ORDER NUMBER", ML, 66, { width: CW, align: "right", lineBreak: false });
 
-      // ── INFO BLOCK (3 columns) ────────────────────────────────────────────────
-      // Col 1: Booking Date / Issued Date  (left edge → left+160)
-      // Col 2: Billed to                   (left+180 → right-180)
-      // Col 3: From                         (right-180 → right)
-      const blockTop    = 90;
-      const blockBottom = 165;
-      const col2Left    = left + 160;
-      const col3Left    = right - 175;
-      const col2Pad     = col2Left + 10;
-      const col3Pad     = col3Left + 10;
-      const col2Width   = col3Left - col2Pad - 4;
-      const col3Width   = right - col3Pad;
+      // Thin separator line under header
+      const sepY = 105;
+      doc.moveTo(ML, sepY).lineTo(RIGHT, sepY).lineWidth(0.5).strokeColor(C_BORDER).stroke();
 
-      // Col 1 — dates
-      doc.fontSize(10).font("Helvetica-Bold").fillColor("#000000")
-         .text("Booking Date", left, blockTop);
-      doc.font("Helvetica").fontSize(10)
-         .text(bookingDateStr || "—", left, blockTop + 14);
-      doc.font("Helvetica-Bold")
-         .text("Issued Date", left, blockTop + 32);
-      doc.font("Helvetica")
-         .text(issuedDate, left, blockTop + 46);
+      // ── TOP INFO CARDS ────────────────────────────────────────────────────────
+      // Three columns: dates card | FROM | TO
+      const topY   = 122;
+      const cardW  = 148;
+      const cardH  = 110;
 
-      // Col 2 — Billed to
-      doc.font("Helvetica-Bold").fontSize(10)
-         .text("Billed to", col2Pad, blockTop);
-      doc.font("Helvetica").fontSize(10);
-      const billName = (customer.shareholder_name || customer.booking_name || "—").trim();
-      doc.text(billName,          col2Pad, blockTop + 14, { width: col2Width, lineBreak: false });
-      doc.text(customer.contact || "—", col2Pad, blockTop + 28, { width: col2Width, lineBreak: false });
-      const billAddr = [customer.address, customer.area].filter(Boolean).join(", ");
-      if (billAddr) doc.text(billAddr, col2Pad, blockTop + 42, { width: col2Width, lineBreak: false });
+      // --- Dates card (rounded rect, light grey) ---
+      doc.roundedRect(ML, topY, cardW, cardH, 5)
+        .fillColor(C_BG).fill();
 
-      // Col 3 — From
-      doc.font("Helvetica-Bold").fontSize(10)
-         .text("From", col3Pad, blockTop);
-      doc.font("Helvetica").fontSize(10)
-         .text("The Warsi Farm",         col3Pad, blockTop + 14, { width: col3Width, lineBreak: false })
-         .text("B-655, F.B.A Block # 13,", col3Pad, blockTop + 28, { width: col3Width, lineBreak: false })
-         .text("Gulberg, Karachi",         col3Pad, blockTop + 42, { width: col3Width, lineBreak: false });
+      doc.font("Helvetica-Bold").fontSize(11).fillColor("#1f1f1f")
+        .text("Issue Date:", ML + 14, topY + 16, { lineBreak: false });
+      doc.font("Helvetica").fontSize(10.5).fillColor("#575757")
+        .text(issuedDate, ML + 14, topY + 34, { lineBreak: false });
 
-      // Vertical dividers between the 3 columns
-      doc.strokeColor(gray).lineWidth(0.5)
-         .moveTo(col2Left, blockTop).lineTo(col2Left, blockBottom).stroke()
-         .moveTo(col3Left, blockTop).lineTo(col3Left, blockBottom).stroke()
-         .strokeColor("#000000").lineWidth(1);
+      doc.font("Helvetica-Bold").fontSize(11).fillColor("#1f1f1f")
+        .text("Booking Date:", ML + 14, topY + 60, { lineBreak: false });
+      doc.font("Helvetica").fontSize(10.5).fillColor("#575757")
+        .text(bookingDateStr, ML + 14, topY + 78, { lineBreak: false });
 
-      // ── SERVICE TABLE ─────────────────────────────────────────────────────────
-      let y = blockBottom + 4;
+      // --- FROM column ---
+      const fromX = ML + 174;
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(C_TITLE)
+        .text("FROM", fromX, topY + 4, { lineBreak: false });
 
-      // Table top rule
-      doc.strokeColor(gray).lineWidth(0.5)
-         .moveTo(left, y).lineTo(right, y).stroke()
-         .strokeColor("#000000").lineWidth(1);
-      y += 10;
+      doc.font("Helvetica-Bold").fontSize(13).fillColor("#111111")
+        .text("The Warsi Farm", fromX, topY + 24, { lineBreak: false });
 
-      // Table header row — 5 columns: Service | Qty | Total | Paid | Due
-      const qtyX   = right - 280;
-      const totX   = right - 210;
-      const totW   = 70;
-      const paidX  = right - 130;
-      const paidW  = 65;
-      const dueX   = right - 60;
-      const dueW   = 60;
-      const qtyW   = 30;
-      const svcW   = qtyX - left - 8;
+      doc.font("Helvetica").fontSize(10.5).fillColor(C_SUB)
+        .text("B-655, Gulberg, F.B Area Block", fromX, topY + 46, { lineBreak: false })
+        .text("# 13, Karachi", fromX, topY + 62, { lineBreak: false })
+        .text("Contact: 0331-9911466", fromX, topY + 80, { lineBreak: false });
 
-      doc.fontSize(10).font("Helvetica-Bold").fillColor("#000000");
-      doc.text("Service", left,  y, { width: svcW,  lineBreak: false });
-      doc.text("Qty",     qtyX,  y, { width: qtyW,  align: "center", lineBreak: false });
-      doc.text("Total",   totX,  y, { width: totW,  align: "center", lineBreak: false });
-      doc.text("Paid",    paidX, y, { width: paidW, align: "center", lineBreak: false });
-      doc.text("Due",     dueX,  y, { width: dueW,  align: "center", lineBreak: false });
-      y += 16;
+      // --- TO column ---
+      const toX = ML + 352;
+      const customerName = (customer.shareholder_name || customer.booking_name || "Customer Name").trim();
+      const customerAddr = customer.address || "—";
+      const customerContact = customer.contact || "—";
 
-      // Table body — one row per order
-      doc.font("Helvetica").fontSize(10).fillColor("#000000");
-      for (const row of orders) {
-        // If near bottom of page, add new page
-        if (y + 40 > contentBottom) {
-          doc.addPage();
-          y = 50;
-        }
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(C_TITLE)
+        .text("TO", toX, topY + 4, { lineBreak: false });
 
-        const serviceTitle = row.type || "Booking";
-        const serviceSub = `Cow No: ${row.cow || "—"} | Hissa No: ${row.hissa || "—"} • ${row.day || "—"}`;
+      doc.font("Helvetica-Bold").fontSize(13).fillColor("#111111")
+        .text(truncate(customerName, 155, "Helvetica-Bold", 13), toX, topY + 24, { lineBreak: false });
 
-        const rowStartY = y;
+      doc.font("Helvetica").fontSize(10.5).fillColor(C_SUB)
+        .text(truncate(customerAddr, 155, "Helvetica", 10.5), toX, topY + 46, { lineBreak: false })
+        .text(`Customer Contact: ${customerContact}`, toX, topY + 62, { width: 160, lineBreak: false });
 
-        // Service title (bold)
-        doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000")
-           .text(serviceTitle, left, y, { width: svcW, lineBreak: false });
-        y += 13;
+      // ── TABLE HEADER ──────────────────────────────────────────────────────────
+      // Matched to image: light bg card with border, bold labels
+      let tableY = topY + cardH + 28;
 
-        // Sub-line (regular, muted)
-        doc.font("Helvetica").fontSize(9).fillColor("#444444")
-           .text(serviceSub, left, y, { width: svcW, lineBreak: false });
-        doc.fillColor("#000000");
-        y += 12;
+      const ROW_H    = 30;  // header row height
+      const ITEM_H   = 46;  // data row height — tighter, matches image
+      const GAP      = 8;   // gap between rows
 
-        // Qty, Total, Paid, Due — all center-aligned, aligned to title line
-        doc.font("Helvetica").fontSize(10).fillColor("#000000");
-        doc.text("1",                               qtyX,  rowStartY, { width: qtyW,  align: "center", lineBreak: false });
-        doc.text(`PKR ${fmt(row.total_amount)}`,    totX,  rowStartY, { width: totW,  align: "center", lineBreak: false });
+      // Column X positions (left-edge of each column text)
+      const COL_DESC = ML + 12;
+      const COL_QTY  = ML + 214;
+      const COL_RATE = ML + 282;
+      const COL_PAID = ML + 374;
+      const COL_DUE  = ML + 454;
 
-        // Paid — green
-        doc.font("Helvetica").fontSize(10).fillColor("#166534")
-           .text(`PKR ${fmt(row.received_amount)}`, paidX, rowStartY, { width: paidW, align: "center", lineBreak: false });
+      const drawTableHeader = (y) => {
+        doc.roundedRect(ML, y, CW, ROW_H, 4)
+          .lineWidth(1).strokeColor(C_BORDER).fillAndStroke(C_BG, C_BORDER);
 
-        // Due — red
-        doc.font("Helvetica").fontSize(10).fillColor("#b91c1c")
-           .text(`PKR ${fmt(row.pending_amount)}`,  dueX,  rowStartY, { width: dueW,  align: "center", lineBreak: false });
-
-        doc.fillColor("#000000");
-        y += 4; // row gap
-      }
-
-      // Table bottom rule
-      doc.strokeColor(gray).lineWidth(0.5)
-         .moveTo(left, y).lineTo(right, y).stroke()
-         .strokeColor("#000000").lineWidth(1);
-      y += 12;
-
-      // ── SUMMARY (right half, like the PDF) ───────────────────────────────────
-      // Layout: label right-aligned in left portion, value right-aligned at far right
-      // Matches PDF: "Subtotal:" ... "PKR 23,000"
-      const sumBlockLeft  = right - 230;   // left edge of summary block
-      const sumLabelRight = right - 110;   // right edge of label column
-      const sumLabelW     = sumLabelRight - sumBlockLeft;
-      const sumValX       = right - 108;   // start of value column
-      const sumValW       = 108;
-
-      const drawSummaryRow = (label, value, labelFont, labelColor, ruleColor) => {
-        doc.font(labelFont).fontSize(10).fillColor(labelColor)
-           .text(label, sumBlockLeft, y, { width: sumLabelW, align: "right", lineBreak: false });
-        doc.font(labelFont).fontSize(10).fillColor(labelColor)
-           .text(value, sumValX, y, { width: sumValW, align: "right", lineBreak: false });
-        doc.fillColor("#000000");
-        y += 13;
-        doc.strokeColor(ruleColor || "#cccccc").lineWidth(0.5)
-           .moveTo(sumBlockLeft, y).lineTo(right, y).stroke()
-           .strokeColor("#000000").lineWidth(1);
-        y += 5;
+        doc.font("Helvetica-Bold").fontSize(10.5).fillColor(C_HEAD_TX);
+        doc.text("DESCRIPTION", COL_DESC, y + 10, { lineBreak: false });
+        doc.text("QUANTITY",    COL_QTY,  y + 10, { lineBreak: false });
+        doc.text("RATE",        COL_RATE, y + 10, { lineBreak: false });
+        doc.text("PAID",        COL_PAID, y + 10, { lineBreak: false });
+        doc.text("DUE",         COL_DUE,  y + 10, { lineBreak: false });
       };
 
-      drawSummaryRow("Subtotal:",  `PKR ${fmt(grandTotal)}`,    "Helvetica-Bold", "#000000", "#cccccc");
-      drawSummaryRow("Delivery:",  "Free",                       "Helvetica",      "#000000", "#cccccc");
-      drawSummaryRow("Total:",     `PKR ${fmt(grandTotal)}`,    "Helvetica-Bold", "#000000", "#cccccc");
+      // Header card
+      drawTableHeader(tableY);
 
-      // Amount Paid — green
-      doc.font("Helvetica-Bold").fontSize(10).fillColor("#166534")
-         .text("Amount Paid:", sumBlockLeft, y, { width: sumLabelW, align: "right", lineBreak: false });
-      doc.text(`PKR ${fmt(grandReceived)}`, sumValX, y, { width: sumValW, align: "right", lineBreak: false });
-      doc.fillColor("#000000");
-      y += 13;
-      doc.strokeColor("#166534").lineWidth(0.5)
-         .moveTo(sumBlockLeft, y).lineTo(right, y).stroke()
-         .strokeColor("#000000").lineWidth(1);
-      y += 5;
+      // ── TABLE ROWS ────────────────────────────────────────────────────────────
+      let rowY = tableY + ROW_H + GAP;
+      const rowsBottomLimit = PH - 48;
 
-      // Amount Due — red
-      doc.font("Helvetica-Bold").fontSize(10).fillColor("#b91c1c")
-         .text("Amount Due:", sumBlockLeft, y, { width: sumLabelW, align: "right", lineBreak: false });
-      doc.text(`PKR ${fmt(grandPending)}`, sumValX, y, { width: sumValW, align: "right", lineBreak: false });
-      doc.fillColor("#000000");
-      y += 13;
-      doc.strokeColor("#b91c1c").lineWidth(0.5)
-         .moveTo(sumBlockLeft, y).lineTo(right, y).stroke()
-         .strokeColor("#000000").lineWidth(1);
-      y += 16;
-
-      // ── PAYMENT INFO ──────────────────────────────────────────────────────────
-      if (y + 60 > contentBottom) { doc.addPage(); y = 50; }
-
-      doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000")
-         .text("PAYMENT INFO", left, y);
-      y += 12;
-
-      // Header row
-      const pi1 = left;
-      const pi2 = left + 130;
-      const pi3 = left + 275;
-      const pi4 = left + 400;
-
-      doc.font("Helvetica-Bold").fontSize(9).fillColor("#555555");
-      doc.text("ACCOUNT NAME (Meezan)", pi1, y, { lineBreak: false });
-      doc.text("BRANCH",              pi2, y, { lineBreak: false });
-      doc.text("IBAN",                pi3, y, { lineBreak: false });
-      doc.text("ACCOUNT NO",          pi4, y, { lineBreak: false });
-      y += 12;
-
-      // Values
-      doc.font("Helvetica").fontSize(9).fillColor("#000000");
-      doc.text("THE WARSI FARM",                   pi1, y, { lineBreak: false });
-      doc.text("FB AREA BLOCK 12 BRANCH",         pi2, y, { lineBreak: false });
-      doc.text("PK03MEZN0010180114502823",      pi3, y, { width: 120, lineBreak: false });
-      doc.text("10180114502823",                pi4, y, { lineBreak: false });
-      y += 18;
-
-      // ── TERMS & CONDITIONS ────────────────────────────────────────────────────
-      if (y + 30 > contentBottom) { doc.addPage(); y = 50; }
-
-      doc.font("Helvetica-Bold").fontSize(10).fillColor("#000000")
-         .text("TERMS & CONDITIONS", left, y);
-      y += 12;
-
-      const terms = [
-        "Livestock bookings must be paid in full at the time of purchase. For Qurbani orders, full payment is required at least 7 days before Eid.",
-        "Accepted payment methods: Cash, Bank Transfer, Easypaisa, JazzCash, or Online Checkout.",
-        "Free delivery within Karachi. Delivery timelines are communicated at the time of booking. Delays due to unforeseen events will be informed in advance.",
-        "Ensure accurate delivery information and availability at the time of delivery. Any delays caused due to incorrect information or unavailability at delivery address will not be compensated.",
-        "THE WARSI FARM is not liable for delays or issues caused by unforeseen circumstances like natural disasters, transport strikes, or technical faults.",
-      ];
-      doc.font("Helvetica").fontSize(8).fillColor("#000000");
-      for (let i = 0; i < terms.length; i++) {
-        const lines = wrapText(`${i + 1}. ${terms[i]}`, pageW, "Helvetica", 8);
-        for (const line of lines) {
-          if (y + 10 > contentBottom) break;
-          doc.text(line, left, y, { lineBreak: false });
-          y += 11;
+      for (const row of orders) {
+        // Prevent overflow: continue rows on a fresh page with top margin + header.
+        if (rowY + ITEM_H > rowsBottomLimit) {
+          doc.addPage({ margin: 0, size: "A4" });
+          tableY = 60;
+          drawTableHeader(tableY);
+          rowY = tableY + ROW_H + GAP;
         }
-        y += 3;
+
+        // Light grey rounded rect for each row
+        doc.roundedRect(ML, rowY, CW, ITEM_H, 4)
+          .fillColor(C_BG).fill();
+
+        // Description: bold title + muted subtitle
+        const displayType = (row.type === "Hissa - Standard") ? "Hissa - Ijtimai" : (row.type || "Hissa");
+        const itemTitle = truncate(`${displayType} (${row.day || "1"})`, 190, "Helvetica-Bold", 11);
+        const itemSub   = `Cow: ${row.cow || "—"} | Hissa: ${row.hissa || "—"}`;
+
+        doc.font("Helvetica-Bold").fontSize(11).fillColor("#1a1a1a")
+          .text(itemTitle, COL_DESC, rowY + 10, { lineBreak: false });
+        doc.font("Helvetica").fontSize(9.5).fillColor("#5f5f5f")
+          .text(itemSub,   COL_DESC, rowY + 28, { lineBreak: false });
+
+        // Quantity — centred under header
+        doc.font("Helvetica").fontSize(11).fillColor(C_BODY)
+          .text("1", COL_QTY + 20, rowY + 17, { width: 20, align: "center", lineBreak: false });
+
+        // Rate
+        doc.font("Helvetica").fontSize(11).fillColor(C_BODY)
+          .text(`PKR ${fmt(row.total_amount)}`, COL_RATE - 4, rowY + 17, { width: 90, lineBreak: false });
+
+        // Paid (green)
+        doc.font("Helvetica-Bold").fontSize(11).fillColor(C_GREEN)
+          .text(`PKR ${fmt(row.received_amount)}`, COL_PAID - 4, rowY + 17, { width: 80, lineBreak: false });
+
+        // Due (red)
+        doc.font("Helvetica-Bold").fontSize(11).fillColor(C_RED)
+          .text(`PKR ${fmt(row.pending_amount)}`, COL_DUE - 4, rowY + 17, { width: 80, lineBreak: false });
+
+        rowY += ITEM_H + GAP;
       }
 
-      // ── FOOTER ───────────────────────────────────────────────────────────────
-      const footerY = footerZoneTop + 2;
-      doc.strokeColor(gray).lineWidth(0.5)
-         .moveTo(left, footerZoneTop - 4).lineTo(right, footerZoneTop - 4).stroke()
-         .strokeColor("#000000").lineWidth(1);
-      doc.font("Helvetica").fontSize(9).fillColor("#000000");
-      doc.text("The Warsi Farm", left, footerY, { lineBreak: false });
-      const footerRight = "0331-4211466  |  0332-4211466  |  thewarsifarm.com";
-      doc.text(footerRight, right - doc.widthOfString(footerRight), footerY, { lineBreak: false });
+      // ── NOTE + TOTALS SECTION ─────────────────────────────────────────────────
+      const noteText = "Full payment is required for all livestock bookings, and Qurbani orders must be paid at least 7 days before Eid. Ensure accurate delivery details and availability, as delays due to incorrect information won't be compensated. THE WARSI FARM isn't liable for unforeseen delays like natural disasters, strikes, or technical issues. All items are exclusive of tax.";
+      doc.font("Helvetica").fontSize(9.5);
+      const noteBodyHeight = doc.heightOfString(noteText, { width: 300, lineGap: 2.5, align: "justify" });
+      doc.font("Helvetica").fontSize(8);
+      const signatureText = "* This is an auto generated invoice and does not need a signature.";
+      const signatureHeight = doc.heightOfString(signatureText, { width: CW, align: "center" });
+      const PAY_H = 72;
+
+      const payTopGapFromContent = 20;
+      const signatureTopGap = 8;
+      const bottomPadding = 24;
+      const payReservedHeight = PAY_H + signatureTopGap + signatureHeight + bottomPadding;
+
+      // Approximate NOTE + TOTALS block footprint before payment section.
+      const noteTotalsHeight = Math.max(18 + noteBodyHeight, 152);
+
+      // If footer area won't fit here, move NOTE/TOTALS/PAYMENT to a clean new page.
+      let noteY = rowY + 8;
+      const footerFits = (noteY + noteTotalsHeight + payTopGapFromContent + payReservedHeight) <= PH;
+      if (!footerFits) {
+        doc.addPage({ margin: 0, size: "A4" });
+        noteY = 60;
+      }
+
+      // NOTE label
+      doc.font("Helvetica-Bold").fontSize(12).fillColor(C_TITLE)
+        .text("NOTE:", ML, noteY, { lineBreak: false });
+
+      // Note body text (left side, capped at ~305pt wide)
+      doc.font("Helvetica").fontSize(9.5).fillColor("#4f4f4f")
+        .text(noteText, ML, noteY + 18, { width: 300, lineGap: 2.5, align: "justify" });
+
+      // ── RIGHT-SIDE TOTALS ─────────────────────────────────────────────────────
+      const sumLabel = ML + 355;
+      const sumRight = RIGHT;
+      let sy = noteY + 6;
+
+      const drawTotalRow = (label, value, lColor = C_TITLE, vColor = C_TITLE, bold = true) => {
+        const f = bold ? "Helvetica-Bold" : "Helvetica";
+        doc.font(f).fontSize(11).fillColor(lColor)
+          .text(label, sumLabel, sy, { width: 75, align: "left", lineBreak: false });
+        doc.font(f).fontSize(11).fillColor(vColor)
+          .text(value, sumLabel, sy, { width: sumRight - sumLabel, align: "right", lineBreak: false });
+        sy += 22;
+      };
+
+      drawTotalRow("SUBTOTAL",    `PKR ${fmt(grandTotal)}`);
+      drawTotalRow("SHIPPING",    "FREE", C_TITLE, C_MUTED, false);
+      drawTotalRow("TOTAL",       `PKR ${fmt(grandTotal)}`);
+      drawTotalRow("PAID", `PKR ${fmt(grandReceived)}`, C_TITLE, C_GREEN);
+
+      // "AMOUNT DUE" label — right aligned, no separator line, no wrapping
+      sy += 6;
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(C_TITLE)
+        .text("AMOUNT DUE", RIGHT - 160, sy, { width: 160, align: "right", lineBreak: false });
+      sy += 22;
+
+      // Big red PKR value — right aligned, guaranteed no wrap
+      doc.font("Helvetica-Bold").fontSize(22).fillColor(C_RED)
+        .text(`PKR ${fmt(grandPending)}`, RIGHT - 160, sy, { width: 160, align: "right", lineBreak: false });
+
+      // ── PAYMENT INFORMATION STRIP ─────────────────────────────────────────────
+
+      // Place payment strip below content on same page where possible.
+      const noteBodyBottomY = noteY + 18 + noteBodyHeight;
+      const totalsBottomY = sy + 30;
+      const contentBottomY = Math.max(noteBodyBottomY, totalsBottomY);
+
+      const bottomAlignedPayY = PH - (PAY_H + signatureTopGap + signatureHeight + bottomPadding);
+      const minPayY = contentBottomY + payTopGapFromContent;
+      let PAY_Y = bottomAlignedPayY;
+
+      // Keep payment strip bottom-aligned on first page when possible.
+      // If content is too long to allow that, move this section to next page.
+      if (minPayY > bottomAlignedPayY) {
+        doc.addPage({ margin: 0, size: "A4" });
+        PAY_Y = 60;
+      }
+
+      doc.roundedRect(ML, PAY_Y, CW, PAY_H, 4)
+        .lineWidth(1).strokeColor(C_BORDER).fillAndStroke("#ffffff", C_BORDER);
+
+      // Centre heading
+      doc.font("Helvetica-Bold").fontSize(11).fillColor("#1d1d1d")
+        .text("PAYMENT INFORMATION", ML, PAY_Y + 11, { width: CW, align: "center", lineBreak: false });
+
+      // Four columns for bank info
+      const P1 = ML + 14;
+      const P2 = ML + 152;
+      const P3 = ML + 284;
+      const P4 = ML + 438;
+      const VY = PAY_Y + 33;   // label row
+      const NY = PAY_Y + 51;   // value row
+
+      doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#222222");
+      doc.text("ACCOUNT NAME (Meezan)", P1, VY, { width: 130, lineBreak: false });
+      doc.text("BRANCH",               P2, VY, { width: 120, lineBreak: false });
+      doc.text("IBAN",                 P3, VY, { width: 145, lineBreak: false });
+      doc.text("ACCOUNT NO",           P4, VY, { width: 80,  lineBreak: false });
+
+      doc.font("Helvetica").fontSize(8).fillColor("#4a4a4a");
+      doc.text("THE WARSI FARM",           P1, NY, { width: 130, lineBreak: false });
+      doc.text("FB AREA BLOCK 12 BRANCH",  P2, NY, { width: 120, lineBreak: false });
+      doc.text("PK03MEZN0010180114502823", P3, NY, { width: 145, lineBreak: false });
+      doc.text("10180114502823",           P4, NY, { width: 80,  lineBreak: false });
+
+      // Auto-generated invoice notice (centered beneath payment section)
+      doc.font("Helvetica").fontSize(8).fillColor("#4a4a4a")
+        .text(signatureText, ML, PAY_Y + PAY_H + signatureTopGap, {
+          width: CW,
+          align: "center",
+          lineBreak: false
+        });
 
       doc.end();
+
     } catch (error) {
       logError("BOOKING", "Invoice error", error);
-      await writeAuditLog(db, { user_id: req.userId, action: "INVOICE_ERROR", entity_type: "invoice", entity_id: req.params.customerId, new_values: { reason: "server_error" }, ip_address: req.ip, user_agent: req.get("user-agent") });
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "INVOICE_ERROR",
+        entity_type: "invoice",
+        entity_id: req.params.customerId,
+        new_values: { reason: "server_error" },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
       res.status(500).json({ message: "Server error" });
     }
   });
