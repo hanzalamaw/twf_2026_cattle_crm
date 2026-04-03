@@ -301,7 +301,7 @@ export default function ProcurementManagement() {
           to   { transform: translateX(0);    opacity: 1; }
         }
         @media (max-width: 767px) {
-          .pm-root { padding: 64px 12px 24px !important; overflow: auto !important; }
+          .pm-root { padding: 16px 12px 24px !important; overflow: auto !important; }
           .pm-header { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; margin-bottom: 12px !important; }
           .pm-header h2 { font-size: 16px !important; }
           .pm-filter { flex-wrap: wrap !important; }

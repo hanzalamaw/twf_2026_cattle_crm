@@ -385,7 +385,7 @@ export default function Transactions() {
           to   { transform: translateX(0);    opacity: 1; }
         }
         @media (max-width: 767px) {
-          .txn-root              { padding: 64px 12px 24px !important; overflow: auto !important; }
+          .txn-root              { padding: 16px 12px 24px !important; overflow: auto !important; }
 
           /* Top bar */
           .txn-topbar           { flex-wrap: nowrap !important; gap: 8px !important; margin-bottom: 12px !important; align-items: center !important; }

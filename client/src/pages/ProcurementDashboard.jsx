@@ -50,7 +50,7 @@ export default function ProcurementDashboard() {
     <>
       <style>{`
         @media (max-width: 767px) {
-          .pd-root { padding: 64px 12px 24px !important; }
+          .pd-root { padding: 16px 12px 24px !important; }
           .pd-header { flex-direction: column !important; align-items: flex-start !important; gap: 10px !important; }
           .pd-title { font-size: 16px !important; }
           .pd-grid { grid-template-columns: 1fr !important; }

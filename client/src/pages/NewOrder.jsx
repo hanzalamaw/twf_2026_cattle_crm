@@ -217,7 +217,7 @@ const NewOrder = () => {
         }
 
         @media (max-width: 767px) {
-          .no-root  { padding: 14px 12px 32px !important; }
+          .no-root  { padding: 16px 12px 32px !important; }
           .no-header-back { display: none !important; }
           .no-title { font-size: 16px !important; }
           .no-section { padding: 14px 12px !important; margin-bottom: 12px !important; border-radius: 10px !important; }

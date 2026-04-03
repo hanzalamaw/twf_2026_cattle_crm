@@ -175,7 +175,7 @@ export default function NewProcurement() {
     <>
       <style>{`
         @media (max-width: 767px) {
-          .np-root  { padding: 14px 12px 32px !important; }
+          .np-root  { padding: 16px 12px 32px !important; }
           .np-header-back { display: none !important; }
           .np-title { font-size: 16px !important; }
           .np-section { padding: 14px 12px !important; margin-bottom: 12px !important; border-radius: 10px !important; }

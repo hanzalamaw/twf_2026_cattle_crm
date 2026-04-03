@@ -1629,6 +1629,7 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
   app.get("/api/booking/invoice/:customerId", verifyToken, async (req, res) => {
     try {
       const { customerId } = req.params;
+      const INVOICE_BOOKING_YEAR = 2026;
 
       // Fetch orders for this customer only in booking year 2026
       const [orders] = await db.execute(
@@ -1638,10 +1639,9 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
                 o.received_amount, o.pending_amount
         FROM orders o
         WHERE o.customer_id = ?
-          AND o.booking_date >= '2026-01-01'
-          AND o.booking_date < '2027-01-01'
+          AND YEAR(o.booking_date) = ?
         ORDER BY o.booking_date, o.order_id`,
-        [customerId]
+        [customerId, INVOICE_BOOKING_YEAR]
       );
 
       if (orders.length === 0) {
@@ -1654,7 +1654,7 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
           ip_address: req.ip,
           user_agent: req.get("user-agent"),
         });
-        return res.status(404).json({ message: "No orders found for this customer in 2026" });
+        return res.status(404).json({ message: `No orders found for this customer in ${INVOICE_BOOKING_YEAR}` });
       }
 
       // Invoice number generation

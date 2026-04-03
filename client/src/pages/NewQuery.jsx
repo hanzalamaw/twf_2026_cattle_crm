@@ -188,7 +188,7 @@ const NewQuery = () => {
         @media (max-width: 767px) {
 
           /* push content below the FAB */
-          .nq-root { padding: 14px 12px 32px !important; }
+          .nq-root { padding: 16px 12px 32px !important; }
 
           /* header: title left, no back button (FAB is the nav) */
           .nq-header { margin-bottom: 14px !important; }

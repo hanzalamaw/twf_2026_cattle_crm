@@ -291,7 +291,7 @@ export default function Expenses() {
         }
 
         @media (max-width: 767px) {
-          .exp-root                { padding: 64px 12px 24px !important; overflow: auto !important; }
+          .exp-root                { padding: 16px 12px 24px !important; overflow: auto !important; }
 
           /* Top bar */
           .exp-topbar               { margin-bottom: 12px !important; }

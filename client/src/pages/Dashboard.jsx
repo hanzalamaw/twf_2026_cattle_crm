@@ -730,8 +730,8 @@ const Dashboard = () => {
           .deskOnly { display:none !important; }
           .mobOnly  { display:block !important; }
 
-          /* top padding avoids the mobile hamburger/menu overlay */
-          .page { padding:64px 10px 28px; gap:8px; }
+          /* align page heading with fixed mobile menu button */
+          .page { padding:16px 10px 28px; gap:8px; }
 
           /* header */
           .header { flex-direction:column; align-items:flex-start; gap:8px; }

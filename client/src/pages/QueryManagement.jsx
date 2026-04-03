@@ -407,8 +407,8 @@ export default function QueryManagement() {
         }
 
         @media (max-width: 767px) {
-          /* top padding avoids the mobile hamburger/menu overlay */
-          .qm-root               { padding: 64px 12px 24px !important; overflow: auto !important; }
+          /* align page heading with fixed mobile menu button */
+          .qm-root               { padding: 16px 12px 24px !important; overflow: auto !important; }
           .qm-header             { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; margin-bottom: 12px !important; }
           .qm-header h2          { font-size: 16px !important; }
           .qm-filter-desktop     { display: none !important; }
