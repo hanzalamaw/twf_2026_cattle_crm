@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE as API } from '../config/api';
-// Change this to switch which booking year the stats sheet uses.
-const STATS_YEAR = 2026;
+
+const STATS_YEAR_MIN = 2020;
+
+function statsYearOptions() {
+  const y = new Date().getFullYear();
+  const max = Math.max(y + 1, STATS_YEAR_MIN);
+  const opts = [];
+  for (let i = max; i >= STATS_YEAR_MIN; i--) opts.push(i);
+  return opts;
+}
 
 const DAYS = ['DAY 1', 'DAY 2', 'DAY 3'];
 const TYPES = [
@@ -52,6 +60,9 @@ export default function Stats() {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
   const [raw, setRaw] = useState(null);
+  const [year, setYear] = useState(() => new Date().getFullYear());
+
+  const yearOptions = useMemo(() => statsYearOptions(), []);
 
   const hdrs = useCallback(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
@@ -59,7 +70,7 @@ export default function Stats() {
     setLoading(true);
     setError('');
     try {
-      const res = await authFetch(`${API}/booking/hissa-sheet?year=${encodeURIComponent(STATS_YEAR)}`, {
+      const res = await authFetch(`${API}/booking/hissa-sheet?year=${encodeURIComponent(year)}`, {
         headers: hdrs(),
       });
       const data = await res.json().catch(() => ({}));
@@ -71,7 +82,7 @@ export default function Stats() {
     } finally {
       setLoading(false);
     }
-  }, [authFetch, hdrs]);
+  }, [authFetch, hdrs, year]);
 
   useEffect(() => {
     fetchSheet();
@@ -137,7 +148,7 @@ export default function Stats() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `stats-${STATS_YEAR}.csv`;
+      a.download = `stats-${year}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -145,11 +156,24 @@ export default function Stats() {
     } finally {
       setExporting(false);
     }
-  }, [sheet]);
+  }, [sheet, year]);
 
   const s = {
     page: { padding: 24, fontFamily: "'Poppins', system-ui, sans-serif", background: '#ffffff' },
     topRow: { position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 22px', width: 920, maxWidth: '100%' },
+    yearFilter: { position: 'absolute', left: 0, top: 0, display: 'flex', alignItems: 'center', gap: 8 },
+    yearLabel: { fontSize: 11, fontWeight: 600, color: '#374151' },
+    yearSelect: {
+      padding: '6px 10px',
+      borderRadius: 8,
+      border: '1px solid #d1d5db',
+      fontSize: 12,
+      fontWeight: 500,
+      color: '#111827',
+      background: '#fff',
+      cursor: 'pointer',
+      minWidth: 88,
+    },
     legend: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20 },
     legendItem: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, fontWeight: 600, letterSpacing: 0.3, color: '#6B7280' },
     pill: (slot) => ({ width: 20, height: 8, borderRadius: 10, background: SLOT_COLORS[slot]?.pill || '#E5E7EB', border: '1px solid rgba(0,0,0,0.05)' }),
@@ -185,6 +209,22 @@ export default function Stats() {
   return (
     <div style={s.page}>
       <div style={s.topRow}>
+        <div style={s.yearFilter}>
+          <span style={s.yearLabel}>Year</span>
+          <select
+            aria-label="Booking year"
+            style={s.yearSelect}
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+            disabled={loading}
+          >
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </div>
         <div style={s.legend}>
           <div style={s.legendItem}><span style={s.pill('SLOT 1')} />SLOT 1</div>
           <div style={s.legendItem}><span style={s.pill('SLOT 2')} />SLOT 2</div>
