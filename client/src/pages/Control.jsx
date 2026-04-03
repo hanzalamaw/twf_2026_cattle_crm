@@ -579,7 +579,11 @@ const Control = () => {
           /* Bottom nav — keep as-is (not touched) */
 
           /* Page headings */
-          .ctrl-page-title            { font-size: 15px !important; }
+          .ctrl-page-title            {
+            min-height: 55px !important; display: flex !important; align-items: center !important; box-sizing: border-box !important;
+            font-size: clamp(15px, 4.3vw, 17px) !important; font-weight: 600 !important; line-height: 1.25 !important;
+            padding-top: 0 !important;
+          }
           .ctrl-page-sub              { display: none !important; }
 
           /* Stats grid — 2 col */

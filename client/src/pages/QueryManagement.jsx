@@ -450,7 +450,11 @@ export default function QueryManagement() {
           /* align page heading with fixed mobile menu button */
           .qm-root               { padding: 16px 12px 24px !important; overflow: auto !important; }
           .qm-header             { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; margin-bottom: 12px !important; }
-          .qm-header h2          { font-size: 16px !important; }
+          .qm-header h2          {
+            min-height: 55px !important; display: flex !important; align-items: center !important; box-sizing: border-box !important;
+            margin: 0 !important; padding: 0 !important;
+            font-size: clamp(15px, 4.3vw, 17px) !important; font-weight: 600 !important; color: #333 !important; line-height: 1.25 !important;
+          }
           .qm-filter-desktop     { display: none !important; }
           .qm-filter-toggle-row  { display: flex !important; }
           .qm-filter-mobile-panel{ display: block !important; }

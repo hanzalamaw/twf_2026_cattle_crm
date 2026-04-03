@@ -276,7 +276,7 @@ export default function Expenses() {
   if (loading && expenses.length === 0) {
     return (
       <div className="exp-root" style={{ padding: '19px', fontFamily: "'Poppins', 'Inter', sans-serif" }}>
-        <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#333', marginBottom: '16px' }}>Expenses</h2>
+        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', marginBottom: '16px' }}>Expenses</h2>
         <div style={{ padding: '32px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading...</div>
       </div>
     );
@@ -293,12 +293,21 @@ export default function Expenses() {
         @media (max-width: 767px) {
           .exp-root                { padding: 16px 12px 24px !important; overflow: auto !important; }
 
-          /* Top bar */
-          .exp-topbar               { margin-bottom: 12px !important; align-items: flex-start !important; }
-          .exp-topbar h2            { font-size: 16px !important; }
+          /* Top bar — same as Query/Order management mobile headings */
+          .exp-topbar               { margin-bottom: 12px !important; align-items: center !important; min-height: 55px !important; box-sizing: border-box !important; }
+          .exp-topbar h2            {
+            flex: 1 !important; min-width: 0 !important;
+            padding: 0 clamp(48px, 14vw, 56px) 0 0 !important; margin: 0 !important;
+            font-size: clamp(15px, 4.3vw, 17px) !important; font-weight: 600 !important; color: #333 !important;
+            line-height: 1.25 !important; display: flex !important; align-items: center !important; box-sizing: border-box !important;
+          }
 
           .exp-export-desktop       { display: none !important; }
-          .exp-mobile-header-actions { display: flex !important; }
+          .exp-mobile-fab-spacer    { display: block !important; }
+          /* Hide above cards; Export + Add below cards */
+          .exp-mobile-hide-above    { display: flex !important; justify-content: flex-end !important; margin-bottom: 10px !important; }
+          .exp-mobile-below-cards   { display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: flex-end !important; flex-wrap: wrap !important; gap: 8px !important; width: 100% !important; margin-bottom: 12px !important; }
+          .exp-add-btn-row-desktop  { display: none !important; }
 
           /* Show/hide toggle — desktop only */
           .exp-showhide-wrap        { display: none !important; }
@@ -311,11 +320,6 @@ export default function Expenses() {
           .exp-card-label           { font-size: 10px !important; }
           .exp-card-amount          { font-size: 13px !important; }
           .exp-card-amount span     { min-width: unset !important; padding: 4px 6px !important; }
-
-          /* Add expense button row */
-          .exp-add-btn-row          { margin-top: 8px !important; }
-          .exp-mobile-showhide      { display: none !important; }
-          .exp-mobile-showhide-top  { display: none !important; }
 
           /* Table shown on mobile */
           .exp-table-wrap           { display: block !important; }
@@ -362,28 +366,12 @@ export default function Expenses() {
 
       {/* ── Top bar ── */}
       <div className="exp-topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0, flexWrap: 'wrap', gap: '10px' }}>
-        <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#333', flexShrink: 0 }}>Expenses</h2>
-        <div className="exp-topbar-right" style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flexWrap: 'nowrap' }}>
+        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', flexShrink: 0 }}>Expenses</h2>
+        <div className="exp-topbar-right" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
           <button type="button" className="exp-export-desktop" onClick={handleExport} style={{ padding: '6px 13px', fontSize: '11px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             Export
           </button>
-          {/* Mobile: spacer under fixed FAB, then Export with Hide to its right */}
-          <div className="exp-mobile-header-actions" style={{ display: 'none', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-            <div aria-hidden style={{ width: 46, height: 46, flexShrink: 0 }} />
-            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px' }}>
-              <button type="button" onClick={handleExport} style={{ padding: '6px 13px', fontSize: '11px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                Export
-              </button>
-              <button
-                type="button"
-                onClick={() => setAmountVisible((v) => !v)}
-                title={amountVisible ? 'Hide' : 'Show'}
-                style={{ padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt="" style={{ width: '18px', height: '18px', display: 'block' }} />
-              </button>
-            </div>
-          </div>
+          <div className="exp-mobile-fab-spacer" aria-hidden style={{ display: 'none', width: 46, height: 46, flexShrink: 0 }} />
         </div>
       </div>
 
@@ -395,6 +383,13 @@ export default function Expenses() {
       <div className="exp-showhide-wrap" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', flexShrink: 0 }}>
         <button type="button" onClick={() => setAmountVisible((v) => !v)} title={amountVisible ? 'Hide' : 'Show'} style={{ padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
+        </button>
+      </div>
+
+      {/* Mobile: hide amounts — above Bank/Cash cards */}
+      <div className="exp-mobile-hide-above" style={{ display: 'none', justifyContent: 'flex-end', marginBottom: '10px', flexShrink: 0 }}>
+        <button type="button" onClick={() => setAmountVisible((v) => !v)} title={amountVisible ? 'Hide' : 'Show'} style={{ padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt="" style={{ width: '18px', height: '18px', display: 'block' }} />
         </button>
       </div>
 
@@ -429,16 +424,22 @@ export default function Expenses() {
             </div>
           </div>
         </div>
+      </div>
 
-        <div className="exp-add-btn-row" style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
-          {/* Mobile-only show/hide button */}
-          <button className="exp-mobile-showhide" type="button" onClick={() => setAmountVisible((v) => !v)} title={amountVisible ? 'Hide' : 'Show'} style={{ display: 'none', padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', marginRight: 'auto' }}>
-            <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
-          </button>
-          <button type="button" onClick={openAddModal} style={{ padding: '6px 13px', fontSize: '11px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            Add Expense
-          </button>
-        </div>
+      {/* Mobile: Export + Add below amount cards */}
+      <div className="exp-mobile-below-cards" style={{ display: 'none', width: '100%', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', marginBottom: '12px', boxSizing: 'border-box' }}>
+        <button type="button" onClick={handleExport} style={{ padding: '6px 13px', fontSize: '11px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          Export
+        </button>
+        <button type="button" onClick={openAddModal} style={{ padding: '6px 13px', fontSize: '11px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          Add Expense
+        </button>
+      </div>
+
+      <div className="exp-add-btn-row exp-add-btn-row-desktop" style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginTop: '4px', marginBottom: '16px' }}>
+        <button type="button" onClick={openAddModal} style={{ padding: '6px 13px', fontSize: '11px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          Add Expense
+        </button>
       </div>
 
       {/* ── Table ── */}

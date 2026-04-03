@@ -735,7 +735,11 @@ const Dashboard = () => {
 
           /* header */
           .header { flex-direction:column; align-items:flex-start; gap:8px; }
-          .hTitle { font-size:15px; }
+          .hTitle {
+            min-height:55px; display:flex; align-items:center; box-sizing:border-box;
+            font-size:clamp(15px, 4.3vw, 17px); font-weight:600; color:#111827; line-height:1.25;
+            padding-top:0; margin:0;
+          }
           .hSub   { font-size:11px; }
           .headerRight { width:100%; gap:6px; }
           .lastRefreshed { width:100%; order:-1; font-size:10px; }

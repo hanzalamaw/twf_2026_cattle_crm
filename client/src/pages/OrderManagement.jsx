@@ -157,11 +157,13 @@ export default function OrderManagement() {
     try {
       const params = new URLSearchParams();
       if (search.trim())      params.set('search',     search.trim());
-      if (slot)               params.set('slot',        slot);
+      if (!isFarm) {
+        if (slot)             params.set('slot',        slot);
+        if (day)              params.set('day',         day);
+        if (cowNumber.trim()) params.set('cow_number',  cowNumber.trim());
+      }
       if (orderType)          params.set('order_type',  orderType);
-      if (day)                params.set('day',         day);
       if (reference)          params.set('reference',   reference);
-      if (cowNumber.trim())   params.set('cow_number',  cowNumber.trim());
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page',  String(page));
       params.set('limit', String(PAGE_SIZE));
@@ -287,11 +289,13 @@ export default function OrderManagement() {
       do {
         const params = new URLSearchParams();
         if (search?.trim()) params.set('search', search.trim());
-        if (slot) params.set('slot', slot);
+        if (!isFarm) {
+          if (slot) params.set('slot', slot);
+          if (day) params.set('day', day);
+          if (cowNumber?.trim()) params.set('cow_number', cowNumber.trim());
+        }
         if (orderType) params.set('order_type', orderType);
-        if (day) params.set('day', day);
         if (reference) params.set('reference', reference);
-        if (cowNumber?.trim()) params.set('cow_number', cowNumber.trim());
         if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
         params.set('page', String(pageNum));
         params.set('limit', String(limit));
@@ -322,12 +326,14 @@ export default function OrderManagement() {
       XLSX.writeFile(wb, `orders-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
       try {
         const af = {};
-        if (search?.trim())    af.search     = search.trim();
-        if (slot)              af.slot        = slot;
-        if (orderType)         af.order_type  = orderType;
-        if (day)               af.day         = day;
-        if (reference)         af.reference   = reference;
-        if (cowNumber?.trim()) af.cow_number  = cowNumber.trim();
+        if (search?.trim()) af.search = search.trim();
+        if (!isFarm) {
+          if (slot) af.slot = slot;
+          if (day) af.day = day;
+          if (cowNumber?.trim()) af.cow_number = cowNumber.trim();
+        }
+        if (orderType) af.order_type = orderType;
+        if (reference) af.reference = reference;
         if (yearFilter)        af.year        = yearFilter;
         await authFetch(`${API}/booking/orders/export-audit`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -350,7 +356,11 @@ export default function OrderManagement() {
           /* align page heading with fixed mobile menu button */
           .om-root            { padding: 16px 12px 24px !important; overflow: auto !important; }
           .om-header          { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; margin-bottom: 12px !important; }
-          .om-header h2       { font-size: 16px !important; }
+          .om-header h2       {
+            min-height: 55px !important; display: flex !important; align-items: center !important; box-sizing: border-box !important;
+            margin: 0 !important; padding: 0 !important;
+            font-size: clamp(15px, 4.3vw, 17px) !important; font-weight: 600 !important; color: #333 !important; line-height: 1.25 !important;
+          }
           .om-filter-desktop  { display: none !important; }
           .om-filter-toggle   { display: flex !important; }
           .om-filter-mobile   { display: block !important; }
@@ -403,15 +413,17 @@ export default function OrderManagement() {
             <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Search (name, phone, area, address)</label>
             <input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && fetchOrders()} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }} />
           </div>
+          {!isFarm && (
           <div style={{ width: 88, minWidth: 88, flexShrink: 0 }}>
             <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px', whiteSpace: 'nowrap' }}>Cow number</label>
             <input type="text" placeholder="Cow #" value={cowNumber} onChange={(e) => setCowNumber(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && fetchOrders()} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }} />
           </div>
+          )}
           {[
-            { label: 'Slot',      val: slot,      set: setSlot,      opts: filters.slots      || [], w: 104 },
-            { label: 'Type',      val: orderType, set: setOrderType, opts: visibleOrderTypes,         w: 104 },
-            { label: 'Day',       val: day,       set: setDay,       opts: filters.days       || [], w: 80  },
-            { label: 'Reference', val: reference, set: setReference, opts: filters.references || [], w: 88  },
+            ...(!isFarm ? [{ label: 'Slot', val: slot, set: setSlot, opts: filters.slots || [], w: 104 }] : []),
+            { label: 'Type', val: orderType, set: setOrderType, opts: visibleOrderTypes, w: 104 },
+            ...(!isFarm ? [{ label: 'Day', val: day, set: setDay, opts: filters.days || [], w: 80 }] : []),
+            { label: 'Reference', val: reference, set: setReference, opts: filters.references || [], w: 88 },
           ].map(({ label, val, set, opts, w }) => (
             <div key={label} style={{ width: w, minWidth: w, flexShrink: 0 }}>
               <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px', whiteSpace: 'nowrap' }}>{label}</label>
@@ -443,15 +455,17 @@ export default function OrderManagement() {
         <div className="om-filter-mobile" style={{ display: 'none' }}>
           {mobileFiltersOpen && (
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {!isFarm && (
               <div>
                 <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Cow Number</label>
                 <input type="text" placeholder="Cow #" value={cowNumber} onChange={(e) => setCowNumber(e.target.value)}
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
               </div>
+              )}
               {[
-                { label: 'Slot',      val: slot,      set: setSlot,      opts: filters.slots      || [] },
-                { label: 'Type',      val: orderType, set: setOrderType, opts: visibleOrderTypes       },
-                { label: 'Day',       val: day,       set: setDay,       opts: filters.days       || [] },
+                ...(!isFarm ? [{ label: 'Slot', val: slot, set: setSlot, opts: filters.slots || [] }] : []),
+                { label: 'Type', val: orderType, set: setOrderType, opts: visibleOrderTypes },
+                ...(!isFarm ? [{ label: 'Day', val: day, set: setDay, opts: filters.days || [] }] : []),
                 { label: 'Reference', val: reference, set: setReference, opts: filters.references || [] },
               ].map(({ label, val, set, opts }) => (
                 <div key={label}>

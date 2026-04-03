@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { API_BASE as API } from '../config/api';
 
@@ -111,6 +111,8 @@ export default function Transactions() {
   const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
   const [filters, setFilters] = useState({ order_types: [] });
   const [searchQuery, setSearchQuery] = useState('');
+  /** Debounced so we search the full dataset via API without firing every keystroke */
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('all');
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const typeDropdownRef = useRef(null);
@@ -213,10 +215,22 @@ export default function Transactions() {
       const params = new URLSearchParams();
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       appliedTypes.forEach((t) => params.append('order_type', t));
+      if (isFarm && appliedTypes.length === 0) {
+        params.append('order_type', 'Cow');
+        params.append('order_type', 'Goat');
+      }
       if (isProcurement && appliedTypes.length > 0) params.set('type', appliedTypes[0]);
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
       if (isProcurement) params.delete('order_type');
+
+      if (debouncedSearch) params.set('search', debouncedSearch);
+      if (paymentStatusFilter === 'pending' || paymentStatusFilter === 'received') {
+        params.set('payment_status', paymentStatusFilter);
+      }
+      if (!isProcurement && isFarm) params.set('source', 'Farm');
+      if (!isProcurement && !isFarm) params.set('omit_hidden_types', '1');
+
       const endpoint = isProcurement ? `${API}/procurement/transactions/list?${params.toString()}` : `${API}/booking/orders?${params.toString()}`;
       const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
@@ -230,7 +244,7 @@ export default function Transactions() {
           return !HIDDEN_TYPES_BOOKING.includes(row.type);
         });
         setOrders(filtered);
-        setTotalCount(isFarm ? filtered.length : (typeof data.total === 'number' ? data.total : filtered.length));
+        setTotalCount(typeof data.total === 'number' ? data.total : filtered.length);
       } else {
         setError('Failed to load orders');
       }
@@ -239,13 +253,18 @@ export default function Transactions() {
     } finally {
       setLoading(false);
     }
-  }, [token, yearFilter, appliedTypes, page, isFarm, isProcurement]);
+  }, [token, yearFilter, appliedTypes, page, isFarm, isProcurement, debouncedSearch, paymentStatusFilter]);
 
   useEffect(() => { fetchFilters(); }, [fetchFilters]);
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
   useEffect(() => { fetchOrdersSummary(); }, [fetchOrdersSummary]);
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
-  useEffect(() => { setPage(1); }, [yearFilter, appliedTypes]);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  useEffect(() => { setPage(1); }, [yearFilter, appliedTypes, debouncedSearch, paymentStatusFilter]);
 
   useEffect(() => {
     if (!onHandAvailable) {
@@ -262,26 +281,7 @@ export default function Transactions() {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [typeDropdownOpen]);
 
-  const displayedOrders = useMemo(() => {
-    let result = orders;
-    if (paymentStatusFilter === 'received') {
-      result = result.filter((o) => o.payment_status !== 'Pending');
-    } else if (paymentStatusFilter === 'pending') {
-      result = result.filter((o) => o.payment_status === 'Pending');
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      result = result.filter((row) =>
-        activeColumns.some((col) => {
-          const val = row[col.key];
-          if (val == null) return false;
-          return String(val).toLowerCase().includes(q);
-        })
-      );
-    }
-    return result;
-  }, [orders, searchQuery, paymentStatusFilter, activeColumns]);
-
+  /* Search + payment status are applied in SQL (full dataset), then page/limit — not on the current page only */
   const openModal = (order) => {
     setModalOrder(order);
     setAddBank('');
@@ -400,14 +400,25 @@ export default function Transactions() {
         @media (max-width: 767px) {
           .txn-root              { padding: 16px 12px 24px !important; overflow: auto !important; }
 
-          /* Top bar */
-          .txn-topbar           { flex-wrap: nowrap !important; gap: 8px !important; margin-bottom: 12px !important; align-items: flex-start !important; padding-right: 0 !important; }
-          .txn-topbar h2        { font-size: 16px !important; flex-shrink: 0 !important; }
+          /* Top bar — same mobile title treatment as other pages (55px min, FAB clearance) */
+          .txn-topbar           { flex-wrap: nowrap !important; gap: 8px !important; margin-bottom: 12px !important; align-items: center !important; min-height: 55px !important; padding-right: 0 !important; box-sizing: border-box !important; }
+          .txn-topbar h2        {
+            flex: 1 !important; min-width: 0 !important;
+            padding: 0 clamp(48px, 14vw, 56px) 0 0 !important; margin: 0 !important;
+            font-size: clamp(15px, 4.3vw, 17px) !important; font-weight: 600 !important; color: #333 !important;
+            line-height: 1.25 !important; display: flex !important; align-items: center !important; box-sizing: border-box !important;
+          }
           .txn-topbar-controls  { display: none !important; }
-          .txn-mobile-header-actions { display: flex !important; }
+          .txn-mobile-fab-spacer { display: block !important; flex-shrink: 0 !important; }
 
-          /* Mobile filter/controls row */
-          .txn-mobile-row       { display: none !important; }
+          /* One row: Year + Filters (left) + Hide (right), vertically centered */
+          .txn-mobile-toolbar-above    { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 10px !important; margin-bottom: 10px !important; width: 100% !important; flex-wrap: nowrap !important; min-height: 40px !important; box-sizing: border-box !important; }
+          .txn-mobile-toolbar-above-left { display: flex !important; align-items: center !important; gap: 8px !important; flex: 1 !important; min-width: 0 !important; flex-wrap: wrap !important; }
+          .txn-mobile-toolbar-above .txn-mobile-year-lbl { font-size: 11px !important; color: #666 !important; white-space: nowrap !important; flex-shrink: 0 !important; }
+          .txn-mobile-toolbar-above select { height: 38px !important; box-sizing: border-box !important; }
+          .txn-mobile-toolbar-above .txn-mobile-filters-btn { height: 38px !important; box-sizing: border-box !important; display: inline-flex !important; align-items: center !important; }
+          .txn-mobile-toolbar-above .txn-mobile-hide-btn  { height: 38px !important; min-width: 38px !important; padding: 0 10px !important; box-sizing: border-box !important; flex-shrink: 0 !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; }
+          .txn-mobile-filter-shell     { display: block !important; width: 100% !important; }
 
           /* Summary cards — compact side by side */
           .txn-cards            { gap: 8px !important; margin-bottom: 12px !important; }
@@ -417,9 +428,6 @@ export default function Transactions() {
           .txn-card-label       { font-size: 10px !important; }
           .txn-card-amount      { font-size: 13px !important; }
           .txn-card-amount span { min-width: unset !important; padding: 4px 6px !important; }
-
-          .txn-showhide-mobile      { display: none !important; }
-          .txn-showhide-mobile-top  { display: none !important; }
 
           /* Search + status */
           .txn-search-row                 { flex-direction: row !important; align-items: center !important; flex-wrap: nowrap !important; gap: 8px !important; margin-bottom: 10px !important; }
@@ -463,7 +471,7 @@ export default function Transactions() {
 
       {/* ── Top bar ── */}
       <div className="txn-topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0, flexWrap: 'nowrap', gap: '10px' }}>
-        <h2 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#333', flexShrink: 0 }}>{isProcurement ? 'Procurement Transactions' : 'Transactions'}</h2>
+        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', flexShrink: 0 }}>{isProcurement ? 'Procurement Transactions' : 'Transactions'}</h2>
         <div className="txn-topbar-controls" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap', marginLeft: 'auto' }} ref={typeDropdownRef}>
 
           {/* Year filter */}
@@ -557,49 +565,50 @@ export default function Transactions() {
           </button>
         </div>
 
-        {/* ── Mobile top controls row (hidden on desktop) ── */}
-        <div className="txn-mobile-row" style={{ display: 'none', alignItems: 'center', gap: '8px', marginLeft: 'auto', marginRight: '44px' }}>
-          {/* Year */}
+        <div className="txn-mobile-fab-spacer" aria-hidden style={{ display: 'none', width: 46, height: 46, flexShrink: 0 }} />
+      </div>
+
+      {error && (
+        <div style={{ padding: '12px', background: '#FFF5F2', color: '#C62828', borderRadius: '8px', marginBottom: '16px', flexShrink: 0 }}>{error}</div>
+      )}
+
+      {/* Mobile: Year + Filters + Hide on one row (aligned) */}
+      <div className="txn-mobile-toolbar-above" style={{ display: 'none', flexShrink: 0 }}>
+        <div className="txn-mobile-toolbar-above-left">
+          <span className="txn-mobile-year-lbl">Year</span>
           <select
             value={yearFilter}
             onChange={(e) => { setYearFilter(e.target.value); setAppliedTypes([]); setSelectedTypes([]); }}
-            style={{ padding: '7px 8px', fontSize: '12px', borderRadius: '8px', border: '1px solid #e0e0e0', background: '#fff', minWidth: '80px' }}
+            style={{ padding: '0 10px', fontSize: '12px', borderRadius: '8px', border: '1px solid #e0e0e0', background: '#fff', minWidth: '88px', cursor: 'pointer' }}
           >
             <option value="all">All</option>
             <option value="2026">2026</option>
             <option value="2025">2025</option>
             <option value="2024">2024</option>
           </select>
-
-          {/* Filters toggle */}
           <button
             type="button"
+            className="txn-mobile-filters-btn"
             onClick={() => setMobileFiltersOpen((v) => !v)}
-            style={{ padding: '7px 12px', borderRadius: '8px', border: `1px solid ${mobileFiltersOpen ? '#FF5722' : '#e0e0e0'}`, background: mobileFiltersOpen ? '#fff4f0' : '#fff', color: mobileFiltersOpen ? '#FF5722' : '#555', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            style={{ padding: '0 12px', borderRadius: '8px', border: `1px solid ${mobileFiltersOpen ? '#FF5722' : '#e0e0e0'}`, background: mobileFiltersOpen ? '#fff4f0' : '#fff', color: mobileFiltersOpen ? '#FF5722' : '#555', fontSize: '12px', fontWeight: '500', cursor: 'pointer', whiteSpace: 'nowrap' }}
           >
             ⚙ Filters
           </button>
         </div>
-
-        {/* Mobile: spacer under fixed FAB, then Hide */}
-        <div className="txn-mobile-header-actions" style={{ display: 'none', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', marginLeft: 'auto' }}>
-          <div aria-hidden style={{ width: 46, height: 46, flexShrink: 0 }} />
-          <button
-            type="button"
-            onClick={() => setAmountVisible((v) => !v)}
-            title={amountVisible ? 'Hide' : 'Show'}
-            style={{ padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt="" style={{ width: '18px', height: '18px', display: 'block' }} />
-          </button>
-        </div>
+        <button
+          type="button"
+          className="txn-mobile-hide-btn"
+          onClick={() => setAmountVisible((v) => !v)}
+          title={amountVisible ? 'Hide' : 'Show'}
+          style={{ fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '8px', cursor: 'pointer' }}
+        >
+          <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
+        </button>
       </div>
 
-      {/* ── Mobile filter panel (hidden on desktop) ── */}
-      <div className="txn-mobile-row" style={{ display: 'none' }}>
+      <div className="txn-mobile-filter-shell" style={{ display: 'none', flexShrink: 0 }}>
         {mobileFiltersOpen && (
           <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
-            {/* Type multi-select */}
             <div>
               <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '6px', fontWeight: '500' }}>Order Type</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -617,8 +626,6 @@ export default function Transactions() {
                 })}
               </div>
             </div>
-
-            {/* Amount mode */}
             <div>
               <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '6px', fontWeight: '500' }}>Amount Mode</label>
               <select
@@ -631,8 +638,6 @@ export default function Transactions() {
                 <option value="actual">Actual</option>
               </select>
             </div>
-
-            {/* Actions */}
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
                 type="button"
@@ -652,10 +657,6 @@ export default function Transactions() {
           </div>
         )}
       </div>
-
-      {error && (
-        <div style={{ padding: '12px', background: '#FFF5F2', color: '#C62828', borderRadius: '8px', marginBottom: '16px', flexShrink: 0 }}>{error}</div>
-      )}
 
       {/* ── Summary cards ── */}
       <div className="txn-cards" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px', flexShrink: 0 }}>
@@ -688,19 +689,6 @@ export default function Transactions() {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* ── Mobile-only: show/hide button below cards, right-aligned ── */}
-      {/* Uses txn-showhide-mobile class — hidden on desktop, shown on mobile via CSS */}
-      <div className="txn-showhide-mobile" style={{ display: 'none', justifyContent: 'flex-end', marginTop: '-8px', marginBottom: '10px' }}>
-        <button
-          type="button"
-          onClick={() => setAmountVisible((v) => !v)}
-          title={amountVisible ? 'Hide' : 'Show'}
-          style={{ padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        >
-          <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
-        </button>
       </div>
 
       {/* ── Search + Status filter row ── */}
@@ -772,9 +760,9 @@ export default function Transactions() {
         )}
 
         {/* Result count when filtered */}
-        {(searchQuery || paymentStatusFilter !== 'all') && (
+        {(debouncedSearch || paymentStatusFilter !== 'all') && (
           <span className="txn-result-count" style={{ fontSize: '10px', color: '#888', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
-            {displayedOrders.length} result{displayedOrders.length !== 1 ? 's' : ''}
+            {totalCount} matching order{totalCount !== 1 ? 's' : ''}
           </span>
         )}
       </div>
@@ -804,14 +792,14 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {displayedOrders.length === 0 ? (
+                {orders.length === 0 ? (
                   <tr>
                     <td colSpan={activeColumns.length} style={{ padding: '32px', textAlign: 'center', color: '#666', fontSize: '11px' }}>
-                      {searchQuery || paymentStatusFilter !== 'all' ? 'No orders match your filters.' : 'No orders.'}
+                      {debouncedSearch || paymentStatusFilter !== 'all' ? 'No orders match your filters.' : 'No orders.'}
                     </td>
                   </tr>
                 ) : (
-                  displayedOrders.map((row) => (
+                  orders.map((row) => (
                     <tr
                       key={row.order_id}
                       onClick={() => openModal(row)}
@@ -847,10 +835,10 @@ export default function Transactions() {
       </div>
 
       {/* ── Pagination ── */}
-      {!loading && totalCount > 0 && !searchQuery && paymentStatusFilter === 'all' && (
+      {!loading && totalCount > 0 && Math.ceil(totalCount / PAGE_SIZE) > 1 && (
         <div className="txn-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px' }}>
           <span style={{ fontSize: '13px', color: '#666' }}>
-            Showing {orders.length} of {totalCount} orders
+            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCount)} of {totalCount} orders
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             <button

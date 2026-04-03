@@ -52,7 +52,11 @@ export default function ProcurementDashboard() {
         @media (max-width: 767px) {
           .pd-root { padding: 16px 12px 24px !important; }
           .pd-header { flex-direction: column !important; align-items: flex-start !important; gap: 10px !important; }
-          .pd-title { font-size: 16px !important; }
+          .pd-title {
+            min-height: 55px !important; display: flex !important; align-items: center !important; box-sizing: border-box !important;
+            margin: 0 !important; padding: 0 !important;
+            font-size: clamp(15px, 4.3vw, 17px) !important; font-weight: 600 !important; color: #333 !important; line-height: 1.25 !important;
+          }
           .pd-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>

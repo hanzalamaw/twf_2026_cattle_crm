@@ -234,10 +234,21 @@ const NewOrder = () => {
         }
 
         @media (max-width: 767px) {
-          .no-root  { padding: 16px 12px 32px !important; }
-          .no-header-row { padding-bottom: 14px !important; }
+          .no-root  { padding: 20px 12px 32px !important; }
+          .no-header-row {
+            margin-bottom: 10px !important; padding: 6px 0 18px 0 !important; min-height: 62px !important;
+            align-items: center !important; box-sizing: border-box !important;
+            justify-content: flex-start !important; gap: 0 !important; flex-wrap: nowrap !important;
+          }
           .no-header-back { display: none !important; }
-          .no-title { font-size: 16px !important; }
+          .no-mobile-fab-spacer { display: block !important; width: 46px !important; height: 46px !important; flex-shrink: 0 !important; }
+          .no-title {
+            padding: 0 10px 0 0 !important; margin: 0 !important;
+            font-size: clamp(15px, 4.3vw, 17px) !important; font-weight: 600 !important; color: #333 !important;
+            line-height: 1.3 !important; display: flex !important; align-items: center !important; flex: 1 !important; min-width: 0 !important; box-sizing: border-box !important;
+          }
+
+          .no-root form > .no-section:first-of-type { margin-top: 14px !important; }
           .no-section { padding: 14px 12px !important; margin-bottom: 12px !important; border-radius: 10px !important; }
           .no-section-title { font-size: 12px !important; margin-bottom: 12px !important; }
           .no-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
@@ -269,7 +280,7 @@ const NewOrder = () => {
       >
         {/* Header */}
         <div className="no-header-row" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', flexShrink: 0 }}>
-          <h2 className="no-title" style={{ fontSize: '14px', fontWeight: '600', color: '#333', margin: 0 }}>New Booking Order</h2>
+          <h2 className="no-title" style={{ fontSize: '18px', fontWeight: '600', color: '#333', margin: 0 }}>New Booking Order</h2>
           <button
             className="no-header-back"
             type="button"
@@ -280,6 +291,7 @@ const NewOrder = () => {
           >
             Back to Orders
           </button>
+          <div className="no-mobile-fab-spacer" aria-hidden style={{ display: 'none', width: 46, height: 46, flexShrink: 0 }} />
         </div>
 
         {/* Alerts */}

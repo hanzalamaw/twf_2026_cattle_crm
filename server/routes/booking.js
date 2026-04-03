@@ -589,7 +589,20 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
 
   app.get("/api/booking/orders", verifyToken, async (req, res) => {
     try {
-      const { search, slot, order_type, day, reference, cow_number, year, page, limit } = req.query;
+      const {
+        search,
+        slot,
+        order_type,
+        day,
+        reference,
+        cow_number,
+        year,
+        page,
+        limit,
+        payment_status,
+        source,
+        omit_hidden_types,
+      } = req.query;
       const conditions = [];
       const params = [];
 
@@ -603,11 +616,13 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       if (search && search.trim()) {
         const term = `%${search.trim()}%`;
         conditions.push(`(
+          o.order_id LIKE ? OR o.customer_id LIKE ? OR
+          o.cow_number LIKE ? OR o.hissa_number LIKE ? OR
           o.booking_name LIKE ? OR o.shareholder_name LIKE ? OR
           o.contact LIKE ? OR o.alt_contact LIKE ? OR
           o.area LIKE ? OR o.address LIKE ?
         )`);
-        params.push(term, term, term, term, term, term);
+        params.push(term, term, term, term, term, term, term, term, term, term);
       }
       if (slot) {
         conditions.push("o.slot = ?");
@@ -629,6 +644,18 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       if (cow_number && cow_number.trim()) {
         conditions.push("o.cow_number LIKE ?");
         params.push(`%${cow_number.trim()}%`);
+      }
+      if (payment_status === "pending") {
+        conditions.push("COALESCE(o.pending_amount, 0) > 0");
+      } else if (payment_status === "received") {
+        conditions.push("COALESCE(o.pending_amount, 0) <= 0");
+      }
+      if (source === "Farm") {
+        conditions.push("TRIM(COALESCE(o.order_source, '')) = 'Farm'");
+      }
+      // Booking transactions UI: exclude farm-only types from main booking list (SQL so LIMIT/total match)
+      if (omit_hidden_types === "1") {
+        conditions.push("(o.order_type IS NULL OR o.order_type NOT IN ('Cow', 'Goat'))");
       }
 
       const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";

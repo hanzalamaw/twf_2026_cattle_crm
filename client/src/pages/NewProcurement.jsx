@@ -176,8 +176,14 @@ export default function NewProcurement() {
       <style>{`
         @media (max-width: 767px) {
           .np-root  { padding: 16px 12px 32px !important; }
+          .np-header { margin-bottom: 20px !important; padding-bottom: 16px !important; min-height: 55px !important; align-items: center !important; box-sizing: border-box !important; }
           .np-header-back { display: none !important; }
-          .np-title { font-size: 16px !important; }
+          .np-title {
+            padding: 0 clamp(48px, 14vw, 56px) 0 0 !important; margin: 0 !important;
+            font-size: clamp(15px, 4.3vw, 17px) !important; font-weight: 600 !important; color: #333 !important;
+            line-height: 1.25 !important; display: flex !important; align-items: center !important; flex: 1 !important; min-width: 0 !important; box-sizing: border-box !important;
+          }
+          .np-root form > .np-section:first-of-type { margin-top: 10px !important; }
           .np-section { padding: 14px 12px !important; margin-bottom: 12px !important; border-radius: 10px !important; }
           .np-section-title { font-size: 12px !important; margin-bottom: 12px !important; }
           .np-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
@@ -199,8 +205,8 @@ export default function NewProcurement() {
           height: '100%', overflow: 'auto', boxSizing: 'border-box', background: '#F9FAFB',
         }}
       >
-        <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', flexShrink: 0 }}>
-          <h2 className="np-title" style={{ fontSize: '14px', fontWeight: '600', color: '#333', margin: 0 }}>New Procurement</h2>
+        <div className="np-header" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', flexShrink: 0 }}>
+          <h2 className="np-title" style={{ fontSize: '18px', fontWeight: '600', color: '#333', margin: 0 }}>New Procurement</h2>
           <button
             className="np-header-back"
             type="button"

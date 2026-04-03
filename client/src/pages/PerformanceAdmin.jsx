@@ -207,7 +207,7 @@ export default function PerformanceAdmin() {
   const s = {
     page: { padding: 19, fontFamily: "'Poppins','Inter',sans-serif", width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'auto' },
     headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 },
-    title: { margin: 0, fontSize: 14, fontWeight: 600, color: '#111827' },
+    title: { margin: 0, fontSize: 18, fontWeight: 600, color: '#111827' },
     btnPrimary: { padding: '5px 12px', fontSize: 11, fontWeight: 600, background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' },
     btnSecondary: { padding: '5px 12px', fontSize: 11, fontWeight: 500, background: '#fff', color: '#374151', border: '1px solid #e5e7eb', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' },
     alert: (type) => ({ padding: '8px 12px', borderRadius: 6, marginBottom: 10, fontSize: 10, fontWeight: 500, ...(type === 'error' ? { background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' } : { background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' }) }),
@@ -250,7 +250,12 @@ export default function PerformanceAdmin() {
         @media (max-width: 767px) {
 
           /* Header */
-          .pa-header-row       { margin-right: 44px !important; }
+          .pa-header-row       { margin-right: 44px !important; align-items: center !important; min-height: 55px !important; box-sizing: border-box !important; }
+          .pa-header-row h1    {
+            margin: 0 !important; padding: 0 !important;
+            font-size: clamp(15px, 4.3vw, 17px) !important; font-weight: 600 !important; color: #111827 !important;
+            line-height: 1.25 !important; display: flex !important; align-items: center !important; flex: 1 !important; min-width: 0 !important; box-sizing: border-box !important;
+          }
 
           /* Summary grid — 2 col */
           .pa-summary-grid     { grid-template-columns: 1fr 1fr !important; gap: 8px !important; margin-bottom: 12px !important; }

@@ -408,6 +408,12 @@ ALTER TABLE `booking_expenses`
   ADD KEY `created_by` (`created_by`);
 
 --
+-- Indexes for table `farm_expenses`
+--
+ALTER TABLE `farm_expenses`
+  ADD PRIMARY KEY (`expense_id`);
+
+--
 -- Indexes for table `cancelled_orders`
 --
 ALTER TABLE `cancelled_orders`

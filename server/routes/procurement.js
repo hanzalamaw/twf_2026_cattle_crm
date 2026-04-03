@@ -429,7 +429,7 @@ export const registerProcurementRoutes = (app, db, verifyToken) => {
   // List procurements for transactions page (with bank/cash split from payment entries)
   app.get("/api/procurement/transactions/list", verifyToken, async (req, res) => {
     try {
-      const { search, type, year, page, limit } = req.query;
+      const { search, type, year, page, limit, payment_status } = req.query;
       const conditions = [];
       const params = [];
 
@@ -448,6 +448,11 @@ export const registerProcurementRoutes = (app, db, verifyToken) => {
         const term = `%${String(search).trim()}%`;
         conditions.push("(p.procurement_id LIKE ? OR p.type LIKE ?)");
         params.push(term, term);
+      }
+      if (payment_status === "pending") {
+        conditions.push("COALESCE(p.price_due, 0) > 0");
+      } else if (payment_status === "received") {
+        conditions.push("COALESCE(p.price_due, 0) <= 0");
       }
 
       const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";

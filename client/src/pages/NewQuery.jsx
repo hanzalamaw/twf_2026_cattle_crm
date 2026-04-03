@@ -190,12 +190,23 @@ const NewQuery = () => {
         /* ── Mobile overrides ── */
         @media (max-width: 767px) {
 
-          .nq-root { padding: 16px 12px 32px !important; }
+          .nq-root { padding: 20px 12px 32px !important; }
 
-          /* Extra space below heading so fixed FAB does not cover content */
-          .nq-header { margin-bottom: 14px !important; padding-bottom: 14px !important; }
+          .nq-header {
+            margin-bottom: 22px !important; padding: 6px 0 18px 0 !important; min-height: 62px !important;
+            align-items: center !important; box-sizing: border-box !important;
+            justify-content: flex-start !important; gap: 0 !important; flex-wrap: nowrap !important;
+          }
           .nq-header-back { display: none !important; }
-          .nq-title { font-size: 16px !important; }
+          .nq-mobile-fab-spacer { display: block !important; width: 46px !important; height: 46px !important; flex-shrink: 0 !important; }
+          .nq-title {
+            padding: 0 10px 0 0 !important; margin: 0 !important;
+            font-size: clamp(15px, 4.3vw, 17px) !important; font-weight: 600 !important; color: #333 !important;
+            line-height: 1.3 !important; display: flex !important; align-items: center !important; flex: 1 !important; min-width: 0 !important; box-sizing: border-box !important;
+          }
+
+          /* Extra air below heading / above first form section */
+          .nq-root form > .nq-section:first-of-type { margin-top: 14px !important; }
 
           /* sections */
           .nq-section { padding: 14px 12px !important; margin-bottom: 12px !important; border-radius: 10px !important; }
@@ -266,7 +277,7 @@ const NewQuery = () => {
             flexShrink: 0,
           }}
         >
-          <h2 className="nq-title" style={{ fontSize: '14px', fontWeight: '600', color: '#333', margin: 0 }}>
+          <h2 className="nq-title" style={{ fontSize: '18px', fontWeight: '600', color: '#333', margin: 0 }}>
             New Lead
           </h2>
           <button
@@ -282,6 +293,7 @@ const NewQuery = () => {
           >
             Back to Queries
           </button>
+          <div className="nq-mobile-fab-spacer" aria-hidden style={{ display: 'none', width: 46, height: 46, flexShrink: 0 }} />
         </div>
 
         {/* Alerts */}
