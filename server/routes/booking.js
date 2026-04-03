@@ -671,6 +671,14 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         conditions.push("l.area = ?");
         params.push(area.trim());
       }
+      if (req.query.source === "Farm") {
+        conditions.push("l.order_source = ?");
+        params.push("Farm");
+      }
+      // Booking Query Management: exclude farm-only order types (must be in SQL so LIMIT/total match the table)
+      if (req.query.omit_hidden_types === "1") {
+        conditions.push("(l.order_type IS NULL OR l.order_type NOT IN ('Cow', 'Goat'))");
+      }
 
       const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
       const limitNum = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
@@ -728,6 +736,13 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         params.push(year);
       } else if (year === "2024") {
         conditions.push("(booking_date IS NULL OR YEAR(booking_date) < 2025)");
+      }
+      if (req.query.source === "Farm") {
+        conditions.push("order_source = ?");
+        params.push("Farm");
+      }
+      if (req.query.omit_hidden_types === "1") {
+        conditions.push("(order_type IS NULL OR order_type NOT IN ('Cow', 'Goat'))");
       }
       const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
       const andOrWhere = whereClause ? " AND " : " WHERE ";

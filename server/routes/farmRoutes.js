@@ -333,6 +333,71 @@ export const registerFarmRoutes = (app, db, verifyToken) => {
   });
 
   // -----------------------
+  // Farm Transactions (2026, Farm orders + farm_expenses — mirrors booking transactions logic)
+  // -----------------------
+  app.get("/api/farm/transactions", verifyToken, async (req, res) => {
+    try {
+      const [paySum] = await db.execute(
+        `SELECT COALESCE(SUM(p.bank), 0) AS total_bank, COALESCE(SUM(p.cash), 0) AS total_cash
+         FROM payments p
+         INNER JOIN orders o ON o.order_id = p.order_id
+         WHERE TRIM(COALESCE(o.order_source, '')) = 'Farm'
+           AND o.order_type IN ('Cow', 'Goat')
+           AND YEAR(o.booking_date) = 2026`
+      );
+      const [expSum] = await db.execute(
+        `SELECT COALESCE(SUM(bank), 0) AS expenses_bank, COALESCE(SUM(cash), 0) AS expenses_cash
+         FROM farm_expenses
+         WHERE YEAR(done_at) = 2026`
+      );
+      const totalBank = Number(paySum[0]?.total_bank ?? 0);
+      const totalCash = Number(paySum[0]?.total_cash ?? 0);
+      const totalExpensesBank = Number(expSum[0]?.expenses_bank ?? 0);
+      const totalExpensesCash = Number(expSum[0]?.expenses_cash ?? 0);
+      const onHand = totalBank - totalExpensesBank;
+      const actual = totalCash - totalExpensesCash;
+      const totalAmount = totalBank + totalCash;
+      res.json({
+        summary: {
+          totalBank,
+          totalCash,
+          totalExpensesBank,
+          totalExpensesCash,
+          onHand,
+          actual,
+          totalAmount,
+        },
+      });
+    } catch (e) {
+      logError("FARM", "Transactions summary error", e);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  /** Bank/cash received on Farm Cow/Goat orders (booking_date year 2026) — for Transactions amount cards */
+  app.get("/api/farm/orders/summary", verifyToken, async (req, res) => {
+    try {
+      const [rows] = await db.execute(
+        `SELECT COALESCE(SUM(p.bank), 0) AS total_bank, COALESCE(SUM(p.cash), 0) AS total_cash
+         FROM orders o
+         LEFT JOIN (
+           SELECT order_id, SUM(bank) AS bank, SUM(cash) AS cash FROM payments GROUP BY order_id
+         ) p ON o.order_id = p.order_id
+         WHERE TRIM(COALESCE(o.order_source, '')) = 'Farm'
+           AND o.order_type IN ('Cow', 'Goat')
+           AND YEAR(o.booking_date) = 2026`
+      );
+      res.json({
+        totalBank: Number(rows[0]?.total_bank ?? 0),
+        totalCash: Number(rows[0]?.total_cash ?? 0),
+      });
+    } catch (e) {
+      logError("FARM", "Orders summary error", e);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // -----------------------
   // Farm Expenses (CRUD)
   // -----------------------
   app.get("/api/farm/expenses/summary", verifyToken, async (req, res) => {
