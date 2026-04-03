@@ -1967,28 +1967,49 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
         .text("# 13, Karachi", fromX, topY + 62, { lineBreak: false })
         .text("Contact: 0331-9911466", fromX, topY + 80, { lineBreak: false });
 
-      // --- TO column ---
+      // --- TO column (full text, wraps — no ellipsis) ---
       const toX = ML + 352;
-      const customerName = (customer.shareholder_name || customer.booking_name || "Customer Name").trim();
-      const customerAddr = customer.address || "—";
-      const customerContact = customer.contact || "—";
+      const customerName = (customer.booking_name || customer.shareholder_name || "Customer Name").trim();
+      const customerAddr = String(customer.address || "—");
+      const customerContact = String(customer.contact || "—");
+      const toColWidth = RIGHT - toX - 8;
+      const toWrap = { width: toColWidth, lineGap: 2 };
 
       doc.font("Helvetica-Bold").fontSize(11).fillColor(C_TITLE)
         .text("TO", toX, topY + 4, { lineBreak: false });
 
-      doc.font("Helvetica-Bold").fontSize(13).fillColor("#111111")
-        .text(truncate(customerName, 155, "Helvetica-Bold", 13), toX, topY + 24, { lineBreak: false });
+      doc.font("Helvetica-Bold").fontSize(13).fillColor("#111111");
+      const toNameH = doc.heightOfString(customerName, toWrap);
 
-      doc.font("Helvetica").fontSize(10.5).fillColor(C_SUB)
-        .text(truncate(customerAddr, 155, "Helvetica", 10.5), toX, topY + 46, { lineBreak: false })
-        .text(`Customer Contact: ${customerContact}`, toX, topY + 62, { width: 160, lineBreak: false });
+      doc.font("Helvetica").fontSize(10.5).fillColor(C_SUB);
+      const toAddrH = doc.heightOfString(customerAddr, toWrap);
+
+      const toContactLine = `Customer Contact: ${customerContact}`;
+      const toContactH = doc.heightOfString(toContactLine, toWrap);
+
+      const toContentTop = topY + 24;
+      const toGapNameAddr = 6;
+      const toGapAddrContact = 6;
+      const toBlockBottom =
+        toContentTop + toNameH + toGapNameAddr + toAddrH + toGapAddrContact + toContactH;
 
       // ── TABLE HEADER ──────────────────────────────────────────────────────────
       // Matched to image: light bg card with border, bold labels
-      let tableY = topY + cardH + 28;
+      let tableY = Math.max(topY + cardH + 28, toBlockBottom + 18);
+
+      let toY = toContentTop;
+      doc.font("Helvetica-Bold").fontSize(13).fillColor("#111111");
+      doc.text(customerName, toX, toY, toWrap);
+      toY += toNameH + toGapNameAddr;
+
+      doc.font("Helvetica").fontSize(10.5).fillColor(C_SUB);
+      doc.text(customerAddr, toX, toY, toWrap);
+      toY += toAddrH + toGapAddrContact;
+
+      doc.text(toContactLine, toX, toY, toWrap);
 
       const ROW_H    = 30;  // header row height
-      const ITEM_H   = 46;  // data row height — tighter, matches image
+      const ITEM_H   = 52;  // data row — order type + shareholder + cow/hissa
       const GAP      = 8;   // gap between rows
 
       // Column X positions (left-edge of each column text)
@@ -2030,31 +2051,40 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
         doc.roundedRect(ML, rowY, CW, ITEM_H, 4)
           .fillColor(C_BG).fill();
 
-        // Description: bold title + muted subtitle
+        // Description: order type + shareholder (medium) + cow/hissa
         const displayType = (row.type === "Hissa - Standard") ? "Hissa - Ijtimai" : (row.type || "Hissa");
         const itemTitle = truncate(`${displayType} (${row.day || "1"})`, 190, "Helvetica-Bold", 11);
+        const shareholderLine = truncate(
+          `Shareholder Name: ${row.shareholder_name || "—"}`,
+          190,
+          "Helvetica",
+          10
+        );
         const itemSub   = `Cow: ${row.cow || "—"} | Hissa: ${row.hissa || "—"}`;
 
         doc.font("Helvetica-Bold").fontSize(11).fillColor("#1a1a1a")
-          .text(itemTitle, COL_DESC, rowY + 10, { lineBreak: false });
+          .text(itemTitle, COL_DESC, rowY + 7, { lineBreak: false });
+        doc.font("Helvetica").fontSize(10).fillColor("#4a4a4a")
+          .text(shareholderLine, COL_DESC, rowY + 22, { lineBreak: false });
         doc.font("Helvetica").fontSize(9.5).fillColor("#5f5f5f")
-          .text(itemSub,   COL_DESC, rowY + 28, { lineBreak: false });
+          .text(itemSub,   COL_DESC, rowY + 36, { lineBreak: false });
 
-        // Quantity — centred under header
+        // Quantity — vertically centred in row with description block
+        const qtyY = rowY + 19;
         doc.font("Helvetica").fontSize(11).fillColor(C_BODY)
-          .text("1", COL_QTY + 20, rowY + 17, { width: 20, align: "center", lineBreak: false });
+          .text("1", COL_QTY + 20, qtyY, { width: 20, align: "center", lineBreak: false });
 
         // Rate
         doc.font("Helvetica").fontSize(11).fillColor(C_BODY)
-          .text(`PKR ${fmt(row.total_amount)}`, COL_RATE - 4, rowY + 17, { width: 90, lineBreak: false });
+          .text(`PKR ${fmt(row.total_amount)}`, COL_RATE - 4, qtyY, { width: 90, lineBreak: false });
 
         // Paid (green)
         doc.font("Helvetica-Bold").fontSize(11).fillColor(C_GREEN)
-          .text(`PKR ${fmt(row.received_amount)}`, COL_PAID - 4, rowY + 17, { width: 80, lineBreak: false });
+          .text(`PKR ${fmt(row.received_amount)}`, COL_PAID - 4, qtyY, { width: 80, lineBreak: false });
 
         // Due (red)
         doc.font("Helvetica-Bold").fontSize(11).fillColor(C_RED)
-          .text(`PKR ${fmt(row.pending_amount)}`, COL_DUE - 4, rowY + 17, { width: 80, lineBreak: false });
+          .text(`PKR ${fmt(row.pending_amount)}`, COL_DUE - 4, qtyY, { width: 80, lineBreak: false });
 
         rowY += ITEM_H + GAP;
       }
