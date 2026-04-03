@@ -5,7 +5,8 @@ import { API_BASE as API } from '../config/api';
 import { useAuth } from '../context/AuthContext';
 const PAGE_SIZE = 50;
 const HIDDEN_TYPES_BOOKING = ['Cow', 'Goat'];
-const CONFIRM_ORDER_TYPES = ['Cow', 'Goat', 'Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];
+const CONFIRM_ORDER_TYPES_BOOKING = ['Cow', 'Goat', 'Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];
+const CONFIRM_ORDER_TYPES_FARM = ['Cow', 'Goat'];
 const CLOSED_BY_OPTIONS = ['Ashhad Bhai', 'Ammar Bhai', 'Ashhal', 'Abuzar', 'Omer', 'Abdullah', 'Huzaifa', 'Hanzala', 'External'];
 const DAYS = ['DAY 1', 'DAY 2', 'DAY 3'];
 const ORDER_TYPE_PRESET_AMOUNTS = { 'Hissa - Standard': '25000', 'Hissa - Premium': '30000', 'Hissa - Waqf': '21000' };
@@ -44,6 +45,14 @@ function formatDate(val) {
   const s = String(val);
   return s.includes('T') ? s.split('T')[0] : s;
 }
+/** YYYY-MM-DD or null for API bodies (farm confirm uses lead date without showing the field). */
+function apiDateFromLead(val) {
+  if (val == null || val === '') return null;
+  const s = String(val);
+  if (s.includes('T')) return s.split('T')[0];
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : s;
+}
 function formatCreated(val) {
   if (val == null || val === '') return '—';
   try { return new Date(val).toLocaleString(); } catch { return String(val); }
@@ -53,11 +62,12 @@ function cellVal(col, row) {
   if (AMOUNT_KEYS.includes(col.key)) return formatAmount(val);
   if (col.key === 'booking_date') return formatDate(val);
   if (col.key === 'created_at') return formatCreated(val);
+  if (col.key === 'query_by') return val != null && String(val).trim() !== '' ? String(val) : '—';
   return val != null ? String(val) : '—';
 }
 
 export default function QueryManagement() {
-  const { user } = useAuth();
+  const { user, authFetch } = useAuth();
   const [leads, setLeads] = useState([]);
   const [filters, setFilters] = useState({ order_types: [], days: [], references: [] });
   const [search, setSearch] = useState('');
@@ -111,11 +121,13 @@ export default function QueryManagement() {
     try {
       const params = new URLSearchParams();
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+      if (isFarm) params.set('source', 'Farm');
+      if (!isFarm) params.set('omit_hidden_types', '1');
       const url = `${API}/booking/leads/filters${params.toString() ? `?${params}` : ''}`;
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(url);
       if (res.ok) { const data = await res.json(); setFilters(data); }
     } catch (e) { console.error(e); }
-  }, [token, yearFilter]);
+  }, [authFetch, yearFilter, isFarm]);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true); setError('');
@@ -127,27 +139,25 @@ export default function QueryManagement() {
       if (reference) params.set('reference', reference);
       if (area) params.set('area', area);
       if (isFarm) params.set('source', 'Farm');
+      if (!isFarm) params.set('omit_hidden_types', '1');
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
-      const res = await fetch(`${API}/booking/leads?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${API}/booking/leads?${params}`);
       if (res.ok) {
         const json = await res.json();
-        const data = Array.isArray(json) ? json : json.data;
-        const total = typeof json.total === 'number' ? json.total : (data?.length ?? 0);
-        const filtered = (Array.isArray(data) ? data : []).filter((r) =>
-          (!isFarm ? !HIDDEN_TYPES_BOOKING.includes(r.type) : true) &&
-          (!isFarm || String(r.source ?? '').trim() === 'Farm')
-        );
-        setLeads(filtered);
-        setTotalCount(isFarm ? filtered.length : (typeof json.total === 'number' ? total : filtered.length));
+        const raw = Array.isArray(json) ? json : json?.data;
+        const data = Array.isArray(raw) ? raw : [];
+        const total = typeof json.total === 'number' ? json.total : data.length;
+        setLeads(data);
+        setTotalCount(total);
       } else { setError('Failed to load queries'); }
     } catch (e) { setError('Failed to load queries'); }
     finally { setLoading(false); }
-  }, [token, search, orderType, day, reference, area, yearFilter, page, isFarm]);
+  }, [authFetch, search, orderType, day, reference, area, yearFilter, page, isFarm]);
 
   useEffect(() => { fetchFilters(); }, [fetchFilters]);
-  useEffect(() => { setPage(1); }, [search, orderType, day, reference, area, yearFilter]);
+  useEffect(() => { setPage(1); }, [search, orderType, day, reference, area, yearFilter, isFarm]);
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
   useEffect(() => {
@@ -158,20 +168,25 @@ export default function QueryManagement() {
     const genOrder = async () => {
       if (!ot) return;
       try {
-        const res = await fetch(`${API}/booking/generate-order-id`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: ot }) });
+        const res = await authFetch(`${API}/booking/generate-order-id`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order_type: ot }) });
         if (res.ok) { const d2 = await res.json(); setConfirmForm((p) => ({ ...p, order_id: d2.order_id || '' })); }
       } catch (e) { console.error(e); }
     };
     const getCowHissa = async () => {
-      if (!ot) return;
+      if (!ot || isFarm) return;
       if (ot === 'Goat (Hissa)') { setConfirmForm((p) => ({ ...p, cow_number: '0', hissa_number: '0' })); return; }
       try {
-        const res = await fetch(`${API}/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: ot, day: d || null, booking_date: ds || null }) });
+        const res = await authFetch(`${API}/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order_type: ot, day: d || null, booking_date: ds || null }) });
         if (res.ok) { const d2 = await res.json(); setConfirmForm((p) => ({ ...p, cow_number: d2.cow_number || '', hissa_number: d2.hissa_number || '' })); }
       } catch (e) { console.error(e); }
     };
-    genOrder(); getCowHissa();
-  }, [confirmModalLead, token, confirmForm.order_type, confirmForm.booking_date]);
+    genOrder();
+    if (isFarm) {
+      setConfirmForm((p) => ({ ...p, cow_number: '0', hissa_number: '0' }));
+    } else {
+      getCowHissa();
+    }
+  }, [confirmModalLead, token, confirmForm.order_type, confirmForm.booking_date, authFetch, isFarm]);
 
   const toggleSelect = (id) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleSelectAll = () => selectedIds.size === leads.length ? setSelectedIds(new Set()) : setSelectedIds(new Set(leads.map((r) => r.lead_id)));
@@ -186,14 +201,14 @@ export default function QueryManagement() {
   const checkDup = useCallback(async (c, h, ot, d, bd) => {
     if (!c || !h || !ot || !token || shouldSkip(ot, c, h)) return null;
     try {
-      const res = await fetch(`${API}/booking/check-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ cow_number: c, hissa_number: h, order_type: ot, day: d || null, booking_date: bd || null }) });
+      const res = await authFetch(`${API}/booking/check-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cow_number: c, hissa_number: h, order_type: ot, day: d || null, booking_date: bd || null }) });
       if (res.ok) { const d2 = await res.json(); return d2.exists ? d2 : null; }
     } catch (e) { console.error(e); }
     return null;
-  }, [token]);
+  }, [authFetch, token]);
 
   useEffect(() => {
-    if (!confirmModalLead || !token) return;
+    if (!confirmModalLead || !token || isFarm) return;
     const { cow_number: c, hissa_number: h, booking_date: bd } = confirmForm;
     const ot = confirmForm.order_type || ''; const d = confirmForm.day || '';
     if (!(c || '').trim() || !(h || '').trim() || !ot || shouldSkip(ot, c, h)) { setConfirmDuplicateError(null); return; }
@@ -203,23 +218,24 @@ export default function QueryManagement() {
       setConfirmDuplicateError(dup || null);
     }, 400);
     return () => { if (confirmDuplicateCheckTimeoutRef.current) clearTimeout(confirmDuplicateCheckTimeoutRef.current); };
-  }, [confirmForm.cow_number, confirmForm.hissa_number, confirmForm.booking_date, confirmForm.day, confirmModalLead, token, checkDup]);
+  }, [confirmForm.cow_number, confirmForm.hissa_number, confirmForm.booking_date, confirmForm.day, confirmModalLead, token, checkDup, isFarm]);
 
   const handleConfirmClick = (lead) => {
     setConfirmModalLead(lead); setConfirmDuplicateError(null); setConfirmFormErrors({});
+    const presetAmount = ORDER_TYPE_PRESET_AMOUNTS[lead.type || ''] || '';
     setConfirmForm({
       order_type: lead.type || '',
-      total_amount: lead.total_amount != null && String(lead.total_amount).trim() !== '' ? String(lead.total_amount) : '',
+      total_amount: lead.total_amount != null && String(lead.total_amount).trim() !== '' ? String(lead.total_amount) : (isFarm ? presetAmount : ''),
       address: lead.address || '',
       area: lead.area || '',
-      day: lead.day || '',
+      day: isFarm ? '' : (lead.day || ''),
       closed_by: '',
-      shareholder_name: lead.shareholder_name || '',
+      shareholder_name: isFarm ? '-' : (lead.shareholder_name || ''),
       order_id: '',
       slot: '',
-      booking_date: formatDate(lead.booking_date) || '',
-      cow_number: '',
-      hissa_number: ''
+      booking_date: isFarm ? (apiDateFromLead(lead.booking_date) || '') : (formatDate(lead.booking_date) === '—' ? '' : formatDate(lead.booking_date)),
+      cow_number: isFarm ? '0' : '',
+      hissa_number: isFarm ? '0' : ''
     });
   };
 
@@ -244,25 +260,42 @@ export default function QueryManagement() {
     else if (!Number.isFinite(totalAmount) || totalAmount < 0) fe.total_amount = 'Total amount must be a valid positive number';
     if (!(confirmForm.address || '').trim()) fe.address = 'Address is required';
     if (!(confirmForm.area || '').trim()) fe.area = 'Area is required';
-    if (!d) fe.day = 'Day is required';
     if (!(confirmForm.closed_by || '').trim()) fe.closed_by = 'Closed by is required';
-    if (!(confirmForm.shareholder_name || '').trim()) fe.shareholder_name = 'Shareholder name is required';
     if (!(confirmForm.order_id || '').trim()) fe.order_id = 'Order ID is required';
-    if (!(confirmForm.slot || '').trim()) fe.slot = 'Slot is required';
-    if (!bd) fe.booking_date = 'Booking date is required';
-    if (!c) fe.cow_number = 'Cow number is required';
-    if (!h) fe.hissa_number = 'Hissa number is required';
+    if (isFarm) {
+      if (!bd) fe.booking_date = 'Booking date is required';
+    } else {
+      if (!d) fe.day = 'Day is required';
+      if (!(confirmForm.shareholder_name || '').trim()) fe.shareholder_name = 'Shareholder name is required';
+      if (!(confirmForm.slot || '').trim()) fe.slot = 'Slot is required';
+      if (!bd) fe.booking_date = 'Booking date is required';
+      if (!c) fe.cow_number = 'Cow number is required';
+      if (!h) fe.hissa_number = 'Hissa number is required';
+    }
     if (Object.keys(fe).length > 0) { setConfirmFormErrors(fe); return; }
     setConfirmFormErrors({});
-    if (c && h && ot && !shouldSkip(ot, c, h)) {
+    if (!isFarm && c && h && ot && !shouldSkip(ot, c, h)) {
       const dup = await checkDup(c, h, ot, d, bd);
       if (dup) { setConfirmDuplicateError(dup); return; }
     }
     setConfirmDuplicateError(null); setConfirmingLeadId(lead.lead_id); setError('');
     try {
-      const res = await fetch(`${API}/booking/leads/${encodeURIComponent(lead.lead_id)}/confirm-order`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
+      const res = await authFetch(`${API}/booking/leads/${encodeURIComponent(lead.lead_id)}/confirm-order`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(isFarm ? {
+          order_type: ot,
+          total_amount: totalAmount,
+          address: (confirmForm.address || '').trim(),
+          area: (confirmForm.area || '').trim(),
+          day: null,
+          closed_by: (confirmForm.closed_by || '').trim(),
+          shareholder_name: '-',
+          order_id: (confirmForm.order_id || '').trim(),
+          slot: null,
+          booking_date: bd || null,
+          cow_number: '0',
+          hissa_number: '0'
+        } : {
           order_type: ot,
           total_amount: totalAmount,
           address: (confirmForm.address || '').trim(),
@@ -325,8 +358,8 @@ export default function QueryManagement() {
     try {
       const payload = { ...editRow }; delete payload.lead_id;
       if (payload.booking_date) payload.booking_date = String(payload.booking_date).split('T')[0] || payload.booking_date;
-      const res = await fetch(`${API}/booking/leads/${encodeURIComponent(editRow.lead_id)}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      const res = await authFetch(`${API}/booking/leads/${encodeURIComponent(editRow.lead_id)}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       const data = await res.json().catch(() => ({}));
@@ -340,7 +373,7 @@ export default function QueryManagement() {
     if (!deleteConfirm) return;
     const id = deleteConfirm.lead_id; setDeleteConfirm(null);
     try {
-      const res = await fetch(`${API}/booking/leads/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${API}/booking/leads/${encodeURIComponent(id)}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (res.ok) { setSelectedIds((p) => { const n = new Set(p); n.delete(id); return n; }); fetchLeads(); }
       else setError(data.message || 'Failed to delete lead');
@@ -348,21 +381,28 @@ export default function QueryManagement() {
   };
 
   const handleExport = async () => {
-    const ids = Array.from(selectedIds); let allLeads = []; const limit = 100; let pageNum = 1; let total = 0;
+    const ids = Array.from(selectedIds);
+    let allLeads = [];
+    const limit = 100;
+    let pageNum = 1;
     do {
       const params = new URLSearchParams();
-      if (search.trim()) params.set('search', search.trim()); if (orderType) params.set('order_type', orderType);
-      if (day) params.set('day', day); if (reference) params.set('reference', reference);
-      if (area) params.set('area', area); if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-      params.set('page', String(pageNum)); params.set('limit', String(limit));
-      const res = await fetch(`${API}/booking/leads?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (search.trim()) params.set('search', search.trim());
+      if (orderType) params.set('order_type', orderType);
+      if (day) params.set('day', day);
+      if (reference) params.set('reference', reference);
+      if (area) params.set('area', area);
+      if (isFarm) params.set('source', 'Farm');
+      if (!isFarm) params.set('omit_hidden_types', '1');
+      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+      params.set('page', String(pageNum));
+      params.set('limit', String(limit));
+      const res = await authFetch(`${API}/booking/leads?${params}`);
       if (!res.ok) { setError('Failed to load queries for export'); return; }
-      const json = await res.json(); const data = Array.isArray(json) ? json : json.data;
-      total = typeof json.total === 'number' ? json.total : 0;
-      const chunk = (Array.isArray(data) ? data : []).filter((r) =>
-        (!isFarm ? !HIDDEN_TYPES_BOOKING.includes(r.type) : true) &&
-        (!isFarm || String(r.source ?? '').trim() === 'Farm')
-      );
+      const json = await res.json();
+      const raw = Array.isArray(json) ? json : json?.data;
+      const chunk = Array.isArray(raw) ? raw : [];
+      const total = typeof json.total === 'number' ? json.total : chunk.length;
       allLeads = allLeads.concat(chunk);
       if (chunk.length < limit || allLeads.length >= total) break;
       pageNum++;
@@ -385,8 +425,8 @@ export default function QueryManagement() {
       if (search?.trim()) af.search = search.trim(); if (area) af.area = area;
       if (orderType) af.order_type = orderType; if (day) af.day = day;
       if (reference) af.reference = reference; if (yearFilter) af.year = yearFilter;
-      await fetch(`${API}/booking/leads/export-audit`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      await authFetch(`${API}/booking/leads/export-audit`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count: toExport.length, ...(Object.keys(af).length > 0 && { filters: af }), ...(ids.length > 0 && { lead_ids: ids }) })
       });
     } catch (e) { console.error('Export audit failed', e); }
@@ -582,8 +622,8 @@ export default function QueryManagement() {
                         order_type: nextType,
                         total_amount: preset || '0',
                         order_id: '',
-                        cow_number: '',
-                        hissa_number: ''
+                        cow_number: isFarm ? '0' : '',
+                        hissa_number: isFarm ? '0' : ''
                       }));
                       setConfirmDuplicateError(null);
                       setConfirmFormErrors((p) => ({ ...p, order_type: undefined }));
@@ -591,7 +631,7 @@ export default function QueryManagement() {
                     style={miStyle(confirmFormErrors.order_type)}
                   >
                     <option value="">Select Order Type</option>
-                    {CONFIRM_ORDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    {(isFarm ? CONFIRM_ORDER_TYPES_FARM : CONFIRM_ORDER_TYPES_BOOKING).map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                   {confirmFormErrors.order_type && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.order_type}</div>}
                 </div>
@@ -607,6 +647,7 @@ export default function QueryManagement() {
                   />
                   {confirmFormErrors.total_amount && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.total_amount}</div>}
                 </div>
+                {!isFarm && (
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Shareholder Name <span style={{ color: '#dc2626' }}>*</span></label>
                   <input
@@ -616,6 +657,7 @@ export default function QueryManagement() {
                   />
                   {confirmFormErrors.shareholder_name && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.shareholder_name}</div>}
                 </div>
+                )}
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Area <span style={{ color: '#dc2626' }}>*</span></label>
                   <input
@@ -635,6 +677,7 @@ export default function QueryManagement() {
                   />
                   {confirmFormErrors.address && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.address}</div>}
                 </div>
+                {!isFarm && (
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Day <span style={{ color: '#dc2626' }}>*</span></label>
                   <select
@@ -652,6 +695,7 @@ export default function QueryManagement() {
                   </select>
                   {confirmFormErrors.day && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.day}</div>}
                 </div>
+                )}
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Closed By <span style={{ color: '#dc2626' }}>*</span></label>
                   <select
@@ -669,6 +713,7 @@ export default function QueryManagement() {
                   <input value={confirmForm.order_id} readOnly placeholder="Auto-generated" style={{ ...miStyle(confirmFormErrors.order_id), background: '#f5f5f5', cursor: 'not-allowed', color: '#555' }} />
                   {confirmFormErrors.order_id && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.order_id}</div>}
                 </div>
+                {!isFarm && (
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Slot <span style={{ color: '#dc2626' }}>*</span></label>
                   <select value={confirmForm.slot} onChange={(e) => { setConfirmForm((p) => ({ ...p, slot: e.target.value })); setConfirmFormErrors((p) => ({ ...p, slot: undefined })); }} style={miStyle(confirmFormErrors.slot)}>
@@ -677,14 +722,15 @@ export default function QueryManagement() {
                   </select>
                   {confirmFormErrors.slot && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.slot}</div>}
                 </div>
+                )}
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Booking Date <span style={{ color: '#dc2626' }}>*</span></label>
                   <input type="date" value={confirmForm.booking_date} onChange={(e) => {
                     const nd = e.target.value;
                     setConfirmForm((p) => ({ ...p, booking_date: nd }));
                     setConfirmFormErrors((p) => ({ ...p, booking_date: undefined }));
-                    if (confirmForm.order_type && confirmForm.order_type !== 'Goat (Hissa)' && token) {
-                      fetch(`${API}/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ order_type: confirmForm.order_type, day: confirmForm.day || null, booking_date: nd || null }) })
+                    if (!isFarm && confirmForm.order_type && confirmForm.order_type !== 'Goat (Hissa)' && token) {
+                      authFetch(`${API}/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order_type: confirmForm.order_type, day: confirmForm.day || null, booking_date: nd || null }) })
                         .then((r) => r.ok ? r.json() : {})
                         .then((d2) => { if (d2 && (d2.cow_number != null || d2.hissa_number != null)) setConfirmForm((p) => ({ ...p, cow_number: d2.cow_number || '', hissa_number: d2.hissa_number || '' })); })
                         .catch(() => {});
@@ -692,6 +738,7 @@ export default function QueryManagement() {
                   }} style={miStyle(confirmFormErrors.booking_date)} />
                   {confirmFormErrors.booking_date && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.booking_date}</div>}
                 </div>
+                {!isFarm && (
                 <div className="qm-cow-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Cow Number <span style={{ color: '#dc2626' }}>*</span></label>
@@ -710,7 +757,8 @@ export default function QueryManagement() {
                     {confirmFormErrors.hissa_number && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.hissa_number}</div>}
                   </div>
                 </div>
-                {confirmDuplicateError && (
+                )}
+                {!isFarm && confirmDuplicateError && (
                   <div style={{ gridColumn: '1 / -1', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '10px', fontSize: '12px', color: '#991b1b' }}>
                     ⚠️ Duplicate: Order {confirmDuplicateError.order_id} already uses this cow/hissa combination.
                   </div>

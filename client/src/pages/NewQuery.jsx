@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { API_BASE as API } from '../config/api';
 
 const ORDER_SOURCES = [
@@ -38,6 +38,8 @@ const EMPTY_FORM = {
 
 const NewQuery = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isFarm = location.pathname.startsWith('/farm');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -132,10 +134,11 @@ const NewQuery = () => {
     if (!bookingNameStr) { setError('Booking name is required'); setLoading(false); return; }
     if (!formData.booking_date) { setError('Booking date is required'); setLoading(false); return; }
     try {
+      const payload = isFarm ? { ...formData, order_source: 'Farm' } : formData;
       const res = await fetch(`${API}/leads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentToken}` },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (res.ok) {
@@ -187,11 +190,10 @@ const NewQuery = () => {
         /* ── Mobile overrides ── */
         @media (max-width: 767px) {
 
-          /* push content below the FAB */
           .nq-root { padding: 16px 12px 32px !important; }
 
-          /* header: title left, no back button (FAB is the nav) */
-          .nq-header { margin-bottom: 14px !important; }
+          /* Extra space below heading so fixed FAB does not cover content */
+          .nq-header { margin-bottom: 14px !important; padding-bottom: 14px !important; }
           .nq-header-back { display: none !important; }
           .nq-title { font-size: 16px !important; }
 

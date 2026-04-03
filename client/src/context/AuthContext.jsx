@@ -1,4 +1,4 @@
-import { createContext, useState, useContext, useEffect } from 'react';
+import { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { API_BASE } from '../config/api';
 
 const AuthContext = createContext(null);
@@ -16,7 +16,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   /** Fetch with auth: on 401 tries refresh once; if refresh fails, redirects to login. */
-  const authFetch = async (url, options = {}) => {
+  const authFetch = useCallback(async (url, options = {}) => {
     const token = localStorage.getItem('token');
     const headers = { ...options.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
     let res = await fetch(url, { ...options, headers });
@@ -44,7 +44,7 @@ export const AuthProvider = ({ children }) => {
       res = await fetch(url, { ...options, headers: { ...options.headers, Authorization: `Bearer ${data.token}` } });
     }
     return res;
-  };
+  }, []);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('user');

@@ -3,6 +3,23 @@ import { log, logError } from "../utils/logger.js";
 import { writeAuditLog } from "../utils/auditLog.js";
 import { limitOffsetClause } from "../utils/sqlPagination.js";
 
+/** Once per process: whether `leads.closed_by` exists (may be NULL for all rows until confirm). */
+let leadsClosedByColumnExists;
+
+async function leadsQueryBySelectSql(db) {
+  if (leadsClosedByColumnExists === undefined) {
+    try {
+      const [rows] = await db.execute(
+        "SELECT 1 AS ok FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'leads' AND COLUMN_NAME = 'closed_by' LIMIT 1"
+      );
+      leadsClosedByColumnExists = rows.length > 0;
+    } catch {
+      leadsClosedByColumnExists = false;
+    }
+  }
+  return leadsClosedByColumnExists ? "l.closed_by AS query_by" : "CAST(NULL AS CHAR(100)) AS query_by";
+}
+
 /** Normalize to date-only YYYY-MM-DD for consistent display and audit (avoids timezone shift). */
 function toDateOnly(v) {
   if (v == null || v === "") return v;
@@ -801,6 +818,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       );
       const total = countRows[0]?.total ?? 0;
 
+      const queryBySql = await leadsQueryBySelectSql(db);
       const query = `
         SELECT
           l.lead_id AS lead_id,
@@ -817,7 +835,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           l.total_amount AS total_amount,
           l.order_source AS source,
           l.reference AS reference,
-          l.closed_by AS query_by,
+          ${queryBySql},
           l.description AS description,
           l.created_at AS created_at
         FROM leads l
@@ -971,11 +989,19 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         return res.status(404).json({ message: "Lead not found" });
       }
       const lead = leadRows[0];
+      const isFarmLead = String(lead.order_source || "").trim() === "Farm";
+
       const orderType = body.order_type != null && String(body.order_type).trim() ? String(body.order_type).trim() : (lead.order_type != null ? String(lead.order_type).trim() : "");
-      const shareholderName = body.shareholder_name != null && String(body.shareholder_name).trim() ? String(body.shareholder_name).trim() : (lead.shareholder_name ?? null);
+      let shareholderName = body.shareholder_name != null && String(body.shareholder_name).trim() ? String(body.shareholder_name).trim() : (lead.shareholder_name ?? null);
+      if (isFarmLead) {
+        shareholderName = "-";
+      }
       const addressVal = body.address != null && String(body.address).trim() ? String(body.address).trim() : (lead.address ?? null);
       const areaVal = body.area != null && String(body.area).trim() ? String(body.area).trim() : (lead.area ?? null);
-      const dayVal = body.day != null && String(body.day).trim() ? String(body.day).trim() : (lead.day ?? null);
+      let dayVal = body.day != null && String(body.day).trim() ? String(body.day).trim() : (lead.day ?? null);
+      if (isFarmLead) {
+        dayVal = body.day != null && String(body.day).trim() !== "" ? String(body.day).trim() : null;
+      }
       const closedBy = body.closed_by != null && String(body.closed_by).trim()
         ? String(body.closed_by).trim()
         : (lead.closed_by != null && String(lead.closed_by).trim() ? String(lead.closed_by).trim() : null);
@@ -984,7 +1010,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       if (!orderType) {
         return res.status(400).json({ message: "Order type is required" });
       }
-      if (!shareholderName || !String(shareholderName).trim()) {
+      if (!isFarmLead && (!shareholderName || !String(shareholderName).trim())) {
         return res.status(400).json({ message: "Shareholder name is required" });
       }
       if (!addressVal || !String(addressVal).trim()) {
@@ -993,7 +1019,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       if (!areaVal || !String(areaVal).trim()) {
         return res.status(400).json({ message: "Area is required" });
       }
-      if (!dayVal || !String(dayVal).trim()) {
+      if (!isFarmLead && (!dayVal || !String(dayVal).trim())) {
         return res.status(400).json({ message: "Day is required" });
       }
       if (!closedBy) {
@@ -1013,10 +1039,16 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         orderId = `O-${String(nextNum).padStart(4, "0")}-${year}`;
       }
 
-      const slotVal = body.slot != null && String(body.slot).trim() !== "" ? String(body.slot).trim() : null;
-      const bookingDateVal = body.booking_date != null && String(body.booking_date).trim() !== "" ? toDateOnly(body.booking_date) : toDateOnly(lead.booking_date);
-      const cowNumber = body.cow_number != null && String(body.cow_number).trim() !== "" ? String(body.cow_number).trim() : null;
-      const hissaNumber = body.hissa_number != null && String(body.hissa_number).trim() !== "" ? String(body.hissa_number).trim() : null;
+      let slotVal = body.slot != null && String(body.slot).trim() !== "" ? String(body.slot).trim() : null;
+      let bookingDateVal = body.booking_date != null && String(body.booking_date).trim() !== "" ? toDateOnly(body.booking_date) : toDateOnly(lead.booking_date);
+      let cowNumber = body.cow_number != null && String(body.cow_number).trim() !== "" ? String(body.cow_number).trim() : null;
+      let hissaNumber = body.hissa_number != null && String(body.hissa_number).trim() !== "" ? String(body.hissa_number).trim() : null;
+
+      if (isFarmLead) {
+        slotVal = null;
+        cowNumber = "0";
+        hissaNumber = "0";
+      }
 
       await db.execute(
         `INSERT INTO orders (order_id, customer_id, contact, order_type, booking_name, shareholder_name, cow_number, hissa_number, alt_contact, address, area, day, booking_date, total_amount, received_amount, pending_amount, order_source, reference, closed_by, description, rider_id, slot)

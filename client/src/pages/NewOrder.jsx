@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { API_BASE as API } from '../config/api';
 
 const ORDER_TYPES = ['Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];
-const FARM_ORDER_TYPES = ['Cow', 'Goat', 'Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];
+const FARM_ORDER_TYPES = ['Cow', 'Goat'];
 const ORDER_SOURCES = ['Tele-Sales', 'Social Media (Organic)', 'Social Media (Ads)', 'Previous Customer', 'Website'];
 const SLOTS = ['SLOT 1', 'SLOT 2', 'SLOT 3', 'SLOT GOAT', 'SLOT WAQF'];
 const REFERENCES = ['Ashhad Bhai', 'Ammar Bhai', 'Ashhal', 'Abuzar', 'Omer', 'Abdullah', 'Huzaifa', 'Hanzala', 'External'];
@@ -136,7 +136,14 @@ const NewOrder = () => {
 
   const handleOrderTypeChange = (e) => {
     const v = e.target.value;
-    setFormData((p) => { generateOrderId(v); getAvailableCowHissa(v, p.day, p.booking_date); return { ...p, order_type: v, total_amount: getPresetAmount(v) }; });
+    setFormData((p) => {
+      generateOrderId(v);
+      if (isFarm) {
+        return { ...p, order_type: v, total_amount: getPresetAmount(v), cow_number: '0', hissa_number: '0', day: '', slot: '' };
+      }
+      getAvailableCowHissa(v, p.day, p.booking_date);
+      return { ...p, order_type: v, total_amount: getPresetAmount(v) };
+    });
   };
 
   const handleDayChange = (e) => {
@@ -166,24 +173,34 @@ const NewOrder = () => {
   const handleSubmit = async (e) => {
     e.preventDefault(); setError(''); setSuccess(''); setDuplicateError(null); setLoading(true);
     const { cow_number, hissa_number, order_type, day, booking_date } = formData;
-    if (cow_number && hissa_number && order_type && !shouldSkipCowHissaDuplicate(order_type, cow_number, hissa_number)) {
+    if (!isFarm && cow_number && hissa_number && order_type && !shouldSkipCowHissaDuplicate(order_type, cow_number, hissa_number)) {
       const dup = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day, booking_date);
       if (dup) { setDuplicateError(dup); setLoading(false); return; }
     }
     const token = localStorage.getItem('token');
     if (!token) { setError('You must be logged in to create an order'); setLoading(false); return; }
+    const payload = isFarm
+      ? {
+          ...formData,
+          slot: null,
+          day: null,
+          cow_number: '0',
+          hissa_number: '0',
+          shareholder_name: '-',
+        }
+      : formData;
     try {
       const res = await fetch(`${API}/booking/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (res.ok) {
         setSuccess('Order created successfully!');
         if (keepFormData) {
           generateOrderId(formData.order_type);
-          getAvailableCowHissa(formData.order_type, formData.day, formData.booking_date);
+          if (!isFarm) getAvailableCowHissa(formData.order_type, formData.day, formData.booking_date);
           setTimeout(() => setSuccess(''), 2000);
         } else {
           setFormData({ ...EMPTY_FORM });
@@ -206,7 +223,7 @@ const NewOrder = () => {
   const sectionStyle = { background: '#FFFFFF', borderRadius: '6px', padding: '16px', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' };
   const sectionTitleStyle = { fontSize: '11px', fontWeight: '600', color: '#FF5722', marginBottom: '13px', paddingBottom: '8px', borderBottom: '1px solid #e0e0e0' };
 
-  const isGoat = formData.order_type === 'Goat (Hissa)';
+  const isGoat = !isFarm && formData.order_type === 'Goat (Hissa)';
 
   return (
     <>
@@ -218,6 +235,7 @@ const NewOrder = () => {
 
         @media (max-width: 767px) {
           .no-root  { padding: 16px 12px 32px !important; }
+          .no-header-row { padding-bottom: 14px !important; }
           .no-header-back { display: none !important; }
           .no-title { font-size: 16px !important; }
           .no-section { padding: 14px 12px !important; margin-bottom: 12px !important; border-radius: 10px !important; }
@@ -250,7 +268,7 @@ const NewOrder = () => {
         }}
       >
         {/* Header */}
-        <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', flexShrink: 0 }}>
+        <div className="no-header-row" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', flexShrink: 0 }}>
           <h2 className="no-title" style={{ fontSize: '14px', fontWeight: '600', color: '#333', margin: 0 }}>New Booking Order</h2>
           <button
             className="no-header-back"
@@ -394,22 +412,26 @@ const NewOrder = () => {
                   {REFERENCES.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
-              <div>
-                <label className="no-label" style={labelStyle}>Slot <span style={{ color: '#FF5722' }}>*</span></label>
-                <select className="no-input" value={formData.slot} onChange={(e) => setFormData((p) => ({ ...p, slot: e.target.value }))} required style={inputStyle}
-                  onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}>
-                  <option value="" disabled>Select Slot</option>
-                  {SLOTS.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="no-label" style={labelStyle}>Day <span style={{ color: '#FF5722' }}>*</span></label>
-                <select className="no-input" value={formData.day} onChange={handleDayChange} required style={inputStyle}
-                  onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}>
-                  <option value="" disabled>Select Day</option>
-                  {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </div>
+              {!isFarm && (
+                <>
+                  <div>
+                    <label className="no-label" style={labelStyle}>Slot <span style={{ color: '#FF5722' }}>*</span></label>
+                    <select className="no-input" value={formData.slot} onChange={(e) => setFormData((p) => ({ ...p, slot: e.target.value }))} required style={inputStyle}
+                      onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}>
+                      <option value="" disabled>Select Slot</option>
+                      {SLOTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="no-label" style={labelStyle}>Day <span style={{ color: '#FF5722' }}>*</span></label>
+                    <select className="no-input" value={formData.day} onChange={handleDayChange} required style={inputStyle}
+                      onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}>
+                      <option value="" disabled>Select Day</option>
+                      {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
 
             </div>
           </div>
@@ -423,11 +445,13 @@ const NewOrder = () => {
                 <input className="no-input" type="text" value={formData.booking_name} onChange={(e) => setFormData((p) => ({ ...p, booking_name: e.target.value }))} required placeholder="Enter booking name" style={inputStyle}
                   onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')} />
               </div>
-              <div>
-                <label className="no-label" style={labelStyle}>Shareholder Name <span style={{ color: '#FF5722' }}>*</span></label>
-                <input className="no-input" type="text" value={formData.shareholder_name} onChange={(e) => setFormData((p) => ({ ...p, shareholder_name: e.target.value }))} required placeholder="Enter shareholder name" style={inputStyle}
-                  onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')} />
-              </div>
+              {!isFarm && (
+                <div>
+                  <label className="no-label" style={labelStyle}>Shareholder Name <span style={{ color: '#FF5722' }}>*</span></label>
+                  <input className="no-input" type="text" value={formData.shareholder_name} onChange={(e) => setFormData((p) => ({ ...p, shareholder_name: e.target.value }))} required placeholder="Enter shareholder name" style={inputStyle}
+                    onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')} />
+                </div>
+              )}
               <div>
                 <label className="no-label" style={labelStyle}>Area <span style={{ color: '#FF5722' }}>*</span></label>
                 <input className="no-input" type="text" value={formData.area} onChange={(e) => setFormData((p) => ({ ...p, area: e.target.value }))} placeholder="Enter area" style={inputStyle} required
@@ -442,22 +466,24 @@ const NewOrder = () => {
             </div>
           </div>
 
-          {/* Livestock Information */}
-          <div className="no-section" style={{ ...sectionStyle, opacity: isGoat ? 0.6 : 1, pointerEvents: isGoat ? 'none' : 'auto' }}>
-            <div className="no-section-title" style={sectionTitleStyle}>Livestock Information</div>
-            <div className="no-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '13px' }}>
-              <div>
-                <label className="no-label" style={labelStyle}>Cow Number</label>
-                <input className="no-input" type="text" value={formData.cow_number} onChange={handleCowNumberChange} placeholder="Enter cow number" style={inputStyle} disabled={isGoat}
-                  onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => { e.target.style.borderColor = '#e0e0e0'; handleCowNumberBlur(); }} />
-              </div>
-              <div>
-                <label className="no-label" style={labelStyle}>Hissa Number</label>
-                <input className="no-input" type="text" value={formData.hissa_number} onChange={handleHissaNumberChange} placeholder="Enter hissa number" style={inputStyle} disabled={isGoat}
-                  onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => { e.target.style.borderColor = '#e0e0e0'; handleHissaNumberBlur(); }} />
+          {/* Livestock Information — booking only; farm saves 0/0 server-side */}
+          {!isFarm && (
+            <div className="no-section" style={{ ...sectionStyle, opacity: isGoat ? 0.6 : 1, pointerEvents: isGoat ? 'none' : 'auto' }}>
+              <div className="no-section-title" style={sectionTitleStyle}>Livestock Information</div>
+              <div className="no-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '13px' }}>
+                <div>
+                  <label className="no-label" style={labelStyle}>Cow Number</label>
+                  <input className="no-input" type="text" value={formData.cow_number} onChange={handleCowNumberChange} placeholder="Enter cow number" style={inputStyle} disabled={isGoat}
+                    onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => { e.target.style.borderColor = '#e0e0e0'; handleCowNumberBlur(); }} />
+                </div>
+                <div>
+                  <label className="no-label" style={labelStyle}>Hissa Number</label>
+                  <input className="no-input" type="text" value={formData.hissa_number} onChange={handleHissaNumberChange} placeholder="Enter hissa number" style={inputStyle} disabled={isGoat}
+                    onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => { e.target.style.borderColor = '#e0e0e0'; handleHissaNumberBlur(); }} />
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Additional Information */}
           <div className="no-section" style={sectionStyle}>
@@ -475,7 +501,7 @@ const NewOrder = () => {
             <input type="checkbox" id="keepFormData" checked={keepFormData} onChange={(e) => setKeepFormData(e.target.checked)}
               style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: '#FF5722' }} />
             <label htmlFor="keepFormData" style={{ fontSize: '10px', color: '#666', cursor: 'pointer', userSelect: 'none' }}>
-              Keep form data after submission (regenerate Order ID, Cow &amp; Hissa numbers)
+              {isFarm ? 'Keep form data after submission (regenerate Order ID)' : 'Keep form data after submission (regenerate Order ID, Cow & Hissa numbers)'}
             </label>
           </div>
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { API_BASE as API } from '../config/api';
+import { useAuth } from '../context/AuthContext';
 const PAGE_SIZE = 50;
 
 const COLUMNS = [
@@ -53,6 +54,7 @@ function money(n) {
 }
 
 export default function ProcurementManagement() {
+  const { authFetch } = useAuth();
   const token = localStorage.getItem('token');
 
   const [rows, setRows] = useState([]);
@@ -81,12 +83,12 @@ export default function ProcurementManagement() {
       const params = new URLSearchParams();
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       const url = `${API}/procurement/filters${params.toString() ? `?${params}` : ''}`;
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(url);
       if (res.ok) setFilters(await res.json());
     } catch {
       // ignore
     }
-  }, [token, yearFilter]);
+  }, [authFetch, yearFilter]);
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
@@ -99,7 +101,7 @@ export default function ProcurementManagement() {
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
 
-      const res = await fetch(`${API}/procurement?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${API}/procurement?${params}`);
       if (!res.ok) {
         setError('Failed to load procurements');
         return;
@@ -112,7 +114,7 @@ export default function ProcurementManagement() {
     } finally {
       setLoading(false);
     }
-  }, [token, search, type, yearFilter, page]);
+  }, [authFetch, search, type, yearFilter, page]);
 
   useEffect(() => { fetchFilters(); }, [fetchFilters]);
   useEffect(() => { setPage(1); }, [search, type, yearFilter]);
@@ -183,9 +185,9 @@ export default function ProcurementManagement() {
   const handleSaveEdit = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`${API}/procurement/${encodeURIComponent(editRow.procurement_id)}`, {
+      const res = await authFetch(`${API}/procurement/${encodeURIComponent(editRow.procurement_id)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: editRow.type,
           no_of_animals: editRow.no_of_animals,
@@ -212,9 +214,8 @@ export default function ProcurementManagement() {
   const handleDeleteConfirm = async () => {
     if (!deleteConfirm) return;
     try {
-      const res = await fetch(`${API}/procurement/${encodeURIComponent(deleteConfirm.procurement_id)}`, {
+      const res = await authFetch(`${API}/procurement/${encodeURIComponent(deleteConfirm.procurement_id)}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
         setDeleteConfirm(null);
@@ -259,7 +260,7 @@ export default function ProcurementManagement() {
       while (keepGoing) {
         params.set('page', String(pageNum));
         params.set('limit', String(limit));
-        const res = await fetch(`${API}/procurement?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await authFetch(`${API}/procurement?${params}`);
         if (!res.ok) { alert('Failed to load data for export'); return; }
         const json = await res.json();
         const data = Array.isArray(json.data) ? json.data : [];

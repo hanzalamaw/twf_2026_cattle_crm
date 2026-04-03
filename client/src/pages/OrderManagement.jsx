@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { API_BASE as API } from '../config/api';
+import { useAuth } from '../context/AuthContext';
 const PAGE_SIZE = 50;
 const HIDDEN_TYPES_BOOKING = ['Cow', 'Goat'];
 
@@ -131,6 +132,7 @@ export default function OrderManagement() {
   const [mobileFiltersOpen,  setMobileFiltersOpen]  = useState(false);
   const editDuplicateCheckTimeoutRef = useRef(null);
 
+  const { authFetch } = useAuth();
   const token = localStorage.getItem('token');
   const location = useLocation();
   const isFarm = location.pathname.startsWith('/farm');
@@ -145,10 +147,10 @@ export default function OrderManagement() {
       const params = new URLSearchParams();
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       const url = `${API}/booking/orders/filters${params.toString() ? `?${params}` : ''}`;
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(url);
       if (res.ok) { const data = await res.json(); setFilters(data); }
     } catch (e) { console.error(e); }
-  }, [token, yearFilter]);
+  }, [authFetch, yearFilter]);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true); setError('');
@@ -163,7 +165,7 @@ export default function OrderManagement() {
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page',  String(page));
       params.set('limit', String(PAGE_SIZE));
-      const res = await fetch(`${API}/booking/orders?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${API}/booking/orders?${params}`);
       if (res.ok) {
         const json  = await res.json();
         const data  = Array.isArray(json) ? json : json.data;
@@ -179,7 +181,7 @@ export default function OrderManagement() {
       } else { setError('Failed to load orders'); }
     } catch (e) { setError('Failed to load orders'); }
     finally { setLoading(false); }
-  }, [token, search, slot, orderType, day, reference, cowNumber, yearFilter, page, isFarm]);
+  }, [authFetch, token, search, slot, orderType, day, reference, cowNumber, yearFilter, page, isFarm]);
 
   useEffect(() => { fetchFilters(); }, [fetchFilters]);
   useEffect(() => { setPage(1); }, [search, slot, orderType, day, reference, cowNumber, yearFilter]);
@@ -195,14 +197,14 @@ export default function OrderManagement() {
   const checkCowHissaDuplicate = useCallback(async (c, h, type, d, bd, excludeId) => {
     if (!c || !h || !type || !token || shouldSkip(type, c, h)) return null;
     try {
-      const res = await fetch(`${API}/booking/check-cow-hissa`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      const res = await authFetch(`${API}/booking/check-cow-hissa`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cow_number: c, hissa_number: h, order_type: type, day: d || null, booking_date: bd || null }),
       });
       if (res.ok) { const d2 = await res.json(); if (d2.exists && d2.order_id !== excludeId) return d2; }
     } catch (e) { console.error(e); }
     return null;
-  }, [token]);
+  }, [authFetch, token]);
 
   useEffect(() => {
     if (!editOpen) return;
@@ -244,8 +246,8 @@ export default function OrderManagement() {
         const s = String(payload.booking_date);
         payload.booking_date = s.includes('T') ? s.split('T')[0] : (s.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || s);
       }
-      const res = await fetch(`${API}/booking/orders/${encodeURIComponent(editRow.order_id)}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      const res = await authFetch(`${API}/booking/orders/${encodeURIComponent(editRow.order_id)}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       if (res.ok) { setEditOpen(false); setEditPreviousRow(null); fetchOrders(); }
@@ -255,7 +257,7 @@ export default function OrderManagement() {
 
   const handleInvoice = async (customerId) => {
     try {
-      const res = await fetch(`${API}/booking/invoice/${encodeURIComponent(customerId)}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${API}/booking/invoice/${encodeURIComponent(customerId)}`);
       if (!res.ok) { const data = await res.json().catch(() => ({})); alert(data.message || 'Failed to generate invoice'); return; }
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
@@ -268,7 +270,7 @@ export default function OrderManagement() {
   const handleCancelConfirm = async () => {
     if (!cancelConfirm) return;
     try {
-      const res = await fetch(`${API}/booking/orders/${encodeURIComponent(cancelConfirm.order_id)}/cancel`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${API}/booking/orders/${encodeURIComponent(cancelConfirm.order_id)}/cancel`, { method: 'POST' });
       if (res.ok) { setCancelConfirm(null); fetchOrders(); setSelectedIds((p) => { const n = new Set(p); n.delete(cancelConfirm.order_id); return n; }); }
       else { const data = await res.json().catch(() => ({})); alert(data.message || 'Failed to cancel order'); }
     } finally { setCancelConfirm(null); }
@@ -279,25 +281,30 @@ export default function OrderManagement() {
   const handleExport = async () => {
     try {
       const ids = Array.from(selectedIds);
-      const params = new URLSearchParams();
-      if (search?.trim())    params.set('search',     search.trim());
-      if (slot)              params.set('slot',        slot);
-      if (orderType)         params.set('order_type',  orderType);
-      if (day)               params.set('day',         day);
-      if (reference)         params.set('reference',   reference);
-      if (cowNumber?.trim()) params.set('cow_number',  cowNumber.trim());
-      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-      const limit = 100; let pageNum = 1; let allOrders = []; let total = 0;
+      const limit = 100;
+      let pageNum = 1;
+      let allOrders = [];
       do {
-        params.set('page', String(pageNum)); params.set('limit', String(limit));
-        const res = await fetch(`${API}/booking/orders?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+        const params = new URLSearchParams();
+        if (search?.trim()) params.set('search', search.trim());
+        if (slot) params.set('slot', slot);
+        if (orderType) params.set('order_type', orderType);
+        if (day) params.set('day', day);
+        if (reference) params.set('reference', reference);
+        if (cowNumber?.trim()) params.set('cow_number', cowNumber.trim());
+        if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+        params.set('page', String(pageNum));
+        params.set('limit', String(limit));
+        const res = await authFetch(`${API}/booking/orders?${params}`);
         if (!res.ok) { alert('Failed to load data for export'); return; }
-        const json  = await res.json();
-        const data  = Array.isArray(json) ? json : json.data;
-        total       = typeof json.total === 'number' ? json.total : 0;
-        const chunk = (Array.isArray(data) ? data : []).filter((r) => !HIDDEN_TYPES.includes(r.type));
-        allOrders   = allOrders.concat(chunk);
-        if (chunk.length < limit || allOrders.length >= total) break;
+        const json = await res.json();
+        const data = Array.isArray(json) ? json : json.data;
+        const rawChunk = Array.isArray(data) ? data : [];
+        const chunk = rawChunk.filter((r) =>
+          isFarm ? ['Cow', 'Goat'].includes(r.type) : !HIDDEN_TYPES_BOOKING.includes(r.type)
+        );
+        allOrders = allOrders.concat(chunk);
+        if (rawChunk.length < limit) break;
         pageNum++;
       } while (true);
       const toExport = ids.length > 0 ? allOrders.filter((r) => ids.includes(r.order_id)) : allOrders;
@@ -322,8 +329,8 @@ export default function OrderManagement() {
         if (reference)         af.reference   = reference;
         if (cowNumber?.trim()) af.cow_number  = cowNumber.trim();
         if (yearFilter)        af.year        = yearFilter;
-        await fetch(`${API}/booking/orders/export-audit`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        await authFetch(`${API}/booking/orders/export-audit`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ count: toExport.length, ...(Object.keys(af).length > 0 && { filters: af }), ...(ids.length > 0 && { order_ids: ids }) }),
         });
       } catch (e) { console.error('Audit log failed:', e); }

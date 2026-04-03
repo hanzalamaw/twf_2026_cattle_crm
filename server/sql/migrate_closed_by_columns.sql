@@ -1,3 +1,6 @@
+ALTER TABLE `leads`
+  ADD COLUMN `closed_by` varchar(100) DEFAULT NULL AFTER `order_source`;
+
 ALTER TABLE `orders`
   ADD COLUMN `closed_by` varchar(100) DEFAULT NULL AFTER `reference`;
 

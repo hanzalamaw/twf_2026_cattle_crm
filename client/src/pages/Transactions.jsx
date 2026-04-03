@@ -152,7 +152,11 @@ export default function Transactions() {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const endpoint = isProcurement ? `${API}/procurement/transactions` : `${API}/booking/transactions`;
+      const endpoint = isProcurement
+        ? `${API}/procurement/transactions`
+        : isFarm
+          ? `${API}/farm/transactions`
+          : `${API}/booking/transactions`;
       const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
@@ -161,10 +165,9 @@ export default function Transactions() {
     } catch (e) {
       console.error(e);
     }
-  }, [token, isProcurement]);
+  }, [token, isProcurement, isFarm]);
 
   const BOOKING_SUMMARY_TYPES = ['Hissa - Premium', 'Hissa - Standard', 'Hissa - Waqf', 'Goat (Hissa)'];
-  const FARM_SUMMARY_TYPES = ['Cow', 'Goat'];
 
   const fetchOrdersSummary = useCallback(async () => {
     try {
@@ -179,10 +182,20 @@ export default function Transactions() {
         }
         return;
       }
+      if (isFarm) {
+        const res = await fetch(`${API}/farm/orders/summary`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+          const data = await res.json();
+          setOrdersSummary({
+            totalBank: Number(data?.totalBank ?? 0),
+            totalCash: Number(data?.totalCash ?? 0),
+          });
+        }
+        return;
+      }
       const params = new URLSearchParams();
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-      const summaryTypes = isFarm ? FARM_SUMMARY_TYPES : BOOKING_SUMMARY_TYPES;
-      summaryTypes.forEach((t) => params.append('order_type', t));
+      BOOKING_SUMMARY_TYPES.forEach((t) => params.append('order_type', t));
       const res = await fetch(`${API}/booking/orders/summary?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
@@ -191,7 +204,7 @@ export default function Transactions() {
     } catch (e) {
       console.error(e);
     }
-  }, [token, yearFilter, appliedTypes, isFarm, isProcurement]);
+  }, [token, yearFilter, isFarm, isProcurement]);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -388,9 +401,10 @@ export default function Transactions() {
           .txn-root              { padding: 16px 12px 24px !important; overflow: auto !important; }
 
           /* Top bar */
-          .txn-topbar           { flex-wrap: nowrap !important; gap: 8px !important; margin-bottom: 12px !important; align-items: center !important; }
+          .txn-topbar           { flex-wrap: nowrap !important; gap: 8px !important; margin-bottom: 12px !important; align-items: flex-start !important; padding-right: 0 !important; }
           .txn-topbar h2        { font-size: 16px !important; flex-shrink: 0 !important; }
           .txn-topbar-controls  { display: none !important; }
+          .txn-mobile-header-actions { display: flex !important; }
 
           /* Mobile filter/controls row */
           .txn-mobile-row       { display: none !important; }
@@ -404,8 +418,8 @@ export default function Transactions() {
           .txn-card-amount      { font-size: 13px !important; }
           .txn-card-amount span { min-width: unset !important; padding: 4px 6px !important; }
 
-          /* ── Show/hide toggle row below cards — VISIBLE on mobile ── */
-          .txn-showhide-mobile  { display: flex !important; }
+          .txn-showhide-mobile      { display: none !important; }
+          .txn-showhide-mobile-top  { display: none !important; }
 
           /* Search + status */
           .txn-search-row                 { flex-direction: row !important; align-items: center !important; flex-wrap: nowrap !important; gap: 8px !important; margin-bottom: 10px !important; }
@@ -564,6 +578,19 @@ export default function Transactions() {
             style={{ padding: '7px 12px', borderRadius: '8px', border: `1px solid ${mobileFiltersOpen ? '#FF5722' : '#e0e0e0'}`, background: mobileFiltersOpen ? '#fff4f0' : '#fff', color: mobileFiltersOpen ? '#FF5722' : '#555', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}
           >
             ⚙ Filters
+          </button>
+        </div>
+
+        {/* Mobile: spacer under fixed FAB, then Hide */}
+        <div className="txn-mobile-header-actions" style={{ display: 'none', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', marginLeft: 'auto' }}>
+          <div aria-hidden style={{ width: 46, height: 46, flexShrink: 0 }} />
+          <button
+            type="button"
+            onClick={() => setAmountVisible((v) => !v)}
+            title={amountVisible ? 'Hide' : 'Show'}
+            style={{ padding: '6px 8px', fontSize: '10px', fontWeight: '500', background: '#f0f0f0', color: '#333', border: '1px solid #e0e0e0', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt="" style={{ width: '18px', height: '18px', display: 'block' }} />
           </button>
         </div>
       </div>
