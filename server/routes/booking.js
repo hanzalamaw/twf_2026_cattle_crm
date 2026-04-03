@@ -2055,7 +2055,7 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
         const displayType = (row.type === "Hissa - Standard") ? "Hissa - Ijtimai" : (row.type || "Hissa");
         const itemTitle = truncate(`${displayType} (${row.day || "1"})`, 190, "Helvetica-Bold", 11);
         const shareholderLine = truncate(
-          `Shareholder Name: ${row.shareholder_name || "—"}`,
+          `${row.shareholder_name || "—"}`,
           190,
           "Helvetica",
           10
