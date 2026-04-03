@@ -15,6 +15,116 @@ function toDateOnly(v) {
   return match ? match[1] : s;
 }
 
+/** Invoice PDF page 2 — T&Cs text from TWF Terms & Conditions (for invoice). */
+const INVOICE_TERMS_SECTIONS = [
+  {
+    heading: "1. General",
+    paragraphs: [
+      'By placing a Qurbani order with The Warsi Farm, the customer ("you") agrees to be fully bound by these Terms & Conditions. The Warsi Farm ("we," "us," "TWF") reserves the right to update these terms at any time without prior notice. Continued engagement after any update constitutes acceptance.',
+    ],
+  },
+  {
+    heading: "2. Payment Terms & Due Dates",
+    paragraphs: [
+      "A partial payment (advance/booking amount) is required at the time of booking to confirm and reserve your Qurbani slot. No slot is held without this advance.",
+      "The remaining balance must be cleared at least 7–10 days before Eid ul-Adha. Failure to do so may result in automatic cancellation of your booking without a refund of the advance.",
+      "Accepted payment methods: Bank Transfer, EasyPaisa, JazzCash, and Cash (in-person only, subject to availability).",
+      "In case of bank transfer, the customer must share valid payment proof (screenshot/receipt) via WhatsApp within 24 hours of transfer.",
+      "All prices are quoted in Pakistani Rupees (PKR) and are exclusive of any tax. There are no additional charges whatsoever.",
+      "Prices are locked at the time of booking and will not change due to market fluctuation after confirmation.",
+    ],
+  },
+  {
+    heading: "3. Qurbani Animal & Delivery",
+    paragraphs: [
+      "All Qurbani animals (cow/goat/sheep) are sourced from verified, healthy livestock that meet the Shariah-mandated criteria for age, health, and physical soundness.",
+      "The Warsi Farm operates on a Ijtimai (collective) Qurbani model. Each customer's share is identified and tracked throughout the process.",
+      "Customers do not select their individual animal; the farm manages animal allocation collectively to ensure fairness and Shariah compliance.",
+      "Meat will be delivered fresh on the day of Qurbani or as communicated at the time of booking, based on your delivery slot.",
+      "Free Delivery within Karachi, Except Bahria Town Karachi",
+      "The Warsi Farm is not responsible for delays caused by traffic, weather, or other external factors beyond our control. However, we will communicate proactively in case of any delay.",
+      "Meat quantity per share is estimated and may vary slightly due to the natural variation in animal weight. No claim for weight shortage will be entertained post-delivery.",
+    ],
+  },
+  {
+    heading: "4. Shariah-Compliance Disclaimer",
+    paragraphs: [
+      "The slaughter is performed by following the proper Islamic method, ensuring full Halal compliance.",
+      "Customers are advised that by booking through The Warsi Farm, their Qurbani obligation (Wajib) is considered fulfilled upon correct and valid slaughter of the assigned share — regardless of physical presence",
+    ],
+  },
+  {
+    heading: "6. Liability",
+    paragraphs: [
+      "The Warsi Farm's total liability under any circumstance shall not exceed the amount paid by the customer for their booking. We are not liable for any indirect, consequential, or incidental losses.",
+    ],
+  },
+  {
+    heading: "7. Governing Jurisdiction",
+    paragraphs: [
+      "These Terms & Conditions are governed by the laws of Pakistan. Any dispute arising shall be resolved amicably, failing which it shall be subject to the jurisdiction of the courts of Karachi, Sindh.",
+    ],
+  },
+];
+
+/**
+ * Appends T&C pages — minimal gray header (reference: centered title + light rule + #333 body).
+ * @param {import("pdfkit").PDFDocument} doc
+ * @param {object} ctx
+ */
+function drawInvoiceTermsPage(doc, ctx) {
+  const { ML, RIGHT, CW, PH } = ctx;
+  const TNC_HEAD = "#707070";
+  const TNC_LINE = "#E0E0E0";
+  const TNC_TEXT = "#333333";
+  const bottomMargin = 42;
+  const lineGap = 2.5;
+  /** Space below "1. General" / "2. Payment…" headings before body text. */
+  const HEADING_BOTTOM_PAD = 7;
+
+  doc.addPage({ margin: 0, size: "A4" });
+
+  let y = 45;
+  doc.font("Helvetica-Bold").fontSize(11).fillColor(TNC_HEAD)
+    .text("Terms & Conditions", ML, y, { width: CW, align: "center" });
+  y += 18;
+  doc.moveTo(ML, y).lineTo(RIGHT, y).lineWidth(0.5).strokeColor(TNC_LINE).stroke();
+  y += 20;
+
+  const drawContinuedHeader = () => {
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(TNC_HEAD)
+      .text("Terms & Conditions (continued)", ML, y, { width: CW, align: "center" });
+    y += 18;
+    doc.moveTo(ML, y).lineTo(RIGHT, y).lineWidth(0.5).strokeColor(TNC_LINE).stroke();
+    y += 20;
+  };
+
+  const ensureSpace = (needed) => {
+    if (y + needed <= PH - bottomMargin) return;
+    doc.addPage({ margin: 0, size: "A4" });
+    y = 45;
+    drawContinuedHeader();
+  };
+
+  for (const sec of INVOICE_TERMS_SECTIONS) {
+    const headingH = 13;
+    ensureSpace(headingH + HEADING_BOTTOM_PAD + 20);
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(TNC_HEAD)
+      .text(sec.heading, ML, y, { width: CW, align: "left" });
+    y += headingH + HEADING_BOTTOM_PAD;
+
+    for (const para of sec.paragraphs) {
+      doc.font("Helvetica").fontSize(9.5);
+      const h = doc.heightOfString(para, { width: CW, lineGap, align: "left" });
+      ensureSpace(h + 8);
+      doc.font("Helvetica").fontSize(9.5).fillColor(TNC_TEXT)
+        .text(para, ML, y, { width: CW, lineGap, align: "left" });
+      y += h + 8;
+    }
+    y += 4;
+  }
+}
+
 /**
  * Booking management API: orders list with search and filters.
  * @param {object} app - Express app
@@ -1891,7 +2001,7 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
       }
 
       // ── NOTE + TOTALS SECTION ─────────────────────────────────────────────────
-      const noteText = "Full payment is required for all livestock bookings, and Qurbani orders must be paid at least 7 days before Eid. Ensure accurate delivery details and availability, as delays due to incorrect information won't be compensated. THE WARSI FARM isn't liable for unforeseen delays like natural disasters, strikes, or technical issues. All items are exclusive of tax.";
+      const noteText = "All items are exclusive of tax.Terms & Conditions apply. Please refer to the following page for full details.";
       doc.font("Helvetica").fontSize(9.5);
       const noteBodyHeight = doc.heightOfString(noteText, { width: 300, lineGap: 2.5, align: "justify" });
       doc.font("Helvetica").fontSize(8);
@@ -2004,6 +2114,8 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
           align: "center",
           lineBreak: false
         });
+
+      drawInvoiceTermsPage(doc, { ML, RIGHT, CW, PH });
 
       doc.end();
 
