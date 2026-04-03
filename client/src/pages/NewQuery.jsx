@@ -193,7 +193,7 @@ const NewQuery = () => {
           .nq-root { padding: 20px 12px 32px !important; }
 
           .nq-header {
-            margin-bottom: 22px !important; padding: 6px 0 18px 0 !important; min-height: 62px !important;
+            margin-bottom: 8px !important; padding: 4px 0 10px 0 !important; min-height: 56px !important;
             align-items: center !important; box-sizing: border-box !important;
             justify-content: flex-start !important; gap: 0 !important; flex-wrap: nowrap !important;
           }
@@ -205,8 +205,7 @@ const NewQuery = () => {
             line-height: 1.3 !important; display: flex !important; align-items: center !important; flex: 1 !important; min-width: 0 !important; box-sizing: border-box !important;
           }
 
-          /* Extra air below heading / above first form section */
-          .nq-root form > .nq-section:first-of-type { margin-top: 14px !important; }
+          .nq-root form > .nq-section:first-of-type { margin-top: 6px !important; }
 
           /* sections */
           .nq-section { padding: 14px 12px !important; margin-bottom: 12px !important; border-radius: 10px !important; }

@@ -441,9 +441,9 @@ export default function QueryManagement() {
   return (
     <>
       <style>{`
-        @keyframes modalSlideInFromLeft {
-          from { transform: translateX(-18px); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
+        @keyframes modalSheetInUp {
+          from { opacity: 0; transform: translate3d(0, 100%, 0); }
+          to   { opacity: 1; transform: translate3d(0, 0, 0); }
         }
 
         @media (max-width: 767px) {
@@ -461,7 +461,17 @@ export default function QueryManagement() {
           .qm-table-wrap         { display: block !important; }
           .qm-cards              { display: none !important; }
           .qm-pagination         { flex-direction: column !important; align-items: flex-start !important; }
-          .qm-modal-box          { padding: 16px !important; border-radius: 12px !important; width: calc(100vw - 32px) !important; max-height: 90dvh !important; overflow-y: auto; animation: modalSlideInFromLeft .25s ease-out both; }
+          .qm-modal-overlay      { align-items: flex-end !important; justify-content: center !important; padding: 0 !important; }
+          .qm-modal-box          {
+            padding: 20px 16px max(24px, env(safe-area-inset-bottom, 0px)) !important;
+            border-radius: 20px 20px 0 0 !important;
+            width: 100vw !important;
+            max-width: 100vw !important;
+            max-height: 92dvh !important;
+            margin: 0 !important;
+            overflow-y: auto !important;
+            animation: modalSheetInUp 0.38s cubic-bezier(0.25, 0.8, 0.25, 1) both !important;
+          }
           .qm-cow-grid           { grid-template-columns: 1fr !important; }
           .qm-confirm-grid       { grid-template-columns: 1fr !important; }
           .qm-edit-grid          { grid-template-columns: 1fr !important; }
@@ -609,7 +619,7 @@ export default function QueryManagement() {
 
         {/* Confirm modal */}
         {confirmModalLead && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1001, padding: '16px', overflowY: 'auto' }} onClick={closeConfirmModal}>
+          <div className="qm-modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1001, padding: '16px', overflowY: 'auto' }} onClick={closeConfirmModal}>
             <div className="qm-modal-box" style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '760px', width: '100%', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', margin: 'auto 0' }} onClick={(e) => e.stopPropagation()}>
               <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Confirm order</h3>
               <p style={{ margin: '0 0 16px 0', color: '#555', fontSize: '13px' }}>Create order from lead &quot;{confirmModalLead.booking_name || confirmModalLead.lead_id}&quot;.</p>
@@ -778,7 +788,7 @@ export default function QueryManagement() {
 
         {/* Edit modal */}
         {editOpen && editRow && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={() => !saving && (setEditOpen(false), setEditRow(null), setEditPreviousRow(null))}>
+          <div className="qm-modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={() => !saving && (setEditOpen(false), setEditRow(null), setEditPreviousRow(null))}>
             <div className="qm-modal-box" style={{ background: '#fff', borderRadius: '12px', padding: '16px 20px', width: 'min(680px, 95vw)', maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
               <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Edit Lead</h3>
               {(editErrors.submit || Object.keys(editErrors).some((k) => k !== 'submit' && editErrors[k])) && (
@@ -812,7 +822,7 @@ export default function QueryManagement() {
 
         {/* Delete confirm modal */}
         {deleteConfirm && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: '16px' }}>
+          <div className="qm-modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: '16px' }}>
             <div className="qm-modal-box" style={{ background: '#fff', borderRadius: '12px', padding: '24px', maxWidth: '400px', width: '100%' }}>
               <p style={{ margin: '0 0 16px 0', fontSize: '14px' }}>Delete this lead permanently? This cannot be undone.</p>
               <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>

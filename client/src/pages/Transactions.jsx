@@ -228,7 +228,6 @@ export default function Transactions() {
       if (paymentStatusFilter === 'pending' || paymentStatusFilter === 'received') {
         params.set('payment_status', paymentStatusFilter);
       }
-      if (!isProcurement && isFarm) params.set('source', 'Farm');
       if (!isProcurement && !isFarm) params.set('omit_hidden_types', '1');
 
       const endpoint = isProcurement ? `${API}/procurement/transactions/list?${params.toString()}` : `${API}/booking/orders?${params.toString()}`;
@@ -239,7 +238,7 @@ export default function Transactions() {
         const filtered = list.filter((row) => {
           if (isProcurement) return true;
           if (isFarm) {
-            return ['Cow', 'Goat'].includes(row.type) && String(row.source ?? '').trim() === 'Farm';
+            return ['Cow', 'Goat'].includes(row.type);
           }
           return !HIDDEN_TYPES_BOOKING.includes(row.type);
         });
@@ -393,9 +392,9 @@ export default function Transactions() {
   return (
     <>
       <style>{`
-        @keyframes modalSlideInFromLeft {
-          from { transform: translateX(-18px); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
+        @keyframes modalSheetInUp {
+          from { opacity: 0; transform: translate3d(0, 100%, 0); }
+          to   { opacity: 1; transform: translate3d(0, 0, 0); }
         }
         @media (max-width: 767px) {
           .txn-root              { padding: 16px 12px 24px !important; overflow: auto !important; }
@@ -456,7 +455,7 @@ export default function Transactions() {
             max-width: 100vw !important;
             max-height: 92dvh !important;
             padding: 20px 16px 36px !important;
-            animation: modalSlideInFromLeft .25s ease-out both !important;
+            animation: modalSheetInUp 0.38s cubic-bezier(0.25, 0.8, 0.25, 1) both !important;
           }
           .txn-modal-grid       { grid-template-columns: 1fr 1fr !important; gap: 8px 12px !important; font-size: 12px !important; }
           .txn-modal-input-grid { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }

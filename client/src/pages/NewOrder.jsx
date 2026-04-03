@@ -228,15 +228,15 @@ const NewOrder = () => {
   return (
     <>
       <style>{`
-        @keyframes modalSlideInFromLeft {
-          from { transform: translateX(-18px); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
+        @keyframes modalSheetInUp {
+          from { opacity: 0; transform: translate3d(0, 100%, 0); }
+          to   { opacity: 1; transform: translate3d(0, 0, 0); }
         }
 
         @media (max-width: 767px) {
           .no-root  { padding: 20px 12px 32px !important; }
           .no-header-row {
-            margin-bottom: 10px !important; padding: 6px 0 18px 0 !important; min-height: 62px !important;
+            margin-bottom: 8px !important; padding: 4px 0 10px 0 !important; min-height: 56px !important;
             align-items: center !important; box-sizing: border-box !important;
             justify-content: flex-start !important; gap: 0 !important; flex-wrap: nowrap !important;
           }
@@ -248,7 +248,7 @@ const NewOrder = () => {
             line-height: 1.3 !important; display: flex !important; align-items: center !important; flex: 1 !important; min-width: 0 !important; box-sizing: border-box !important;
           }
 
-          .no-root form > .no-section:first-of-type { margin-top: 14px !important; }
+          .no-root form > .no-section:first-of-type { margin-top: 6px !important; }
           .no-section { padding: 14px 12px !important; margin-bottom: 12px !important; border-radius: 10px !important; }
           .no-section-title { font-size: 12px !important; margin-bottom: 12px !important; }
           .no-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
@@ -261,9 +261,14 @@ const NewOrder = () => {
           .no-btn-cancel, .no-btn-submit { width: 100% !important; padding: 12px !important; font-size: 13px !important; border-radius: 10px !important; text-align: center !important; justify-content: center !important; }
           .no-btn-submit { order: -1; }
           .no-alert { font-size: 12px !important; padding: 10px 12px !important; border-radius: 8px !important; }
-          /* duplicate modal responsive */
-          .no-dup-modal { padding: 16px !important; border-radius: 12px !important; }
-          .no-dup-modal { animation: modalSlideInFromLeft .25s ease-out both !important; }
+          /* duplicate modal — bottom sheet */
+          .no-dup-modal-overlay { align-items: flex-end !important; padding: 0 !important; }
+          .no-dup-modal {
+            padding: 20px 16px max(24px, env(safe-area-inset-bottom, 0px)) !important;
+            border-radius: 20px 20px 0 0 !important;
+            max-width: 100vw !important;
+            animation: modalSheetInUp 0.38s cubic-bezier(0.25, 0.8, 0.25, 1) both !important;
+          }
           .no-dup-modal h3 { font-size: 13px !important; }
           .no-dup-modal p { font-size: 12px !important; }
           .no-dup-detail { font-size: 12px !important; }
@@ -309,6 +314,7 @@ const NewOrder = () => {
         {/* Duplicate Error Modal */}
         {duplicateError && (
           <div
+            className="no-dup-modal-overlay"
             style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
             onClick={() => setDuplicateError(null)}
           >

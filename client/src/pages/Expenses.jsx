@@ -285,9 +285,9 @@ export default function Expenses() {
   return (
     <>
       <style>{`
-        @keyframes modalSlideInFromLeft {
-          from { transform: translateX(-18px); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
+        @keyframes modalSheetInUp {
+          from { opacity: 0; transform: translate3d(0, 100%, 0); }
+          to   { opacity: 1; transform: translate3d(0, 0, 0); }
         }
 
         @media (max-width: 767px) {
@@ -337,7 +337,7 @@ export default function Expenses() {
             max-height: 92dvh !important;
             padding: 20px 16px 36px !important;
             overflow-y: auto !important;
-            animation: modalSlideInFromLeft .25s ease-out both !important;
+            animation: modalSheetInUp 0.38s cubic-bezier(0.25, 0.8, 0.25, 1) both !important;
           }
           .exp-modal-box h3         { font-size: 15px !important; }
           .exp-modal-grid           { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
@@ -353,7 +353,7 @@ export default function Expenses() {
             width: 100vw !important;
             max-width: 100vw !important;
             padding: 20px 16px 36px !important;
-            animation: modalSlideInFromLeft .25s ease-out both !important;
+            animation: modalSheetInUp 0.38s cubic-bezier(0.25, 0.8, 0.25, 1) both !important;
           }
           .exp-delete-modal-box h3  { font-size: 15px !important; }
           .exp-delete-modal-box p   { font-size: 13px !important; }
