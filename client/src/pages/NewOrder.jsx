@@ -70,8 +70,6 @@ const NewOrder = () => {
   }, []);
 
   const debounceTimeoutRef = useRef(null);
-  /** After user edits cow/hissa, day changes must not overwrite (get-available is async). */
-  const livestockTouchedRef = useRef(false);
   const generateCustomerId = useCallback((contact) => {
     if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     debounceTimeoutRef.current = setTimeout(() => generateCustomerIdRef(contact), 500);
@@ -143,41 +141,18 @@ const NewOrder = () => {
       if (isFarm) {
         return { ...p, order_type: v, total_amount: getPresetAmount(v), cow_number: '0', hissa_number: '0', day: '', slot: '' };
       }
-      livestockTouchedRef.current = false;
-      if (v === 'Goat (Hissa)') {
-        return { ...p, order_type: v, total_amount: getPresetAmount(v), cow_number: '0', hissa_number: '0' };
-      }
       getAvailableCowHissa(v, p.day, p.booking_date);
-      return {
-        ...p,
-        order_type: v,
-        total_amount: getPresetAmount(v),
-        cow_number: '',
-        hissa_number: '',
-      };
+      return { ...p, order_type: v, total_amount: getPresetAmount(v) };
     });
   };
 
   const handleDayChange = (e) => {
     const v = e.target.value;
-    setFormData((p) => {
-      if (p.order_type && p.order_type !== 'Goat (Hissa)' && !livestockTouchedRef.current) {
-        getAvailableCowHissa(p.order_type, v, p.booking_date);
-      }
-      return { ...p, day: v };
-    });
+    setFormData((p) => { if (p.order_type) getAvailableCowHissa(p.order_type, v, p.booking_date); return { ...p, day: v }; });
   };
 
-  const handleCowNumberChange = (e) => {
-    livestockTouchedRef.current = true;
-    setFormData((p) => ({ ...p, cow_number: e.target.value }));
-    setDuplicateError(null);
-  };
-  const handleHissaNumberChange = (e) => {
-    livestockTouchedRef.current = true;
-    setFormData((p) => ({ ...p, hissa_number: e.target.value }));
-    setDuplicateError(null);
-  };
+  const handleCowNumberChange = (e) => { setFormData((p) => ({ ...p, cow_number: e.target.value })); setDuplicateError(null); };
+  const handleHissaNumberChange = (e) => { setFormData((p) => ({ ...p, hissa_number: e.target.value })); setDuplicateError(null); };
 
   const handleCowNumberBlur = async () => {
     const { cow_number, hissa_number, order_type, day, booking_date } = formData;
@@ -225,13 +200,9 @@ const NewOrder = () => {
         setSuccess('Order created successfully!');
         if (keepFormData) {
           generateOrderId(formData.order_type);
-          if (!isFarm) {
-            livestockTouchedRef.current = false;
-            getAvailableCowHissa(formData.order_type, formData.day, formData.booking_date);
-          }
+          if (!isFarm) getAvailableCowHissa(formData.order_type, formData.day, formData.booking_date);
           setTimeout(() => setSuccess(''), 2000);
         } else {
-          livestockTouchedRef.current = false;
           setFormData({ ...EMPTY_FORM });
           setTimeout(() => setSuccess(''), 3000);
         }
