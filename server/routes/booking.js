@@ -2060,14 +2060,17 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
           "Helvetica",
           10
         );
-        const itemSub   = `Cow: ${row.cow || "—"} | Hissa: ${row.hissa || "—"}`;
+        const showCowHissa = row.type !== "Goat (Hissa)";
+        const itemSub = showCowHissa ? `Cow: ${row.cow || "—"} | Hissa: ${row.hissa || "—"}` : "";
 
         doc.font("Helvetica-Bold").fontSize(11).fillColor("#1a1a1a")
           .text(itemTitle, COL_DESC, rowY + 7, { lineBreak: false });
         doc.font("Helvetica").fontSize(10).fillColor("#4a4a4a")
           .text(shareholderLine, COL_DESC, rowY + 22, { lineBreak: false });
-        doc.font("Helvetica").fontSize(9.5).fillColor("#5f5f5f")
-          .text(itemSub,   COL_DESC, rowY + 36, { lineBreak: false });
+        if (itemSub) {
+          doc.font("Helvetica").fontSize(9.5).fillColor("#5f5f5f")
+            .text(itemSub, COL_DESC, rowY + 36, { lineBreak: false });
+        }
 
         // Quantity — vertically centred in row with description block
         const qtyY = rowY + 19;
