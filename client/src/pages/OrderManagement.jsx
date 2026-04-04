@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { API_BASE as API } from '../config/api';
@@ -65,11 +65,14 @@ function StatusPill({ status }) {
 }
 
 const defaultEditRow = () => ({
-  order_id: '', customer_id: '', slot: '',
+  order_id: '', customer_id: '', cow: '', hissa: '', slot: '',
   booking_name: '', shareholder_name: '', phone_number: '', alt_phone: '',
   address: '', area: '', day: '', type: '', booking_date: '',
   total_amount: '', received: '', pending: '', source: '', reference: '', closed_by: '', description: '',
 });
+
+const EDIT_FIELD_KEYS_BOOKING = ['order_id', 'customer_id', 'cow', 'hissa', 'slot', 'booking_name', 'shareholder_name', 'phone_number', 'alt_phone', 'address', 'area', 'day', 'type', 'booking_date', 'total_amount', 'received', 'pending', 'source', 'reference', 'closed_by'];
+const EDIT_FIELD_KEYS_FARM = ['order_id', 'customer_id', 'slot', 'booking_name', 'shareholder_name', 'phone_number', 'alt_phone', 'address', 'area', 'day', 'type', 'booking_date', 'total_amount', 'received', 'pending', 'source', 'reference', 'closed_by'];
 
 function validateAmountsRealtime(row) {
   const errors = {};
@@ -129,6 +132,8 @@ export default function OrderManagement() {
   const [page,        setPage]        = useState(1);
   const [totalCount,  setTotalCount]  = useState(0);
   const [mobileFiltersOpen,  setMobileFiltersOpen]  = useState(false);
+  const [editDuplicateError, setEditDuplicateError] = useState(null);
+  const editDuplicateCheckTimeoutRef = useRef(null);
 
   const { authFetch } = useAuth();
   const token = localStorage.getItem('token');
@@ -187,6 +192,37 @@ export default function OrderManagement() {
   useEffect(() => { setPage(1); }, [search, slot, orderType, day, reference, cowNumber, yearFilter]);
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
+  const shouldSkipCowHissaDup = (type, c, h) => {
+    if (type !== 'Goat (Hissa)') return false;
+    const cv = String(c ?? '').trim(); const hv = String(h ?? '').trim();
+    return (cv === '0' || cv === '') && (hv === '0' || hv === '');
+  };
+
+  const checkCowHissaDuplicate = useCallback(async (c, h, type, d, bd, excludeId) => {
+    if (!c || !h || !type || !token || shouldSkipCowHissaDup(type, c, h)) return null;
+    try {
+      const res = await authFetch(`${API}/booking/check-cow-hissa`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cow_number: c, hissa_number: h, order_type: type, day: d || null, booking_date: bd || null }),
+      });
+      if (res.ok) { const d2 = await res.json(); if (d2.exists && d2.order_id !== excludeId) return d2; }
+    } catch (e) { console.error(e); }
+    return null;
+  }, [authFetch, token]);
+
+  useEffect(() => {
+    if (!editOpen || isFarm) return;
+    const { cow, hissa, type, day: d, booking_date: bd, order_id } = editRow || {};
+    if (!(cow || '').trim() || !(hissa || '').trim() || !type || shouldSkipCowHissaDup(type, cow, hissa)) { setEditDuplicateError(null); return; }
+    if (editDuplicateCheckTimeoutRef.current) clearTimeout(editDuplicateCheckTimeoutRef.current);
+    editDuplicateCheckTimeoutRef.current = setTimeout(async () => {
+      const dup = await checkCowHissaDuplicate(String(cow).trim(), String(hissa).trim(), type, d, bd, order_id);
+      setEditDuplicateError(dup || null);
+      editDuplicateCheckTimeoutRef.current = null;
+    }, 400);
+    return () => { if (editDuplicateCheckTimeoutRef.current) clearTimeout(editDuplicateCheckTimeoutRef.current); };
+  }, [editRow?.cow, editRow?.hissa, editRow?.type, editRow?.day, editRow?.booking_date, editOpen, isFarm, checkCowHissaDuplicate]);
+
   /* ── handlers ── */
   const toggleSelect    = (id)  => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleSelectAll = ()    => selectedIds.size === orders.length ? setSelectedIds(new Set()) : setSelectedIds(new Set(orders.map((r) => r.order_id)));
@@ -194,21 +230,23 @@ export default function OrderManagement() {
   const handleEdit = (row) => {
     const init = {
       order_id: row.order_id, customer_id: row.customer_id ?? '',
+      ...(isFarm ? {} : { cow: row.cow ?? '', hissa: row.hissa ?? '' }),
       slot: row.slot ?? '', booking_name: row.booking_name ?? '', shareholder_name: row.shareholder_name ?? '',
       phone_number: row.phone_number ?? '', alt_phone: row.alt_phone ?? '', address: row.address ?? '',
       area: row.area ?? '', day: row.day ?? '', type: row.type ?? '', booking_date: formatDate(row.booking_date),
       total_amount: row.total_amount ?? '', received: row.received ?? '', pending: row.pending ?? '',
       source: row.source ?? '', reference: row.reference ?? '', closed_by: row.closed_by ?? '', description: row.description ?? '',
     };
-    setEditPreviousRow(init); setEditRow({ ...init }); setEditErrors({}); setEditOpen(true);
+    setEditPreviousRow(init); setEditRow({ ...defaultEditRow(), ...init }); setEditErrors({}); setEditDuplicateError(null); setEditOpen(true);
   };
 
   const handleSaveEdit = async () => {
     const errors = validateOrderEdit(editRow);
     if (Object.keys(errors).length > 0) { setEditErrors(errors); return; }
+    if (!isFarm && editDuplicateError) return;
     setEditErrors({}); setSaving(true);
     try {
-      const payload = { ...editRow, cow: '0', hissa: '0' };
+      const payload = isFarm ? { ...editRow, cow: '0', hissa: '0' } : { ...editRow };
       if (payload.booking_date) {
         const s = String(payload.booking_date);
         payload.booking_date = s.includes('T') ? s.split('T')[0] : (s.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || s);
@@ -530,7 +568,7 @@ export default function OrderManagement() {
           <div
             className="om-edit-modal-wrap"
             style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
-            onClick={() => !saving && (setEditErrors({}), setEditOpen(false), setEditPreviousRow(null))}
+            onClick={() => !saving && (setEditErrors({}), setEditDuplicateError(null), setEditOpen(false), setEditPreviousRow(null))}
           >
             <div
               className="om-edit-modal-box"
@@ -552,8 +590,9 @@ export default function OrderManagement() {
               <div style={{ fontSize: '11px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>Update to</div>
 
               <div className="om-edit-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
-                {['order_id','customer_id','slot','booking_name','shareholder_name','phone_number','alt_phone','address','area','day','type','booking_date','total_amount','received','pending','source','reference','closed_by'].map((key) => {
+                {(isFarm ? EDIT_FIELD_KEYS_FARM : EDIT_FIELD_KEYS_BOOKING).map((key) => {
                   const isReadOnly = key === 'order_id' || key === 'customer_id' || key === 'received' || key === 'pending';
+                  const isCowHissaErr = !isFarm && (key === 'cow' || key === 'hissa') && editDuplicateError;
                   return (
                     <div key={key} style={{ minWidth: 0 }}>
                       <label className="om-edit-field-label" style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>{key.replace(/_/g, ' ')}</label>
@@ -576,12 +615,26 @@ export default function OrderManagement() {
                           });
                         }}
                         className="om-edit-field-input"
-                        style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: editErrors[key] ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px', ...(isReadOnly && { backgroundColor: '#f5f5f5', cursor: 'not-allowed' }) }}
+                        style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: (editErrors[key] || isCowHissaErr) ? '1px solid #dc2626' : '1px solid #e0e0e0', fontSize: '10px', ...(isReadOnly && { backgroundColor: '#f5f5f5', cursor: 'not-allowed' }) }}
                       />
                       {editErrors[key] && <div className="om-edit-field-error" style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{editErrors[key]}</div>}
                     </div>
                   );
                 })}
+
+                {!isFarm && editDuplicateError && (
+                  <div style={{ gridColumn: '1 / -1', padding: '8px 12px', background: '#FEE2E2', borderRadius: '6px', border: '1px solid #FECACA', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                    <span style={{ fontSize: '16px', lineHeight: '1' }}>⚠️</span>
+                    <div>
+                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#DC2626', marginBottom: '2px' }}>Duplicate Cow/Hissa Combination</div>
+                      <div style={{ fontSize: '10px', color: '#7F1D1D' }}>
+                        This cow + hissa combination is already used by Order <strong>{editDuplicateError.order_id}</strong>
+                        {editDuplicateError.booking_name ? ` (${editDuplicateError.booking_name})` : ''}
+                        {editDuplicateError.shareholder_name ? ` — ${editDuplicateError.shareholder_name}` : ''}. Please use a different combination.
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ minWidth: 0, gridColumn: '1 / -1' }}>
                   <label className="om-edit-field-label" style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>description</label>
@@ -596,7 +649,7 @@ export default function OrderManagement() {
               </div>
 
               <div className="om-edit-actions" style={{ marginTop: '14px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => { setEditOpen(false); }} disabled={saving} style={{ padding: '5px 11px', fontSize: '10px', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>
+                <button type="button" onClick={() => { setEditDuplicateError(null); setEditOpen(false); }} disabled={saving} style={{ padding: '5px 11px', fontSize: '10px', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>
                 <button type="button" onClick={handleSaveEdit} disabled={saving} style={{ padding: '5px 11px', fontSize: '10px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Save'}</button>
               </div>
             </div>
