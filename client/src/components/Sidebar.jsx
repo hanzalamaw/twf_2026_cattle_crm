@@ -129,6 +129,12 @@ const PROCUREMENT_MENU_ITEMS = [
   { id: 'pm-expenses', label: 'Expenses', iconDefault: '/icons/expenses_default.png', iconActive: '/icons/expenses_active.png', path: '/procurement/expenses', permission: 'procurement_management' },
 ];
 
+const ACCOUNTING_MENU_ITEMS = [
+  { id: 'acc-dashboard', label: 'Dashboard', iconDefault: '/icons/dashboard_default.png', iconActive: '/icons/dashboard_active.png', path: '/accounting/dashboard', permission: 'accounting_and_finance' },
+  { id: 'acc-transactions', label: 'Transactions', iconDefault: '/icons/transactions_default.png', iconActive: '/icons/transactions_active.png', path: '/accounting/transactions', permission: 'accounting_and_finance' },
+  { id: 'acc-expenses', label: 'Expenses', iconDefault: '/icons/expenses_default.png', iconActive: '/icons/expenses_active.png', path: '/accounting/expenses', permission: 'accounting_and_finance' },
+];
+
 /* ── Component ──────────────────────────────────────────────── */
 function Sidebar() {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -146,6 +152,7 @@ function Sidebar() {
   const isPerformanceContext = location.pathname.startsWith('/performance');
   const isFarmContext = location.pathname.startsWith('/farm');
   const isProcurementContext = location.pathname.startsWith('/procurement');
+  const isAccountingContext = location.pathname.startsWith('/accounting');
   const isAdminOrManager = [1, 2, 3, 5, 7].includes(roleId);
   const roleName = user?.role;
 
@@ -157,6 +164,8 @@ function Sidebar() {
     ? FARM_MENU_ITEMS
     : isProcurementContext
     ? PROCUREMENT_MENU_ITEMS
+    : isAccountingContext
+    ? ACCOUNTING_MENU_ITEMS
     : MENU_ITEMS;
 
   const roleVisibleItems = isBookingContext && roleName === STAFF_BOOKINGS_ROLE
@@ -234,6 +243,8 @@ function Sidebar() {
     ? 'FARM MANAGEMENT'
     : isProcurementContext
     ? 'PROCUREMENT MANAGEMENT'
+    : isAccountingContext
+    ? 'ACCOUNTING & FINANCE'
     : 'MANAGEMENT';
 
   /* ── Mobile Layout ── */

@@ -22,6 +22,15 @@ const FIXED_TYPES_FARM = [
   { key: "goat", label: "Goat" },
 ];
 
+const FIXED_TYPES_ACCOUNTING = [
+  { key: "premium", label: "Hissa - Premium" },
+  { key: "standard", label: "Hissa - Standard" },
+  { key: "waqf", label: "Hissa - Waqf" },
+  { key: "goat", label: "Goat (Hissa)" },
+  { key: "cow", label: "Cow" },
+  { key: "farm_goat", label: "Goat" },
+];
+
 /* ── Animated number hook ── */
 const useCountUp = (value, { duration = 600 } = {}) => {
   const [display, setDisplay] = useState(0);
@@ -98,6 +107,7 @@ const SEGMENT_COLORS = {
   premium:  { fill: "#FF5722" }, standard: { fill: "#2196F3" },
   waqf:     { fill: "#4CAF50" }, goat:     { fill: "#FF9800" },
   cow:      { fill: "#3B82F6" },
+  farm_goat:{ fill: "#10B981" },
   remaining:{ fill: "#EAEAEA" },
 };
 
@@ -250,8 +260,10 @@ const DayWiseSummary = ({ days }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [highlightRow, setHighlightRow] = useState(null);
   const dayList = days || [];
+  const firstDay = dayList[0];
+  const typeKeys = firstDay?.columnKeys?.length ? firstDay.columnKeys : ["premium", "standard", "waqf", "goat"];
+  const colLabels = firstDay?.columns?.length ? firstDay.columns : ["Premium", "Standard", "Waqf", "Goat", "Total"];
   const rowLabels = ["Total Orders", "Payment Cleared", "Pending (Completely)", "Pending (Partially)"];
-  const colLabels = ["Premium", "Standard", "Waqf", "Goat", "Total"];
   const renderCell = (val) => {
     const num = Number(val);
     return Number.isFinite(num) ? <AnimatedNumber value={num} duration={600} format={(n) => fmt(Math.round(n))} /> : (val ?? "—");
@@ -272,13 +284,13 @@ const DayWiseSummary = ({ days }) => {
                 <tr>
                   <th className="dayWiseCorner" rowSpan={2}>Category</th>
                   {dayList.map((d, di) => (
-                    <th key={d.key} colSpan={5} className={`dayWiseDayHeader${di > 0 ? " dayWiseDayHeaderSep" : ""}`}>{d.title}</th>
+                    <th key={d.key} colSpan={colLabels.length} className={`dayWiseDayHeader${di > 0 ? " dayWiseDayHeaderSep" : ""}`}>{d.title}</th>
                   ))}
                 </tr>
                 <tr>
                   {dayList.map((d, di) =>
                     colLabels.map((col, ci) => (
-                      <th key={`${d.key}-${col}`} className={`dayWiseColHeader${di > 0 && ci === 0 ? " dayWiseColGroupStart" : ""}`}>{col}</th>
+                      <th key={`${d.key}-${col}-${ci}`} className={`dayWiseColHeader${di > 0 && ci === 0 ? " dayWiseColGroupStart" : ""}`}>{col}</th>
                     ))
                   )}
                 </tr>
@@ -291,14 +303,18 @@ const DayWiseSummary = ({ days }) => {
                     {dayList.map((d, di) => {
                       const row = (d.data || []).find((r) => r.label === label);
                       if (!row) return colLabels.map((col, ci) => (
-                        <td key={`${d.key}-${label}-${col}`} className={`dayWiseCell${di > 0 && ci === 0 ? " dayWiseCellGroupStart" : ""}`}>—</td>
+                        <td key={`${d.key}-${label}-${col}-${ci}`} className={`dayWiseCell${di > 0 && ci === 0 ? " dayWiseCellGroupStart" : ""}`}>—</td>
                       ));
                       return (
                         <React.Fragment key={d.key}>
-                          <td className={`dayWiseCell${di > 0 ? " dayWiseCellGroupStart" : ""}`}>{renderCell(row.premium)}</td>
-                          <td className="dayWiseCell">{renderCell(row.standard)}</td>
-                          <td className="dayWiseCell">{renderCell(row.waqf)}</td>
-                          <td className="dayWiseCell">{renderCell(row.goat)}</td>
+                          {typeKeys.map((tk, ti) => (
+                            <td
+                              key={tk}
+                              className={`dayWiseCell${di > 0 && ti === 0 ? " dayWiseCellGroupStart" : ""}`}
+                            >
+                              {renderCell(row[tk])}
+                            </td>
+                          ))}
                           <td className="dayWiseCell dayWiseCellTotal">{renderCell(row.total)}</td>
                         </React.Fragment>
                       );
@@ -487,6 +503,7 @@ const Dashboard = () => {
   const { user } = useAuth();
   const location = useLocation();
   const isFarm = location.pathname.startsWith("/farm");
+  const isAccounting = location.pathname.startsWith("/accounting");
   const [year, setYear] = useState("2026");
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState(null);
@@ -504,8 +521,8 @@ const Dashboard = () => {
       if (!silent) setLoading(true);
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const y = encodeURIComponent(year);
-      const base = isFarm ? `${API_BASE}/farm/dashboard` : `${API_BASE}/dashboard`;
-      const dayPromise = isFarm
+      const base = isAccounting ? `${API_BASE}/accounting/dashboard` : isFarm ? `${API_BASE}/farm/dashboard` : `${API_BASE}/dashboard`;
+      const dayPromise = isFarm && !isAccounting
         ? Promise.resolve({ json: async () => ({ days: [] }) })
         : fetch(`${base}/day-wise?year=${y}`, { headers });
 
@@ -533,16 +550,18 @@ const Dashboard = () => {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [year, token, isFarm]);
+  }, [year, token, isFarm, isAccounting]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const achievedReal = Number(targetData?.target?.achievedTotal || 0);
   const achievedForDonut = Number.isFinite(Number(DEV_PREVIEW_TOTAL_ORDERS)) && DEV_PREVIEW_TOTAL_ORDERS !== null
     ? Number(DEV_PREVIEW_TOTAL_ORDERS) : achievedReal;
-  const targetTotal = year === "all" ? 3500 : Number(targetData?.target?.targetTotal || 2000);
+  const targetTotal = isAccounting
+    ? Number(targetData?.target?.targetTotal ?? (year === "all" ? 7000 : 4000))
+    : year === "all" ? 3500 : Number(targetData?.target?.targetTotal || 2000);
   const apiMap = new Map((Array.isArray(targetData?.breakdown) ? targetData.breakdown : []).map((b) => [String(b.key), b]));
-  const fixedTypes = isFarm ? FIXED_TYPES_FARM : FIXED_TYPES_BOOKING;
+  const fixedTypes = isAccounting ? FIXED_TYPES_ACCOUNTING : isFarm ? FIXED_TYPES_FARM : FIXED_TYPES_BOOKING;
   const fixedBreakdown = fixedTypes.map((t) => {
     const found = apiMap.get(t.key);
     const value = Number(found?.value || 0);
@@ -830,7 +849,7 @@ const Dashboard = () => {
       {/* Header */}
       <div className="header">
         <div>
-          <h1 className="hTitle">{isFarm ? "Farm Dashboard" : "Dashboard"}</h1>
+          <h1 className="hTitle">{isFarm ? "Farm Dashboard" : isAccounting ? "Accounting & Finance" : "Dashboard"}</h1>
           <p className="hSub">Welcome, {user?.username || "Manager"}</p>
         </div>
         <div className="headerRight">
@@ -863,7 +882,7 @@ const Dashboard = () => {
         <div className="card animCard" style={{ textAlign: "center", color: "#6b7280" }}>Loading dashboard...</div>
       ) : (<>
         <TargetAchievement achieved={achievedForDonut} target={targetTotal} breakdown={fixedBreakdown} />
-        {!isFarm && <DayWiseSummary days={days} />}
+        {(isAccounting || !isFarm) && <DayWiseSummary days={days} />}
         <SourceWiseSummary sources={sources} />
         <ReferenceWiseSummary references={references} />
         <SalesOverviewChart series={salesOverview} reveal={kpiValuesVisible} />

@@ -14,7 +14,8 @@ import Operations from './pages/Operations';
 import ProcurementDashboard from './pages/ProcurementDashboard';
 import NewProcurement from './pages/NewProcurement';
 import ProcurementManagement from './pages/ProcurementManagement';
-import Accounting from './pages/Accounting';
+import AccountingTransactions from './pages/AccountingTransactions';
+import AccountingExpenses from './pages/AccountingExpenses';
 import PerformanceAdmin from './pages/PerformanceAdmin';
 import PerformanceDashboard from './pages/PerformanceDashboard';
 import Dashboard from './pages/Dashboard';
@@ -138,6 +139,9 @@ const ROUTE_TITLES = {
   '/procurement/transactions': 'Transactions',
   '/procurement/expenses': 'Expenses',
   '/accounting': 'Accounting & Finance',
+  '/accounting/dashboard': 'Accounting & Finance',
+  '/accounting/transactions': 'Transactions',
+  '/accounting/expenses': 'Expenses',
   '/performance': 'Performance Management',
   '/performance/admin': 'Performance Admin',
   '/performance/dashboard': 'Performance Dashboard',
@@ -276,7 +280,10 @@ function App() {
           </Route>
 
           <Route path="/accounting" element={<ProtectedRoute><RequirePermission permission="accounting_and_finance"><MainLayout systemName="Accounting & Finance" /></RequirePermission></ProtectedRoute>}>
-            <Route index element={<Accounting />} />
+            <Route index element={<Navigate to="/accounting/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="transactions" element={<AccountingTransactions />} />
+            <Route path="expenses" element={<AccountingExpenses />} />
           </Route>
 
           <Route path="/performance" element={<ProtectedRoute><RequirePermission permission="performance_management"><MainLayout systemName="Performance Management" /></RequirePermission></ProtectedRoute>}>

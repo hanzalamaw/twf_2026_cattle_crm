@@ -16,6 +16,7 @@ import { registerNewQueryRoutes } from "./routes/newqueryRoutes.js";
 import { registerPerformanceRoutes } from "./routes/performanceRoutes.js";
 import { registerFarmRoutes } from "./routes/farmRoutes.js";
 import { registerProcurementRoutes } from "./routes/procurement.js";
+import { registerAccountingRoutes } from "./routes/accountingRoutes.js";
 import { log, logError } from "./utils/logger.js";
 import { writeAuditLog } from "./utils/auditLog.js";
 import { sendLoginNotificationEmail } from "./utils/email.js";
@@ -381,6 +382,7 @@ const startServer = async () => {
     registerNewQueryRoutes(app, db, verifyToken);
     registerPerformanceRoutes(app, db, verifyToken);
     registerProcurementRoutes(app, db, verifyToken);
+    registerAccountingRoutes(app, db, verifyToken);
 
     // ---------- 404 ----------
     app.use((req, res) => {

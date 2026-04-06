@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
+import * as XLSX from 'xlsx';
 import { API_BASE as API } from '../config/api';
 
 const HIDDEN_TYPES_BOOKING = ['Cow', 'Goat'];
@@ -115,6 +116,7 @@ export default function Transactions() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('all');
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const typeDropdownRef = useRef(null);
   const searchInputRef = useRef(null);
 
@@ -286,6 +288,93 @@ export default function Transactions() {
     setAddBank('');
     setAddCash('');
     setPaymentErrors({});
+  };
+
+  const toggleSelect = (id) =>
+    setSelectedIds((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const toggleSelectAll = () =>
+    selectedIds.size === orders.length ? setSelectedIds(new Set()) : setSelectedIds(new Set(orders.map((r) => r.order_id)));
+
+  const handleExport = async () => {
+    const ids = Array.from(selectedIds);
+    try {
+      const params = new URLSearchParams();
+      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+      appliedTypes.forEach((t) => params.append('order_type', t));
+      if (isFarm && appliedTypes.length === 0) {
+        params.append('order_type', 'Cow');
+        params.append('order_type', 'Goat');
+      }
+      if (isProcurement && appliedTypes.length > 0) params.set('type', appliedTypes[0]);
+      if (debouncedSearch) params.set('search', debouncedSearch);
+      if (paymentStatusFilter === 'pending' || paymentStatusFilter === 'received') {
+        params.set('payment_status', paymentStatusFilter);
+      }
+      if (!isProcurement && !isFarm) params.set('omit_hidden_types', '1');
+      if (isProcurement) params.delete('order_type');
+
+      const limit = 200;
+      let p = 1;
+      let all = [];
+      let total = 0;
+      do {
+        params.set('page', String(p));
+        params.set('limit', String(limit));
+        const endpoint = isProcurement
+          ? `${API}/procurement/transactions/list?${params.toString()}`
+          : `${API}/booking/orders?${params.toString()}`;
+        const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) {
+          alert('Failed to load data for export');
+          return;
+        }
+        const data = await res.json();
+        const list = Array.isArray(data.data) ? data.data : [];
+        total = typeof data.total === 'number' ? data.total : 0;
+        all = all.concat(list);
+        if (list.length < limit || all.length >= total) break;
+        p += 1;
+      } while (true);
+
+      const filtered = all.filter((row) => {
+        if (isProcurement) return true;
+        if (isFarm) return ['Cow', 'Goat'].includes(row.type);
+        return !HIDDEN_TYPES_BOOKING.includes(row.type);
+      });
+      const toExport = ids.length > 0 ? filtered.filter((r) => ids.includes(r.order_id)) : filtered;
+      if (!toExport.length) {
+        alert('No data to export');
+        return;
+      }
+
+      const headers = activeColumns.map((c) => c.label);
+      const amountKeys = ['total_amount', 'bank', 'cash', 'received', 'pending'];
+      const rows = toExport.map((row) =>
+        activeColumns.map((col) => {
+          const val = row[col.key];
+          if (amountKeys.includes(col.key)) {
+            const n = Number(val);
+            return Number.isFinite(n) ? n : val ?? '';
+          }
+          if (col.key === 'booking_date') return formatDate(val);
+          if (col.key === 'payment_status') {
+            return val === 'Pending' ? 'Pending' : val ? 'Received' : '—';
+          }
+          return val != null ? String(val) : '—';
+        })
+      );
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, isProcurement ? 'Procurement' : 'Transactions');
+      XLSX.writeFile(wb, `transactions-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e) {
+      alert('Export failed');
+    }
   };
 
   const getPaymentRealtimeError = useCallback(() => {
@@ -553,6 +642,14 @@ export default function Transactions() {
             <option value="actual">Actual</option>
           </select>
 
+          <button
+            type="button"
+            onClick={handleExport}
+            style={{ padding: '6px 13px', fontSize: '10px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+          >
+            Export
+          </button>
+
           {/* Show/hide amounts — desktop */}
           <button
             type="button"
@@ -594,6 +691,10 @@ export default function Transactions() {
             ⚙ Filters
           </button>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+          <button type="button" onClick={handleExport} style={{ padding: '0 10px', height: 38, fontSize: '11px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>
+            Export
+          </button>
         <button
           type="button"
           className="txn-mobile-hide-btn"
@@ -603,6 +704,7 @@ export default function Transactions() {
         >
           <img src={amountVisible ? '/icons/hide.png' : '/icons/show.png'} alt={amountVisible ? 'Hide' : 'Show'} style={{ width: '18px', height: '18px', display: 'block' }} />
         </button>
+        </div>
       </div>
 
       <div className="txn-mobile-filter-shell" style={{ display: 'none', flexShrink: 0 }}>
@@ -773,6 +875,14 @@ export default function Transactions() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', whiteSpace: 'nowrap' }}>
               <thead>
                 <tr style={{ background: '#fafafa' }}>
+                  <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap', width: '40px' }}>
+                    <input
+                      type="checkbox"
+                      checked={orders.length > 0 && selectedIds.size === orders.length}
+                      onChange={toggleSelectAll}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  </th>
                   {activeColumns.map((col) => (
                     <th
                       key={col.key}
@@ -793,7 +903,7 @@ export default function Transactions() {
               <tbody>
                 {orders.length === 0 ? (
                   <tr>
-                    <td colSpan={activeColumns.length} style={{ padding: '32px', textAlign: 'center', color: '#666', fontSize: '11px' }}>
+                    <td colSpan={activeColumns.length + 1} style={{ padding: '32px', textAlign: 'center', color: '#666', fontSize: '11px' }}>
                       {debouncedSearch || paymentStatusFilter !== 'all' ? 'No orders match your filters.' : 'No orders.'}
                     </td>
                   </tr>
@@ -806,6 +916,17 @@ export default function Transactions() {
                       onMouseEnter={(e) => e.currentTarget.style.background = '#fafafa'}
                       onMouseLeave={(e) => e.currentTarget.style.background = ''}
                     >
+                      <td
+                        style={{ padding: '6px', whiteSpace: 'nowrap', fontSize: '11px' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(row.order_id)}
+                          onChange={() => toggleSelect(row.order_id)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </td>
                       {activeColumns.map((col) => (
                         <td
                           key={col.key}
