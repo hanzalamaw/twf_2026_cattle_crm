@@ -560,14 +560,13 @@ const Dashboard = () => {
 
   const farmTypeGoals = { cow: 10, goat: 60 };
   const bookingTypeGoals = { goat: 40 };
-  const accountingTypeGoals = { cow: 10, goat: 40 };
   const achievedReal = Number(targetData?.target?.achievedTotal || 0);
   const bookingAchievedForTarget = Number(targetData?.target?.achievedForTarget || 0);
   const achievedForDonut = Number.isFinite(Number(DEV_PREVIEW_TOTAL_ORDERS)) && DEV_PREVIEW_TOTAL_ORDERS !== null
     ? Number(DEV_PREVIEW_TOTAL_ORDERS)
     : (isFarm ? achievedReal : bookingAchievedForTarget || achievedReal);
   const targetTotal = isAccounting
-    ? Number(targetData?.target?.targetTotal ?? 2100)
+    ? Number(targetData?.target?.targetTotal ?? 2110)
     : isFarm
       ? Number(targetData?.target?.targetTotal || 70)
       : year === "all" ? 3500 : Number(targetData?.target?.targetTotal || 2000);
@@ -586,18 +585,9 @@ const Dashboard = () => {
         percentage: goalValue > 0 ? (value / goalValue) * 100 : 0,
       };
     }
-    if (isAccounting) {
-      const goalValue = Number(accountingTypeGoals[t.key] || 0);
-      if (goalValue > 0) {
-        return {
-          key: t.key,
-          label: t.label,
-          value,
-          goalValue,
-          percentage: (value / goalValue) * 100,
-        };
-      }
-    }
+  if (isAccounting) {
+    return { key: t.key, label: t.label, value, percentage: achievedReal > 0 ? (value / achievedReal) * 100 : 0 };
+  }
     const bookingGoal = Number(bookingTypeGoals[t.key] || 0);
     if (bookingGoal > 0) {
       return {

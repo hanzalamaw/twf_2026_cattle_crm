@@ -139,12 +139,9 @@ const SIDEBAR_EXPANDED_KEY = 'cattle_crm_sidebar_expanded';
 
 function readSidebarExpanded() {
   try {
-    const persisted = localStorage.getItem(SIDEBAR_EXPANDED_KEY) ?? sessionStorage.getItem(SIDEBAR_EXPANDED_KEY);
-    if (persisted === '1') return true;
-    if (persisted === '0') return false;
-    return true;
+    return sessionStorage.getItem(SIDEBAR_EXPANDED_KEY) === '1';
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -168,6 +165,10 @@ function Sidebar() {
   const isAccountingContext = location.pathname.startsWith('/accounting');
   const isAdminOrManager = [1, 2, 3, 5, 7].includes(roleId);
   const roleName = user?.role;
+
+  const moduleSidebarChrome =
+    location.pathname === '/dashboard' ||
+    /^\/(bookings|farm|procurement|accounting|performance)(\/|$)/.test(location.pathname);
 
   const items = isBookingContext
     ? BOOKING_MENU_ITEMS
@@ -250,7 +251,6 @@ function Sidebar() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(SIDEBAR_EXPANDED_KEY, isExpanded ? '1' : '0');
       sessionStorage.setItem(SIDEBAR_EXPANDED_KEY, isExpanded ? '1' : '0');
     } catch {
       /* ignore */
@@ -350,7 +350,7 @@ function Sidebar() {
 
   /* ── Desktop Layout (original sidebar) ── */
   return (
-    <aside className={`sidebar ${isExpanded ? 'expanded' : 'collapsed'}`}>
+    <aside className={`sidebar ${isExpanded ? 'expanded' : 'collapsed'}${moduleSidebarChrome ? ' sidebar--module' : ''}`}>
       <div className="sidebar-profile">
         <div className="profile-avatar">
           <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face" alt="Profile" />

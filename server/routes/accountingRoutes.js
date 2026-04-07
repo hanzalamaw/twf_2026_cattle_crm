@@ -175,7 +175,7 @@ export const registerAccountingRoutes = (app, db, verifyToken) => {
       }
 
       const achievedTotal = Object.values(map).reduce((a, b) => a + b, 0);
-      const targetTotal = 2100;
+      const targetTotal = 2110;
 
       const breakdown = [
         { key: "premium", label: "Hissa - Premium", value: map.premium },
