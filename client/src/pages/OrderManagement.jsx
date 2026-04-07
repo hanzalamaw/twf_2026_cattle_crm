@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { API_BASE as API } from '../config/api';
 import { useAuth } from '../context/AuthContext';
 const PAGE_SIZE = 50;
-const HIDDEN_TYPES_BOOKING = ['Cow', 'Goat'];
+const HIDDEN_TYPES_BOOKING = ['Cow', 'Fancy Cow', 'Goat'];
 
 const COLUMNS = [
   { key: 'customer_id',    label: 'Customer ID'    },
@@ -140,7 +140,7 @@ export default function OrderManagement() {
   const location = useLocation();
   const isFarm = location.pathname.startsWith('/farm');
   const visibleOrderTypes = (filters.order_types || []).filter((t) => (
-    isFarm ? ['Cow', 'Goat'].includes(t) : !HIDDEN_TYPES_BOOKING.includes(t)
+    isFarm ? ['Fancy Cow', 'Goat'].includes(t) : !HIDDEN_TYPES_BOOKING.includes(t)
   ));
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
@@ -177,7 +177,7 @@ export default function OrderManagement() {
         const total = typeof json.total === 'number' ? json.total : (data?.length ?? 0);
         const filtered = (Array.isArray(data) ? data : []).filter((r) => {
           if (isFarm) {
-            return ['Cow', 'Goat'].includes(r.type);
+            return ['Fancy Cow', 'Goat'].includes(r.type);
           }
           return !HIDDEN_TYPES_BOOKING.includes(r.type);
         });
@@ -308,7 +308,7 @@ export default function OrderManagement() {
         const data = Array.isArray(json) ? json : json.data;
         const rawChunk = Array.isArray(data) ? data : [];
         const chunk = rawChunk.filter((r) =>
-          isFarm ? ['Cow', 'Goat'].includes(r.type) : !HIDDEN_TYPES_BOOKING.includes(r.type)
+          isFarm ? ['Fancy Cow', 'Goat'].includes(r.type) : !HIDDEN_TYPES_BOOKING.includes(r.type)
         );
         allOrders = allOrders.concat(chunk);
         if (rawChunk.length < limit) break;

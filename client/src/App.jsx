@@ -246,7 +246,7 @@ function App() {
 
           <Route path="/bookings" element={<ProtectedRoute><RequirePermission permission="booking_management"><MainLayout systemName="" /></RequirePermission></ProtectedRoute>}>
             <Route index element={<BookingsIndexRedirect />} />
-            <Route path="dashboard" element={<RequireBookingRoleAccess><RequireBookingDashboard><Dashboard /></RequireBookingDashboard></RequireBookingRoleAccess>} />
+            <Route path="dashboard" element={<RequireBookingRoleAccess><Dashboard /></RequireBookingRoleAccess>} />
             <Route path="new-query" element={<RequireBookingRoleAccess><NewQuery /></RequireBookingRoleAccess>} />
             <Route path="new-order" element={<RequireBookingRoleAccess><NewOrder /></RequireBookingRoleAccess>} />
             <Route path="queries" element={<RequireBookingRoleAccess><QueryManagement /></RequireBookingRoleAccess>} />

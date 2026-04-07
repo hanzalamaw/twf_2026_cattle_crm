@@ -149,6 +149,10 @@ function drawInvoiceTermsPage(doc, ctx) {
  * @param {Function} verifyToken - auth middleware
  */
 export const registerBookingRoutes = (app, db, verifyToken) => {
+  const normalizeOrderType = (value) => {
+    const raw = String(value || "").trim();
+    return raw === "Cow" ? "Fancy Cow" : raw;
+  };
   // Generate customer ID based on contact lookup
   app.post("/api/booking/generate-customer-id", verifyToken, async (req, res) => {
     try {
@@ -210,12 +214,13 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         return res.status(400).json({ message: "Order type is required" });
       }
 
-      const orderType = String(order_type).trim();
+      const orderType = normalizeOrderType(order_type);
       const year = 2026;
 
       // Map order types to prefixes
       const prefixMap = {
         "Cow": "C",
+        "Fancy Cow": "C",
         "Goat (Hissa)": "G",
         "Hissa - Standard": "S",
         "Hissa - Premium": "P",
@@ -266,7 +271,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         return res.json({ cow_number: "", hissa_number: "" });
       }
 
-      const orderType = String(order_type).trim();
+      const orderType = normalizeOrderType(order_type);
       const dayValue = day ? String(day).trim() : null;
       const year = booking_date ? (new Date(booking_date).getFullYear() || 2026) : 2026;
 
@@ -416,7 +421,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
 
       const cowNum = String(cow_number).trim();
       const hissaNum = String(hissa_number).trim();
-      const orderType = String(order_type).trim();
+      const orderType = normalizeOrderType(order_type);
       const dayValue = day ? String(day).trim() : null;
       const year = booking_date ? (new Date(booking_date).getFullYear() || 2026) : 2026;
 
@@ -520,7 +525,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           order_id,
           customer_id,
           contact,
-          order_type,
+          normalizeOrderType(order_type),
           booking_name || null,
           shareholder_name || null,
           cow_number || null,
@@ -628,7 +633,8 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         conditions.push("o.slot = ?");
         params.push(slot);
       }
-      const orderTypes = Array.isArray(order_type) ? order_type : order_type ? [order_type] : [];
+      const orderTypesRaw = Array.isArray(order_type) ? order_type : order_type ? [order_type] : [];
+      const orderTypes = orderTypesRaw.map((t) => normalizeOrderType(t));
       if (orderTypes.length > 0) {
         conditions.push(`o.order_type IN (${orderTypes.map(() => "?").join(",")})`);
         params.push(...orderTypes);
@@ -655,7 +661,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       }
       // Booking transactions UI: exclude farm-only types from main booking list (SQL so LIMIT/total match)
       if (omit_hidden_types === "1") {
-        conditions.push("(o.order_type IS NULL OR o.order_type NOT IN ('Cow', 'Goat'))");
+        conditions.push("(o.order_type IS NULL OR o.order_type NOT IN ('Cow', 'Fancy Cow', 'Goat'))");
       }
 
       const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -693,7 +699,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           o.address AS address,
           o.area AS area,
           o.day AS day,
-          o.order_type AS type,
+          CASE WHEN o.order_type = 'Cow' THEN 'Fancy Cow' ELSE o.order_type END AS type,
           o.booking_date AS booking_date,
           o.total_amount AS total_amount,
           COALESCE(p.bank, 0) AS bank,
@@ -733,7 +739,8 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       } else if (year === "2024") {
         conditions.push("(o.booking_date IS NULL OR YEAR(o.booking_date) < 2025)");
       }
-      const types = Array.isArray(order_type) ? order_type : order_type ? [order_type] : [];
+      const typesRaw = Array.isArray(order_type) ? order_type : order_type ? [order_type] : [];
+      const types = typesRaw.map((t) => normalizeOrderType(t));
       if (types.length > 0) {
         conditions.push(`o.order_type IN (${types.map(() => "?").join(",")})`);
         params.push(...types);
@@ -771,7 +778,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const andOrWhere = whereClause ? " AND " : " WHERE ";
 
       const [slots] = await db.execute(`SELECT DISTINCT slot AS value FROM orders ${whereClause}${andOrWhere}slot IS NOT NULL AND slot != '' ORDER BY slot`, params);
-      const [types] = await db.execute(`SELECT DISTINCT order_type AS value FROM orders ${whereClause}${andOrWhere}order_type IS NOT NULL ORDER BY order_type`, params);
+      const [types] = await db.execute(`SELECT DISTINCT (CASE WHEN order_type = 'Cow' THEN 'Fancy Cow' ELSE order_type END) AS value FROM orders ${whereClause}${andOrWhere}order_type IS NOT NULL ORDER BY value`, params);
       const [days] = await db.execute(`SELECT DISTINCT day AS value FROM orders ${whereClause}${andOrWhere}day IS NOT NULL ORDER BY day`, params);
       const [refs] = await db.execute(`SELECT DISTINCT reference AS value FROM orders ${whereClause}${andOrWhere}reference IS NOT NULL AND reference != '' ORDER BY reference`, params);
       res.json({
@@ -810,8 +817,8 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         params.push(term, term, term, term, term, term, term);
       }
       if (order_type) {
-        conditions.push("l.order_type = ?");
-        params.push(order_type);
+        conditions.push("(CASE WHEN l.order_type = 'Cow' THEN 'Fancy Cow' ELSE l.order_type END) = ?");
+        params.push(normalizeOrderType(order_type));
       }
       if (day) {
         conditions.push("l.day = ?");
@@ -831,7 +838,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       }
       // Booking Query Management: exclude farm-only order types (must be in SQL so LIMIT/total match the table)
       if (req.query.omit_hidden_types === "1") {
-        conditions.push("(l.order_type IS NULL OR l.order_type NOT IN ('Cow', 'Goat'))");
+        conditions.push("(l.order_type IS NULL OR l.order_type NOT IN ('Cow', 'Fancy Cow', 'Goat'))");
       }
 
       const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -857,7 +864,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           l.address AS address,
           l.area AS area,
           l.day AS day,
-          l.order_type AS type,
+          CASE WHEN l.order_type = 'Cow' THEN 'Fancy Cow' ELSE l.order_type END AS type,
           l.booking_date AS booking_date,
           l.total_amount AS total_amount,
           l.order_source AS source,
@@ -897,12 +904,12 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         params.push("Farm");
       }
       if (req.query.omit_hidden_types === "1") {
-        conditions.push("(order_type IS NULL OR order_type NOT IN ('Cow', 'Goat'))");
+        conditions.push("(order_type IS NULL OR order_type NOT IN ('Cow', 'Fancy Cow', 'Goat'))");
       }
       const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
       const andOrWhere = whereClause ? " AND " : " WHERE ";
 
-      const [types] = await db.execute(`SELECT DISTINCT order_type AS value FROM leads ${whereClause}${andOrWhere}order_type IS NOT NULL ORDER BY order_type`, params);
+      const [types] = await db.execute(`SELECT DISTINCT (CASE WHEN order_type = 'Cow' THEN 'Fancy Cow' ELSE order_type END) AS value FROM leads ${whereClause}${andOrWhere}order_type IS NOT NULL ORDER BY value`, params);
       const [days] = await db.execute(`SELECT DISTINCT day AS value FROM leads ${whereClause}${andOrWhere}day IS NOT NULL ORDER BY day`, params);
       const [refs] = await db.execute(`SELECT DISTINCT reference AS value FROM leads ${whereClause}${andOrWhere}reference IS NOT NULL AND reference != '' ORDER BY reference`, params);
       const [areas] = await db.execute(`SELECT DISTINCT area AS value FROM leads ${whereClause}${andOrWhere}area IS NOT NULL AND area != '' ORDER BY area`, params);
@@ -921,12 +928,12 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
   /** Map lead row from DB (contact, alt_contact, order_type, order_source) to client shape (phone_number, alt_phone, type, source) for audit display */
   function leadRowToClientShape(row) {
     if (!row) return null;
-    const { contact, alt_contact, order_type, order_source, closed_by, booking_date, ...rest } = row;
+      const { contact, alt_contact, order_type, order_source, closed_by, booking_date, ...rest } = row;
     return {
       ...rest,
       phone_number: contact,
       alt_phone: alt_contact,
-      type: order_type,
+        type: normalizeOrderType(order_type),
       source: order_source,
       query_by: closed_by,
       booking_date: toDateOnly(booking_date) ?? booking_date,
@@ -1018,7 +1025,9 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const lead = leadRows[0];
       const isFarmLead = String(lead.order_source || "").trim() === "Farm";
 
-      const orderType = body.order_type != null && String(body.order_type).trim() ? String(body.order_type).trim() : (lead.order_type != null ? String(lead.order_type).trim() : "");
+      const orderType = body.order_type != null && String(body.order_type).trim()
+        ? normalizeOrderType(body.order_type)
+        : normalizeOrderType(lead.order_type);
       let shareholderName = body.shareholder_name != null && String(body.shareholder_name).trim() ? String(body.shareholder_name).trim() : (lead.shareholder_name ?? null);
       if (isFarmLead) {
         shareholderName = "-";
@@ -1738,7 +1747,11 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
       for (const [clientKey, dbCol] of Object.entries(fieldMap)) {
         if (body[clientKey] !== undefined) {
           updates.push(`\`${dbCol}\` = ?`);
-          const value = clientKey === "booking_date" ? toDateOnly(body[clientKey]) : body[clientKey];
+          const value = clientKey === "booking_date"
+            ? toDateOnly(body[clientKey])
+            : clientKey === "type"
+              ? normalizeOrderType(body[clientKey])
+              : body[clientKey];
           params.push(value);
         }
       }

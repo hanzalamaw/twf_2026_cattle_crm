@@ -25,10 +25,10 @@
 .sidebar-profile {
   display: flex;
   align-items: center;
-  padding: 11px 10px;
+  padding: 12px 10px;
   gap: 8px;
   position: relative;
-  min-height: 51px;
+  min-height: 58px;
 }
 
 .sidebar.collapsed .sidebar-profile {
@@ -38,8 +38,8 @@
 }
 
 .profile-avatar {
-  width: 29px;
-  height: 29px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;

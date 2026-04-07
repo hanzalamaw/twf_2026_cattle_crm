@@ -144,6 +144,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
       }
 
       const achievedTotal = map.premium + map.standard + map.waqf + map.goat;
+      const achievedForTarget = map.premium + map.standard + map.waqf;
       const targetTotal = year === "2024" ? 500 : year === "2025" ? 1000 : 2000;
 
       const breakdown = [
@@ -160,7 +161,8 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
         target: {
           targetTotal,
           achievedTotal,
-          remaining: Math.max(0, targetTotal - achievedTotal),
+          achievedForTarget,
+          remaining: Math.max(0, targetTotal - achievedForTarget),
         },
         breakdown,
       });

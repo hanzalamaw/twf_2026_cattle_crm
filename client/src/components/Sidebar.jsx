@@ -97,7 +97,7 @@ const PERFORMANCE_MENU_ITEMS = [
 ];
 
 const BOOKING_MENU_ITEMS = [
-  { id: 'bm-dashboard', label: 'Dashboard', iconDefault: '/icons/dashboard_default.png', iconActive: '/icons/dashboard_active.png', path: '/bookings/dashboard', managersOnly: true },
+  { id: 'bm-dashboard', label: 'Dashboard', iconDefault: '/icons/dashboard_default.png', iconActive: '/icons/dashboard_active.png', path: '/bookings/dashboard', permission: 'booking_management' },
   { id: 'bm-new-query', label: 'New Query', iconDefault: '/icons/new_query_default.png', iconActive: '/icons/new_query_active.png', path: '/bookings/new-query', permission: 'booking_management' },
   { id: 'bm-new-order', label: 'New Order', iconDefault: '/icons/new_order_default.png', iconActive: '/icons/new_order_active.png', path: '/bookings/new-order', permission: 'booking_management' },
   { id: 'bm-queries', label: 'Query Management', iconDefault: '/icons/query_management_default.png', iconActive: '/icons/query_management_active.png', path: '/bookings/queries', permission: 'booking_management' },
@@ -111,7 +111,7 @@ const CO_MANAGER_BOOKINGS_ROLE = 'Co-Manager - Bookings';
 
 // ── NEW: Farm Management sub-menu (mirrors Booking pattern) ──
 const FARM_MENU_ITEMS = [
-  { id: 'fm-dashboard',  label: 'Dashboard',        iconDefault: '/icons/dashboard_default.png',         iconActive: '/icons/dashboard_active.png',         path: '/farm/dashboard',        managersOnly: true },
+  { id: 'fm-dashboard',  label: 'Dashboard',        iconDefault: '/icons/dashboard_default.png',         iconActive: '/icons/dashboard_active.png',         path: '/farm/dashboard',        permission: 'farm_management' },
   { id: 'fm-new-query',  label: 'New Query',         iconDefault: '/icons/new_query_default.png',         iconActive: '/icons/new_query_active.png',         path: '/farm/new-query',        permission: 'farm_management' },
   { id: 'fm-new-order',  label: 'New Order',         iconDefault: '/icons/new_order_default.png',         iconActive: '/icons/new_order_active.png',         path: '/farm/new-order',        permission: 'farm_management' },
   { id: 'fm-queries',    label: 'Query Management',  iconDefault: '/icons/query_management_default.png',  iconActive: '/icons/query_management_active.png',  path: '/farm/query-management', permission: 'farm_management' },
@@ -135,9 +135,22 @@ const ACCOUNTING_MENU_ITEMS = [
   { id: 'acc-expenses', label: 'Expenses', iconDefault: '/icons/expenses_default.png', iconActive: '/icons/expenses_active.png', path: '/accounting/expenses', permission: 'accounting_and_finance' },
 ];
 
+const SIDEBAR_EXPANDED_KEY = 'cattle_crm_sidebar_expanded';
+
+function readSidebarExpanded() {
+  try {
+    const persisted = localStorage.getItem(SIDEBAR_EXPANDED_KEY) ?? sessionStorage.getItem(SIDEBAR_EXPANDED_KEY);
+    if (persisted === '1') return true;
+    if (persisted === '0') return false;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 /* ── Component ──────────────────────────────────────────────── */
 function Sidebar() {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(readSidebarExpanded);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const drawerRef = useRef(null);
@@ -234,6 +247,15 @@ function Sidebar() {
     }
     return () => { document.body.style.overflow = ''; };
   }, [mobileOpen, isMobile]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_EXPANDED_KEY, isExpanded ? '1' : '0');
+      sessionStorage.setItem(SIDEBAR_EXPANDED_KEY, isExpanded ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  }, [isExpanded]);
 
   const sectionLabel = isBookingContext
     ? 'BOOKING MANAGEMENT'

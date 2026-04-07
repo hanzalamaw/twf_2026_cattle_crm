@@ -18,7 +18,7 @@ const FIXED_TYPES_BOOKING = [
 ];
 
 const FIXED_TYPES_FARM = [
-  { key: "cow",  label: "Cow" },
+  { key: "cow",  label: "Fancy Cow" },
   { key: "goat", label: "Goat" },
 ];
 
@@ -27,7 +27,7 @@ const FIXED_TYPES_ACCOUNTING = [
   { key: "standard", label: "Hissa - Standard" },
   { key: "waqf", label: "Hissa - Waqf" },
   { key: "goat", label: "Goat (Hissa)" },
-  { key: "cow", label: "Cow" },
+  { key: "cow", label: "Fancy Cow" },
   { key: "farm_goat", label: "Goat" },
 ];
 
@@ -208,8 +208,9 @@ const TargetDonut = ({ achieved=0, target=2000, size=220, stroke=20, breakdown=[
   );
 };
 
-const ProgressRow = ({ label, value, percentage, color, active, onHover, segmentKey }) => {
+const ProgressRow = ({ label, value, percentage, color, active, onHover, segmentKey, goalValue }) => {
   const pct = Number.isFinite(percentage) ? percentage : 0;
+  const hasGoal = Number.isFinite(Number(goalValue)) && Number(goalValue) > 0;
   return (
     <div className={`progressRow animSlide ${active ? "progressRowActive" : ""}`}
       onMouseEnter={() => onHover?.(segmentKey)} onMouseLeave={() => onHover?.(null)} style={{ cursor: "pointer" }}>
@@ -218,7 +219,10 @@ const ProgressRow = ({ label, value, percentage, color, active, onHover, segment
           <span className="progressDot" style={{ background: color }} />{label}
         </div>
         <div className="progressVal">
-          <AnimatedNumber value={Number(value || 0)} duration={600} format={(n) => fmt(Math.round(n))} />{" "}
+          <AnimatedNumber value={Number(value || 0)} duration={600} format={(n) => fmt(Math.round(n))} />
+          {hasGoal && (
+            <span className="progressPct"> / {fmt(Number(goalValue))}</span>
+          )}{" "}
           <span className="progressPct">({pct.toFixed(1)}%)</span>
         </div>
       </div>
@@ -246,7 +250,7 @@ const TargetAchievement = ({ achieved, target, breakdown }) => {
             {(breakdown || []).map((b) => (
               <ProgressRow key={b.key} segmentKey={b.key} label={b.label} value={b.value}
                 percentage={b.percentage} color={SEGMENT_COLORS[b.key]?.fill || "#FF5722"}
-                active={activeKey === b.key} onHover={setActiveKey} />
+                active={activeKey === b.key} onHover={setActiveKey} goalValue={b.goalValue} />
             ))}
           </div>
         </div>
@@ -554,17 +558,56 @@ const Dashboard = () => {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  const farmTypeGoals = { cow: 10, goat: 60 };
+  const bookingTypeGoals = { goat: 40 };
+  const accountingTypeGoals = { cow: 10, goat: 40 };
   const achievedReal = Number(targetData?.target?.achievedTotal || 0);
+  const bookingAchievedForTarget = Number(targetData?.target?.achievedForTarget || 0);
   const achievedForDonut = Number.isFinite(Number(DEV_PREVIEW_TOTAL_ORDERS)) && DEV_PREVIEW_TOTAL_ORDERS !== null
-    ? Number(DEV_PREVIEW_TOTAL_ORDERS) : achievedReal;
+    ? Number(DEV_PREVIEW_TOTAL_ORDERS)
+    : (isFarm ? achievedReal : bookingAchievedForTarget || achievedReal);
   const targetTotal = isAccounting
-    ? Number(targetData?.target?.targetTotal ?? (year === "all" ? 7000 : 4000))
-    : year === "all" ? 3500 : Number(targetData?.target?.targetTotal || 2000);
+    ? Number(targetData?.target?.targetTotal ?? 2100)
+    : isFarm
+      ? Number(targetData?.target?.targetTotal || 70)
+      : year === "all" ? 3500 : Number(targetData?.target?.targetTotal || 2000);
   const apiMap = new Map((Array.isArray(targetData?.breakdown) ? targetData.breakdown : []).map((b) => [String(b.key), b]));
   const fixedTypes = isAccounting ? FIXED_TYPES_ACCOUNTING : isFarm ? FIXED_TYPES_FARM : FIXED_TYPES_BOOKING;
   const fixedBreakdown = fixedTypes.map((t) => {
     const found = apiMap.get(t.key);
     const value = Number(found?.value || 0);
+    if (isFarm) {
+      const goalValue = Number(farmTypeGoals[t.key] || 0);
+      return {
+        key: t.key,
+        label: t.label,
+        value,
+        goalValue,
+        percentage: goalValue > 0 ? (value / goalValue) * 100 : 0,
+      };
+    }
+    if (isAccounting) {
+      const goalValue = Number(accountingTypeGoals[t.key] || 0);
+      if (goalValue > 0) {
+        return {
+          key: t.key,
+          label: t.label,
+          value,
+          goalValue,
+          percentage: (value / goalValue) * 100,
+        };
+      }
+    }
+    const bookingGoal = Number(bookingTypeGoals[t.key] || 0);
+    if (bookingGoal > 0) {
+      return {
+        key: t.key,
+        label: t.label,
+        value,
+        goalValue: bookingGoal,
+        percentage: (value / bookingGoal) * 100,
+      };
+    }
     return { key: t.key, label: t.label, value, percentage: achievedReal > 0 ? (value / achievedReal) * 100 : 0 };
   });
 

@@ -42,7 +42,7 @@ function buildLeadYearWhere(year, params) {
 // - Goat: treat only "Goat" as goat (explicitly exclude "Goat (Hissa)" by mapping it to NULL)
 const TYPE_KEY_SQL_FARM_ORDERS = `
   CASE
-    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('cow','fullcow') THEN 'cow'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('cow','fullcow','fancycow') THEN 'cow'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('goat') THEN 'goat'
     ELSE NULL
   END
@@ -50,7 +50,7 @@ const TYPE_KEY_SQL_FARM_ORDERS = `
 
 const TYPE_KEY_SQL_FARM_LEADS = `
   CASE
-    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('cow','fullcow') THEN 'cow'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('cow','fullcow','fancycow') THEN 'cow'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('goat') THEN 'goat'
     ELSE NULL
   END
@@ -136,10 +136,10 @@ export const registerFarmRoutes = (app, db, verifyToken) => {
       }
 
       const achievedTotal = map.cow + map.goat;
-      const targetTotal = year === "2024" ? 500 : year === "2025" ? 1000 : 2000;
+      const targetTotal = 70;
 
       const breakdown = [
-        { key: "cow", label: "Cow", value: map.cow },
+        { key: "cow", label: "Fancy Cow", value: map.cow },
         { key: "goat", label: "Goat", value: map.goat },
       ].map((b) => ({
         ...b,
@@ -342,7 +342,7 @@ export const registerFarmRoutes = (app, db, verifyToken) => {
          FROM payments p
          INNER JOIN orders o ON o.order_id = p.order_id
          WHERE TRIM(COALESCE(o.order_source, '')) = 'Farm'
-           AND o.order_type IN ('Cow', 'Goat')
+           AND o.order_type IN ('Cow', 'Fancy Cow', 'Goat')
            AND YEAR(o.booking_date) = 2026`
       );
       const [expSum] = await db.execute(
@@ -384,7 +384,7 @@ export const registerFarmRoutes = (app, db, verifyToken) => {
            SELECT order_id, SUM(bank) AS bank, SUM(cash) AS cash FROM payments GROUP BY order_id
          ) p ON o.order_id = p.order_id
          WHERE TRIM(COALESCE(o.order_source, '')) = 'Farm'
-           AND o.order_type IN ('Cow', 'Goat')
+           AND o.order_type IN ('Cow', 'Fancy Cow', 'Goat')
            AND YEAR(o.booking_date) = 2026`
       );
       res.json({

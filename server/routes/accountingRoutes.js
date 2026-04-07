@@ -54,7 +54,7 @@ const ACCOUNTING_TYPE_KEY_SQL = `
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissastandard') THEN 'standard'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissawaqf') THEN 'waqf'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('goathissa') THEN 'goat'
-    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('cow','fullcow') THEN 'cow'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('cow','fullcow','fancycow') THEN 'cow'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('goat') THEN 'farm_goat'
     ELSE NULL
   END
@@ -81,7 +81,7 @@ const TYPE_KEY_SQL_BOOKING = `
 
 const TYPE_KEY_SQL_FARM_ORDERS = `
   CASE
-    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('cow','fullcow') THEN 'cow'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('cow','fullcow','fancycow') THEN 'cow'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('goat') THEN 'goat'
     ELSE NULL
   END
@@ -89,7 +89,7 @@ const TYPE_KEY_SQL_FARM_ORDERS = `
 
 const TYPE_KEY_SQL_FARM_LEADS = `
   CASE
-    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('cow','fullcow') THEN 'cow'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('cow','fullcow','fancycow') THEN 'cow'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('goat') THEN 'goat'
     ELSE NULL
   END
@@ -175,16 +175,14 @@ export const registerAccountingRoutes = (app, db, verifyToken) => {
       }
 
       const achievedTotal = Object.values(map).reduce((a, b) => a + b, 0);
-      const bookingTarget = year === "2024" ? 500 : year === "2025" ? 1000 : year === "all" ? 3500 : 2000;
-      const farmTarget = year === "2024" ? 500 : year === "2025" ? 1000 : year === "all" ? 3500 : 2000;
-      const targetTotal = bookingTarget + farmTarget;
+      const targetTotal = 2100;
 
       const breakdown = [
         { key: "premium", label: "Hissa - Premium", value: map.premium },
         { key: "standard", label: "Hissa - Standard", value: map.standard },
         { key: "waqf", label: "Hissa - Waqf", value: map.waqf },
         { key: "goat", label: "Goat (Hissa)", value: map.goat },
-        { key: "cow", label: "Cow", value: map.cow },
+        { key: "cow", label: "Fancy Cow", value: map.cow },
         { key: "farm_goat", label: "Goat", value: map.farm_goat },
       ].map((b) => ({
         ...b,
@@ -210,7 +208,7 @@ export const registerAccountingRoutes = (app, db, verifyToken) => {
       const { year = "all" } = req.query;
       const params = [];
       const conditions = buildOrderYearWhere(year, params);
-      conditions.push(`${ACCOUNTING_TYPE_KEY_SQL} IS NOT NULL`);
+      conditions.push(`${TYPE_KEY_SQL_BOOKING} IS NOT NULL`);
       conditions.push(`${DAY_KEY_SQL} IS NOT NULL`);
       const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
@@ -218,7 +216,7 @@ export const registerAccountingRoutes = (app, db, verifyToken) => {
         `
         SELECT
           ${DAY_KEY_SQL} AS dayKey,
-          ${ACCOUNTING_TYPE_KEY_SQL} AS typeKey,
+          ${TYPE_KEY_SQL_BOOKING} AS typeKey,
           COUNT(*) AS totalOrders,
           SUM(CASE WHEN COALESCE(o.pending_amount,0) = 0 THEN 1 ELSE 0 END) AS paymentCleared,
           SUM(CASE WHEN COALESCE(o.pending_amount,0) = COALESCE(o.total_amount,0) AND COALESCE(o.total_amount,0) > 0 THEN 1 ELSE 0 END) AS pendingCompletely,
@@ -230,14 +228,7 @@ export const registerAccountingRoutes = (app, db, verifyToken) => {
         params
       );
 
-      const emptyDay = () => ({
-        premium: 0,
-        standard: 0,
-        waqf: 0,
-        goat: 0,
-        cow: 0,
-        farm_goat: 0,
-      });
+      const emptyDay = () => ({ premium: 0, standard: 0, waqf: 0, goat: 0 });
 
       const base = {
         day1: { title: "DAY 1", rows: { totalOrders: emptyDay(), paymentCleared: emptyDay(), pendingCompletely: emptyDay(), pendingPartially: emptyDay() } },
@@ -262,8 +253,8 @@ export const registerAccountingRoutes = (app, db, verifyToken) => {
         return {
           key: dkey,
           title: d.title,
-          columnKeys: ["premium", "standard", "waqf", "goat", "cow", "farm_goat"],
-          columns: ["Premium", "Standard", "Waqf", "Goat (Hissa)", "Cow", "Goat", "Total"],
+          columnKeys: ["premium", "standard", "waqf", "goat"],
+          columns: ["Premium", "Standard", "Waqf", "Goat (Hissa)", "Total"],
           data: [
             {
               label: "Total Orders",
@@ -271,8 +262,6 @@ export const registerAccountingRoutes = (app, db, verifyToken) => {
               standard: d.rows.totalOrders.standard,
               waqf: d.rows.totalOrders.waqf,
               goat: d.rows.totalOrders.goat,
-              cow: d.rows.totalOrders.cow,
-              farm_goat: d.rows.totalOrders.farm_goat,
               total: sum(d.rows.totalOrders),
             },
             {
@@ -281,8 +270,6 @@ export const registerAccountingRoutes = (app, db, verifyToken) => {
               standard: d.rows.paymentCleared.standard,
               waqf: d.rows.paymentCleared.waqf,
               goat: d.rows.paymentCleared.goat,
-              cow: d.rows.paymentCleared.cow,
-              farm_goat: d.rows.paymentCleared.farm_goat,
               total: sum(d.rows.paymentCleared),
             },
             {
@@ -291,8 +278,6 @@ export const registerAccountingRoutes = (app, db, verifyToken) => {
               standard: d.rows.pendingCompletely.standard,
               waqf: d.rows.pendingCompletely.waqf,
               goat: d.rows.pendingCompletely.goat,
-              cow: d.rows.pendingCompletely.cow,
-              farm_goat: d.rows.pendingCompletely.farm_goat,
               total: sum(d.rows.pendingCompletely),
             },
             {
@@ -301,8 +286,6 @@ export const registerAccountingRoutes = (app, db, verifyToken) => {
               standard: d.rows.pendingPartially.standard,
               waqf: d.rows.pendingPartially.waqf,
               goat: d.rows.pendingPartially.goat,
-              cow: d.rows.pendingPartially.cow,
-              farm_goat: d.rows.pendingPartially.farm_goat,
               total: sum(d.rows.pendingPartially),
             },
           ],

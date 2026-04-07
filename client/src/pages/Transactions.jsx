@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { API_BASE as API } from '../config/api';
 
-const HIDDEN_TYPES_BOOKING = ['Cow', 'Goat'];
+const HIDDEN_TYPES_BOOKING = ['Cow', 'Fancy Cow', 'Goat'];
 
 const ORDER_COLUMNS = [
   { key: 'customer_id', label: 'Customer ID' },
@@ -218,7 +218,7 @@ export default function Transactions() {
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       appliedTypes.forEach((t) => params.append('order_type', t));
       if (isFarm && appliedTypes.length === 0) {
-        params.append('order_type', 'Cow');
+        params.append('order_type', 'Fancy Cow');
         params.append('order_type', 'Goat');
       }
       if (isProcurement && appliedTypes.length > 0) params.set('type', appliedTypes[0]);
@@ -239,9 +239,7 @@ export default function Transactions() {
         const list = Array.isArray(data.data) ? data.data : [];
         const filtered = list.filter((row) => {
           if (isProcurement) return true;
-          if (isFarm) {
-            return ['Cow', 'Goat'].includes(row.type);
-          }
+          if (isFarm) return ['Fancy Cow', 'Goat'].includes(row.type);
           return !HIDDEN_TYPES_BOOKING.includes(row.type);
         });
         setOrders(filtered);
@@ -307,7 +305,7 @@ export default function Transactions() {
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       appliedTypes.forEach((t) => params.append('order_type', t));
       if (isFarm && appliedTypes.length === 0) {
-        params.append('order_type', 'Cow');
+        params.append('order_type', 'Fancy Cow');
         params.append('order_type', 'Goat');
       }
       if (isProcurement && appliedTypes.length > 0) params.set('type', appliedTypes[0]);
@@ -343,7 +341,7 @@ export default function Transactions() {
 
       const filtered = all.filter((row) => {
         if (isProcurement) return true;
-        if (isFarm) return ['Cow', 'Goat'].includes(row.type);
+        if (isFarm) return ['Fancy Cow', 'Goat'].includes(row.type);
         return !HIDDEN_TYPES_BOOKING.includes(row.type);
       });
       const toExport = ids.length > 0 ? filtered.filter((r) => ids.includes(r.order_id)) : filtered;
@@ -455,7 +453,7 @@ export default function Transactions() {
     filters.order_types && filters.order_types.length > 0
       ? filters.order_types
       : [...new Set(orders.map((o) => o.type).filter(Boolean))].sort()
-  ).filter((t) => (isProcurement ? true : (isFarm ? ['Cow', 'Goat'].includes(t) : !HIDDEN_TYPES_BOOKING.includes(t))));
+  ).filter((t) => (isProcurement ? true : (isFarm ? ['Fancy Cow', 'Goat'].includes(t) : !HIDDEN_TYPES_BOOKING.includes(t))));
 
   const s = summary || {};
   const totalExpensesBank = Number(s.totalExpensesBank) ?? 0;

@@ -22,7 +22,7 @@ const TYPE_COLORS = {
   'Hissa - Standard': { bg: '#e8f4ff', color: '#2196F3' },
   'Hissa - Waqf': { bg: '#edfbee', color: '#4CAF50' },
   'Goat (Hissa)': { bg: '#fff8e8', color: '#FF9800' },
-  Cow: { bg: '#eff6ff', color: '#3B82F6' },
+  'Fancy Cow': { bg: '#eff6ff', color: '#3B82F6' },
   Goat: { bg: '#ecfdf5', color: '#10B981' },
 };
 
@@ -63,11 +63,13 @@ const PAGE_SIZE = 50;
 export default function AccountingTransactions() {
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ totalBank: 0, totalCash: 0 });
+  const [expensesSummary, setExpensesSummary] = useState({ totalBank: 0, totalCash: 0 });
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [amountVisible, setAmountVisible] = useState(false);
+  const [filterMode, setFilterMode] = useState('onHand');
   const [yearFilter, setYearFilter] = useState('2026');
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [appliedTypes, setAppliedTypes] = useState([]);
@@ -115,6 +117,25 @@ export default function AccountingTransactions() {
     }
   }, [token, yearFilter, debouncedSearch, sourceFilter, appliedTypes]);
 
+  const fetchExpensesSummary = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+      if (debouncedSearch) params.set('search', debouncedSearch);
+      if (sourceFilter === 'farm') params.set('source', 'farm');
+      if (sourceFilter === 'booking') params.set('source', 'booking');
+      const res = await fetch(`${API}/accounting/expenses/summary?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setExpensesSummary({ totalBank: Number(data.totalBank ?? 0), totalCash: Number(data.totalCash ?? 0) });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [token, yearFilter, debouncedSearch, sourceFilter]);
+
   const fetchRows = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -154,6 +175,9 @@ export default function AccountingTransactions() {
   useEffect(() => {
     fetchRows();
   }, [fetchRows]);
+  useEffect(() => {
+    fetchExpensesSummary();
+  }, [fetchExpensesSummary]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
@@ -177,6 +201,14 @@ export default function AccountingTransactions() {
     filters.order_types && filters.order_types.length > 0
       ? filters.order_types
       : [...new Set(rows.map((o) => o.order_type).filter(Boolean))].sort();
+  const onHandAvailable = yearFilter === '2026';
+  const effectiveFilterMode = !onHandAvailable ? 'actual' : filterMode;
+  const displayBank = effectiveFilterMode === 'onHand'
+    ? Number(summary.totalBank || 0) - Number(expensesSummary.totalBank || 0)
+    : Number(summary.totalBank || 0);
+  const displayCash = effectiveFilterMode === 'onHand'
+    ? Number(summary.totalCash || 0) - Number(expensesSummary.totalCash || 0)
+    : Number(summary.totalCash || 0);
 
   const payKey = (id) => String(id);
   const toggleSelect = (id) =>
@@ -344,7 +376,7 @@ export default function AccountingTransactions() {
                 borderRadius: '6px',
                 border: '1px solid #e0e0e0',
                 background: '#fff',
-                minWidth: '120px',
+                minWidth: '126px',
                 cursor: 'pointer',
               }}
             >
@@ -353,7 +385,7 @@ export default function AccountingTransactions() {
               <option value="farm">Farm Management</option>
             </select>
 
-            <label style={{ fontSize: '12px', color: '#666', whiteSpace: 'nowrap' }}>Type</label>
+            <label style={{ fontSize: '10px', color: '#666', whiteSpace: 'nowrap' }}>Type</label>
             <div style={{ position: 'relative' }}>
               <button
                 type="button"
@@ -437,6 +469,25 @@ export default function AccountingTransactions() {
               )}
             </div>
 
+            <label style={{ fontSize: '10px', color: !onHandAvailable ? '#bbb' : '#666', whiteSpace: 'nowrap' }}>Amount</label>
+            <select
+              value={effectiveFilterMode}
+              onChange={(e) => setFilterMode(e.target.value)}
+              disabled={!onHandAvailable}
+              style={{
+                padding: '6px 10px',
+                fontSize: '10px',
+                borderRadius: '6px',
+                border: '1px solid #e0e0e0',
+                background: !onHandAvailable ? '#f5f5f5' : '#fff',
+                minWidth: '84px',
+                cursor: !onHandAvailable ? 'not-allowed' : 'pointer',
+                color: !onHandAvailable ? '#aaa' : undefined,
+              }}
+            >
+              <option value="onHand" disabled={!onHandAvailable}>On Hand</option>
+              <option value="actual">Actual</option>
+            </select>
             <button type="button" onClick={handleExport} style={{ padding: '6px 13px', fontSize: '10px', fontWeight: '600', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
               Export
             </button>
@@ -555,6 +606,18 @@ export default function AccountingTransactions() {
                 );
               })}
             </div>
+            <div style={{ marginTop: '12px' }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>Amount mode</div>
+              <select
+                value={effectiveFilterMode}
+                onChange={(e) => setFilterMode(e.target.value)}
+                disabled={!onHandAvailable}
+                style={{ width: '100%', padding: '10px 12px', fontSize: '13px', borderRadius: '8px', border: '1px solid #e0e0e0', background: !onHandAvailable ? '#f5f5f5' : '#fff', color: !onHandAvailable ? '#aaa' : '#333' }}
+              >
+                <option value="onHand" disabled={!onHandAvailable}>On Hand</option>
+                <option value="actual">Actual</option>
+              </select>
+            </div>
             <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
               <button
                 type="button"
@@ -587,13 +650,13 @@ export default function AccountingTransactions() {
               <img src="/icons/total_orders_amount.png" alt="" style={{ width: '50px', height: '50px', objectFit: 'contain' }} />
             </div>
             <div>
-              <div style={{ fontSize: '11px', color: '#6b7280' }}>Bank (filtered)</div>
+              <div style={{ fontSize: '11px', color: '#6b7280' }}>Bank Only</div>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827' }}>
                 {amountVisible ? (
-                  formatAmount(summary.totalBank)
+                  formatAmount(displayBank)
                 ) : (
                   <span style={{ filter: 'blur(6px)', userSelect: 'none', display: 'inline-block', minWidth: '100px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', padding: '6px 10px' }}>
-                    {formatAmount(summary.totalBank)}
+                    {formatAmount(displayBank)}
                   </span>
                 )}
               </div>
@@ -604,13 +667,13 @@ export default function AccountingTransactions() {
               <img src="/icons/total_orders_amount.png" alt="" style={{ width: '50px', height: '50px', objectFit: 'contain' }} />
             </div>
             <div>
-              <div style={{ fontSize: '11px', color: '#6b7280' }}>Cash (filtered)</div>
+              <div style={{ fontSize: '11px', color: '#6b7280' }}>Cash</div>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827' }}>
                 {amountVisible ? (
-                  formatAmount(summary.totalCash)
+                  formatAmount(displayCash)
                 ) : (
                   <span style={{ filter: 'blur(6px)', userSelect: 'none', display: 'inline-block', minWidth: '100px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', padding: '6px 10px' }}>
-                    {formatAmount(summary.totalCash)}
+                    {formatAmount(displayCash)}
                   </span>
                 )}
               </div>
@@ -660,6 +723,25 @@ export default function AccountingTransactions() {
               </button>
             )}
           </div>
+          {(debouncedSearch || sourceFilter !== 'all' || appliedTypes.length > 0) && (
+            <div className="acc-txn-filter-chips" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {debouncedSearch && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', background: '#EFF6FF', color: '#1D4ED8', borderRadius: '4px', fontSize: '10px', fontWeight: '500' }}>
+                  "{debouncedSearch}"
+                </span>
+              )}
+              {sourceFilter !== 'all' && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', background: '#F3F4F6', color: '#374151', borderRadius: '4px', fontSize: '10px', fontWeight: '500' }}>
+                  {sourceFilter === 'farm' ? 'Farm Management' : 'Booking Management'}
+                </span>
+              )}
+              {appliedTypes.length > 0 && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', background: '#FFF4F0', color: '#C2410C', borderRadius: '4px', fontSize: '10px', fontWeight: '500' }}>
+                  {appliedTypes.length} type{appliedTypes.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          )}
 
           {(debouncedSearch || sourceFilter !== 'all' || appliedTypes.length > 0) && (
             <span className="acc-txn-result-count" style={{ fontSize: '10px', color: '#888', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
