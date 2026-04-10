@@ -20,6 +20,7 @@ import { registerAccountingRoutes } from "./routes/accountingRoutes.js";
 import { log, logError } from "./utils/logger.js";
 import { writeAuditLog } from "./utils/auditLog.js";
 import { sendLoginNotificationEmail } from "./utils/email.js";
+import { ensurePasswordResetTable } from "./utils/ensurePasswordResetTable.js";
 
 dotenv.config();
 
@@ -40,6 +41,14 @@ const startServer = async () => {
     });
 
     console.log("Connected to MySQL Database");
+
+    try {
+      await ensurePasswordResetTable(db);
+      console.log("password_reset_tokens table ready");
+    } catch (e) {
+      logError("MIGRATE", "ensurePasswordResetTable failed", e);
+      throw e;
+    }
 
     const JWT_SECRET = process.env.JWT_SECRET || "your_super_secret_key";
     const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1h";

@@ -11,10 +11,15 @@ import { writeAuditLog } from "../utils/auditLog.js";
  */
 export const registerPasswordResetRoutes = (app, db) => {
   app.post("/api/forgot-password", async (req, res) => {
-    const { email } = req.body;
+    const rawEmail = req.body?.email;
+    const email = typeof rawEmail === "string" ? rawEmail.trim() : "";
     log("PASSWORD_RESET", "Forgot password request", { email: email ? `${email.slice(0, 3)}***` : null });
 
     try {
+      if (!email) {
+        return res.status(400).json({ message: "Please enter a valid email address." });
+      }
+
       const [rows] = await db.execute(
         "SELECT user_id, username FROM users WHERE email = ?",
         [email]
