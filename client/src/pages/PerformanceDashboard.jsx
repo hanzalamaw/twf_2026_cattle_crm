@@ -63,6 +63,7 @@ export default function PerformanceDashboard() {
       let url = `${API}/performance/stats?`;
       if (fromDate) url += `from_date=${encodeURIComponent(fromDate)}&`;
       if (toDate) url += `to_date=${encodeURIComponent(toDate)}&`;
+      if (!fromDate && !toDate) url += `year=${encodeURIComponent(dashboardYear)}&`;
       const [statsRes, dayWiseRes] = await Promise.all([
         authFetch(url, { headers: hdrs() }),
         authFetch(`${API}/dashboard/day-wise?year=${encodeURIComponent(dashboardYear)}`, { headers: hdrs() }),
@@ -212,12 +213,8 @@ export default function PerformanceDashboard() {
         <>
           {/* ── Overall Achievement ── */}
           <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #f1f1f1', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', padding: '14px 16px', marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', marginBottom: (period?.days > 0 && period?.from && period?.to) ? 4 : 12, letterSpacing: 0.2 }}>Overall Achievement</div>
-            {period?.days > 0 && period?.from && period?.to && (
-              <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 10 }}>
-                Cumulative targets: daily targets × {period.days} day{period.days === 1 ? '' : 's'} ({period.from} → {period.to})
-              </div>
-            )}
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', marginBottom: (period?.from || period?.to) ? 4 : 12, letterSpacing: 0.2 }}>Overall Achievement</div>
+            
             <div className="pd-overall-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
               {[
                 { label: 'Calls', done: totals.calls_done, target: totals.calls_target, p: overallPcts.calls },

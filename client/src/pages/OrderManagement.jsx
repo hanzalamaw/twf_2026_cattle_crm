@@ -168,6 +168,7 @@ export default function OrderManagement() {
       if (orderType)          params.set('order_type',  orderType);
       if (reference)          params.set('reference',   reference);
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+      if (!isFarm) params.set('omit_hidden_types', '1');
       params.set('page',  String(page));
       params.set('limit', String(PAGE_SIZE));
       const res = await authFetch(`${API}/booking/orders?${params}`);
@@ -300,6 +301,7 @@ export default function OrderManagement() {
         if (orderType) params.set('order_type', orderType);
         if (reference) params.set('reference', reference);
         if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
+        if (!isFarm) params.set('omit_hidden_types', '1');
         params.set('page', String(pageNum));
         params.set('limit', String(limit));
         const res = await authFetch(`${API}/booking/orders?${params}`);

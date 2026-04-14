@@ -1,6 +1,36 @@
 // Performance Management API: performers (performance_targets), daily reports (pms_daily_report), stats.
 import { logError } from "../utils/logger.js";
 
+/** Exactly the 4 booking types requested for performance stats. */
+const PERFORMANCE_4_TYPES_SQL = `
+  CASE
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissapremium') THEN 'premium'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissastandard') THEN 'standard'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissawaqf') THEN 'waqf'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('goathissa') THEN 'goat'
+    ELSE NULL
+  END
+`;
+
+/** Same year rules as GET /api/booking/orders (Order Management totals). */
+function appendBookingOrdersYearFilter(year, params) {
+  if (year === "2026" || year === "2025") {
+    params.push(year);
+    return "YEAR(o.booking_date) = ?";
+  }
+  if (year === "2024") {
+    return "(o.booking_date IS NULL OR YEAR(o.booking_date) < 2025)";
+  }
+  return "";
+}
+
+/** closed_by matches performer display name or linked user (username / full name). */
+const ORDER_CLOSER_MATCH_SQL = `(
+  LOWER(TRIM(COALESCE(o.closed_by, ''))) = LOWER(TRIM(COALESCE(pt.display_name, '')))
+  OR LOWER(TRIM(COALESCE(o.closed_by, ''))) = LOWER(TRIM(COALESCE(u.username, '')))
+  OR LOWER(TRIM(COALESCE(o.closed_by, ''))) = LOWER(TRIM(CONCAT_WS(' ', NULLIF(TRIM(COALESCE(u.first_name, '')), ''), NULLIF(TRIM(COALESCE(u.last_name, '')), ''))))
+)`;
+
 export const registerPerformanceRoutes = (app, db, verifyToken) => {
   // ---------- Audit log helper (mirrors control.js) ----------
   const logAuditAction = async (userId, action, entityType, entityId, oldValues, newValues, ipAddress, userAgent) => {
@@ -244,26 +274,40 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
       }
 
       const [perfRows] = await db.execute(
-        "SELECT display_name FROM performance_targets WHERE performer_id = ? LIMIT 1",
+        `SELECT pt.display_name, u.username, u.first_name, u.last_name
+         FROM performance_targets pt
+         LEFT JOIN users u ON u.user_id = pt.user_id
+         WHERE pt.performer_id = ? LIMIT 1`,
         [performer_id]
       );
       if (perfRows.length === 0) {
         return res.status(404).json({ message: "Performer not found" });
       }
 
-      const displayName = String(perfRows[0].display_name || "").trim();
-      if (!displayName) {
+      const pr = perfRows[0];
+      const nameCandidates = new Set();
+      const fn = String(pr.first_name || "").trim();
+      const ln = String(pr.last_name || "").trim();
+      const full = [fn, ln].filter(Boolean).join(" ").trim();
+      for (const v of [pr.display_name, pr.username, full]) {
+        const t = String(v || "").trim();
+        if (t) nameCandidates.add(t);
+      }
+      if (nameCandidates.size === 0) {
         return res.json({ leads_generated: 0, orders_confirmed: 0 });
       }
 
+      const lowerList = [...nameCandidates].map((s) => String(s).trim().toLowerCase());
+      const inPh = lowerList.map(() => "?").join(", ");
       const [orderRows] = await db.execute(
         `SELECT COUNT(*) AS ordersCount
          FROM orders o
-         WHERE o.booking_date = ?
+         WHERE DATE(o.booking_date) = ?
+           AND (${PERFORMANCE_4_TYPES_SQL}) IS NOT NULL
            AND o.closed_by IS NOT NULL
            AND TRIM(o.closed_by) <> ''
-           AND LOWER(TRIM(o.closed_by)) = LOWER(TRIM(?))`,
-        [date, displayName]
+           AND LOWER(TRIM(o.closed_by)) IN (${inPh})`,
+        [date, ...lowerList]
       );
 
       const [leadRows] = await db.execute(
@@ -272,8 +316,8 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
          WHERE l.booking_date = ?
            AND l.closed_by IS NOT NULL
            AND TRIM(l.closed_by) <> ''
-           AND LOWER(TRIM(l.closed_by)) = LOWER(TRIM(?))`,
-        [date, displayName]
+           AND LOWER(TRIM(l.closed_by)) IN (${inPh})`,
+        [date, ...lowerList]
       );
 
       const ordersCount = Number(orderRows?.[0]?.ordersCount || 0);
@@ -424,7 +468,7 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
   // ---------- Stats for dashboard ----------
   app.get("/api/performance/stats", verifyToken, async (req, res) => {
     try {
-      const { from_date, to_date } = req.query;
+      const { from_date, to_date, year: yearQuery } = req.query;
 
       const [[{ min_report: minReport, today: todayStr }]] = await db.execute(
         `SELECT DATE_FORMAT((SELECT MIN(\`date\`) FROM pms_daily_report), '%Y-%m-%d') AS min_report,
@@ -448,23 +492,55 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
       }
 
       let periodDays = 0;
-      if (rangeStart && rangeEnd) {
-        if (rangeEnd < rangeStart) periodDays = 0;
+      const effStart = rangeStart || rangeEnd;
+      const effEnd = rangeEnd || rangeStart;
+      if (effStart && effEnd) {
+        if (effEnd < effStart) periodDays = 0;
         else {
-          const [[row]] = await db.execute(`SELECT DATEDIFF(?, ?) + 1 AS d`, [rangeEnd, rangeStart]);
+          const [[row]] = await db.execute(`SELECT DATEDIFF(?, ?) + 1 AS d`, [effEnd, effStart]);
           periodDays = Math.max(0, Number(row?.d) || 0);
         }
       }
 
-      const params = [];
-      let joinCondition = "pt.performer_id = r.performer_id";
-      if (from_date) {
-        joinCondition += " AND r.date >= ?";
-        params.push(from_date);
+      let reportDateSql = "";
+      const reportParams = [];
+      if (rangeStart && rangeEnd) {
+        if (rangeEnd < rangeStart) {
+          reportDateSql = " AND 1=0";
+        } else {
+          reportDateSql = " AND r.date >= ? AND r.date <= ?";
+          reportParams.push(rangeStart, rangeEnd);
+        }
+      } else if (rangeStart) {
+        reportDateSql = " AND r.date >= ?";
+        reportParams.push(rangeStart);
+      } else if (rangeEnd) {
+        reportDateSql = " AND r.date <= ?";
+        reportParams.push(rangeEnd);
       }
-      if (to_date) {
-        joinCondition += " AND r.date <= ?";
-        params.push(to_date);
+
+      let orderDateSql = "";
+      const orderJoinParams = [];
+      const useDateRangeForOrders = Boolean(from_date || to_date);
+      if (useDateRangeForOrders) {
+        if (rangeStart && rangeEnd) {
+          if (rangeEnd < rangeStart) {
+            orderDateSql = " AND 1=0";
+          } else {
+            orderDateSql = " AND DATE(o.booking_date) >= ? AND DATE(o.booking_date) <= ?";
+            orderJoinParams.push(rangeStart, rangeEnd);
+          }
+        } else if (rangeStart) {
+          orderDateSql = " AND DATE(o.booking_date) >= ?";
+          orderJoinParams.push(rangeStart);
+        } else if (rangeEnd) {
+          orderDateSql = " AND DATE(o.booking_date) <= ?";
+          orderJoinParams.push(rangeEnd);
+        }
+      } else {
+        const y = String(yearQuery || "2026");
+        const yPart = appendBookingOrdersYearFilter(y, orderJoinParams);
+        if (yPart) orderDateSql = ` AND ${yPart}`;
       }
 
       const [performerStatsFiltered] = await db.execute(
@@ -472,23 +548,77 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
                 pt.calls_target, pt.leads_target, pt.orders_target,
                 COALESCE(SUM(r.calls_done), 0) AS calls_done,
                 COALESCE(SUM(r.leads_generated), 0) AS leads_generated,
-                COALESCE(SUM(r.orders_confirmed), 0) AS orders_confirmed
+                COUNT(r.report_id) AS report_days
          FROM performance_targets pt
-         LEFT JOIN pms_daily_report r ON ${joinCondition}
+         LEFT JOIN pms_daily_report r ON pt.performer_id = r.performer_id${reportDateSql}
          GROUP BY pt.performer_id, pt.display_name, pt.calls_target, pt.leads_target, pt.orders_target
          ORDER BY pt.display_name`,
-        params
+        reportParams
+      );
+
+      const [orderCountRows] = await db.execute(
+        `SELECT pt.performer_id,
+                COUNT(o.order_id) AS orders_confirmed
+         FROM performance_targets pt
+         LEFT JOIN users u ON u.user_id = pt.user_id
+         LEFT JOIN orders o
+           ON (${PERFORMANCE_4_TYPES_SQL}) IS NOT NULL
+          AND TRIM(COALESCE(o.closed_by, '')) <> ''
+          AND ${ORDER_CLOSER_MATCH_SQL}
+          ${orderDateSql}
+         GROUP BY pt.performer_id`,
+        orderJoinParams
+      );
+
+      const orderTotalParams = [];
+      let orderTotalWhere = "1=1";
+      if (useDateRangeForOrders) {
+        if (rangeStart && rangeEnd) {
+          if (rangeEnd < rangeStart) orderTotalWhere += " AND 1=0";
+          else {
+            orderTotalWhere += " AND DATE(o.booking_date) >= ? AND DATE(o.booking_date) <= ?";
+            orderTotalParams.push(rangeStart, rangeEnd);
+          }
+        } else if (rangeStart) {
+          orderTotalWhere += " AND DATE(o.booking_date) >= ?";
+          orderTotalParams.push(rangeStart);
+        } else if (rangeEnd) {
+          orderTotalWhere += " AND DATE(o.booking_date) <= ?";
+          orderTotalParams.push(rangeEnd);
+        }
+      } else {
+        const y = String(yearQuery || "2026");
+        const yPart = appendBookingOrdersYearFilter(y, orderTotalParams);
+        if (yPart) orderTotalWhere += ` AND ${yPart}`;
+      }
+
+      const orderTotalWhereFull = `${orderTotalWhere} AND (${PERFORMANCE_4_TYPES_SQL}) IS NOT NULL`;
+      const [[bookingStyleTotalRow]] = await db.execute(
+        `SELECT COUNT(*) AS c FROM orders o WHERE ${orderTotalWhereFull}`,
+        orderTotalParams
+      );
+      const bookingStyleOrderTotal = Number(bookingStyleTotalRow?.c || 0);
+
+      const ordersByPerformer = new Map(
+        orderCountRows.map((row) => [String(row.performer_id), Number(row.orders_confirmed || 0)])
       );
 
       const performers = performerStatsFiltered.map((p) => {
-        const ct = Number(p.calls_target || 0) * periodDays;
-        const lt = Number(p.leads_target || 0) * periodDays;
-        const ot = Number(p.orders_target || 0) * periodDays;
+        const reportDays = Math.max(0, Number(p.report_days || 0));
+        const baseCalls = Number(p.calls_target || 0);
+        const baseLeads = Number(p.leads_target || 0);
+        const baseOrders = Number(p.orders_target || 0);
+        const ordersConfirmed = ordersByPerformer.get(String(p.performer_id)) ?? 0;
         return {
-          ...p,
-          calls_target: ct,
-          leads_target: lt,
-          orders_target: ot,
+          performer_id: p.performer_id,
+          display_name: p.display_name,
+          calls_target: baseCalls * reportDays,
+          leads_target: baseLeads * reportDays,
+          orders_target: baseOrders * reportDays,
+          calls_done: Number(p.calls_done || 0),
+          leads_generated: Number(p.leads_generated || 0),
+          orders_confirmed: ordersConfirmed,
+          report_days: reportDays,
         };
       });
 
@@ -496,13 +626,13 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
         (acc, p) => ({
           calls_done: acc.calls_done + Number(p.calls_done || 0),
           leads_generated: acc.leads_generated + Number(p.leads_generated || 0),
-          orders_confirmed: acc.orders_confirmed + Number(p.orders_confirmed || 0),
           calls_target: acc.calls_target + Number(p.calls_target || 0),
           leads_target: acc.leads_target + Number(p.leads_target || 0),
           orders_target: acc.orders_target + Number(p.orders_target || 0),
         }),
-        { calls_done: 0, leads_generated: 0, orders_confirmed: 0, calls_target: 0, leads_target: 0, orders_target: 0 }
+        { calls_done: 0, leads_generated: 0, calls_target: 0, leads_target: 0, orders_target: 0 }
       );
+      totals.orders_confirmed = bookingStyleOrderTotal;
 
       res.json({
         performers,
@@ -510,7 +640,8 @@ export const registerPerformanceRoutes = (app, db, verifyToken) => {
         period: {
           from: rangeStart,
           to: rangeEnd,
-          days: periodDays,
+          calendar_days: periodDays,
+          orders_year: useDateRangeForOrders ? null : String(yearQuery || "2026"),
         },
       });
     } catch (error) {
