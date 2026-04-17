@@ -11,6 +11,10 @@ import ResetPassword from './pages/ResetPassword';
 import AuthCallback from './pages/AuthCallback';
 import Control from './pages/Control';
 import Operations from './pages/Operations';
+import OperationsLayout from './pages/OperationsLayout';
+import OperationsDeliveries from './pages/OperationsDeliveries';
+import OperationsChallan from './pages/OperationsChallan';
+import OperationPlaceholder from './pages/OperationPlaceholder';
 import ProcurementDashboard from './pages/ProcurementDashboard';
 import NewProcurement from './pages/NewProcurement';
 import ProcurementManagement from './pages/ProcurementManagement';
@@ -97,6 +101,30 @@ const RequireBookingRoleAccess = ({ children }) => {
   return children;
 };
 
+const RequireOperationSub = ({ permission, children }) => {
+  const { user } = useAuth();
+  const p = user?.permissions || {};
+  if (!p.operation_management) return <Navigate to="/" replace />;
+  if (!p[permission]) return <Navigate to="/operations" replace />;
+  return children;
+};
+
+const RequireDeliveriesOnly = ({ children }) => {
+  const { user } = useAuth();
+  const p = user?.permissions || {};
+  if (!p.operation_management) return <Navigate to="/" replace />;
+  if (!p.operation_deliveries_management) return <Navigate to="/operations" replace />;
+  return children;
+};
+
+const RequireChallanOnly = ({ children }) => {
+  const { user } = useAuth();
+  const p = user?.permissions || {};
+  if (!p.operation_management) return <Navigate to="/" replace />;
+  if (!p.operation_challan_management) return <Navigate to="/operations" replace />;
+  return children;
+};
+
 const TermsOrHome = () => {
   const { user } = useAuth();
   if (user && !user.has_prev_logged_in) {
@@ -124,6 +152,11 @@ const ROUTE_TITLES = {
   '/bookings/transactions': 'Transactions',
   '/bookings/expenses': 'Expenses',
   '/operations': 'Operations Management',
+  '/operations/general': 'Operations — General',
+  '/operations/support': 'Operations — Support',
+  '/operations/riders': 'Operations — Riders',
+  '/operations/deliveries': 'Deliveries Management',
+  '/operations/challan': 'Challan Management',
   '/farm': 'Farm Management',
   '/farm/dashboard': 'Farm Dashboard',
   '/farm/new-query': 'New Query',
@@ -255,8 +288,15 @@ function App() {
             <Route path="expenses" element={<RequireBookingRoleAccess><Expenses /></RequireBookingRoleAccess>} />
           </Route>
 
-          <Route path="/operations" element={<ProtectedRoute><RequirePermission permission="operation_management"><MainLayout systemName="Operations Management" /></RequirePermission></ProtectedRoute>}>
-            <Route index element={<Operations />} />
+          <Route path="/operations" element={<ProtectedRoute><RequirePermission permission="operation_management"><MainLayout showSidebar={false} systemName="Operations Management" /></RequirePermission></ProtectedRoute>}>
+            <Route element={<OperationsLayout />}>
+              <Route index element={<Operations />} />
+              <Route path="general" element={<RequireOperationSub permission="operation_general_dashboard"><OperationPlaceholder title="General Dashboard" subtitle="Operational overview and KPIs will appear here." /></RequireOperationSub>} />
+              <Route path="support" element={<RequireOperationSub permission="operation_customer_support"><OperationPlaceholder title="Customer Support" subtitle="Support workflows will appear here." /></RequireOperationSub>} />
+              <Route path="riders" element={<RequireOperationSub permission="operation_rider_management"><OperationPlaceholder title="Rider Management" subtitle="Manage riders, vehicles, and availability. Use Deliveries to assign riders to challans." /></RequireOperationSub>} />
+              <Route path="deliveries" element={<RequireDeliveriesOnly><OperationsDeliveries /></RequireDeliveriesOnly>} />
+              <Route path="challan" element={<RequireChallanOnly><OperationsChallan /></RequireChallanOnly>} />
+            </Route>
           </Route>
 
           <Route path="/farm" element={<ProtectedRoute><RequirePermission permission="farm_management"><MainLayout systemName="Farm Management" /></RequirePermission></ProtectedRoute>}>

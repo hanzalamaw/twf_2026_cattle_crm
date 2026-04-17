@@ -174,6 +174,11 @@ export const registerControlRoutes = (app, db, verifyToken) => {
         control_management,
         booking_management,
         operation_management,
+        operation_general_dashboard,
+        operation_customer_support,
+        operation_rider_management,
+        operation_deliveries_management,
+        operation_challan_management,
         farm_management,
         procurement_management,
         accounting_and_finance,
@@ -182,16 +187,24 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       if (!role_name) return res.status(400).json({ message: "Role name is required" });
       const [existingRoles] = await db.execute("SELECT role_id FROM roles WHERE role_name = ?", [role_name]);
       if (existingRoles.length > 0) return res.status(400).json({ message: "Role name already exists" });
+      const opOn = !!(operation_management || false);
       const [result] = await db.execute(
         `INSERT INTO roles (role_name, control_management, booking_management, 
-                           operation_management, farm_management, procurement_management, 
+                           operation_management, operation_general_dashboard, operation_customer_support,
+                           operation_rider_management, operation_deliveries_management, operation_challan_management,
+                           farm_management, procurement_management, 
                            accounting_and_finance, performance_management) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           role_name,
           control_management || false,
           booking_management || false,
           operation_management || false,
+          opOn && !!(operation_general_dashboard || false),
+          opOn && !!(operation_customer_support || false),
+          opOn && !!(operation_rider_management || false),
+          opOn && !!(operation_deliveries_management || false),
+          opOn && !!(operation_challan_management || false),
           farm_management || false,
           procurement_management || false,
           accounting_and_finance || false,
@@ -216,6 +229,11 @@ export const registerControlRoutes = (app, db, verifyToken) => {
         control_management,
         booking_management,
         operation_management,
+        operation_general_dashboard,
+        operation_customer_support,
+        operation_rider_management,
+        operation_deliveries_management,
+        operation_challan_management,
         farm_management,
         procurement_management,
         accounting_and_finance,
@@ -225,17 +243,28 @@ export const registerControlRoutes = (app, db, verifyToken) => {
         const [existingRoles] = await db.execute("SELECT role_id FROM roles WHERE role_name = ? AND role_id != ?", [role_name, req.params.id]);
         if (existingRoles.length > 0) return res.status(400).json({ message: "Role name already exists" });
       }
+      const nextOp =
+        operation_management !== undefined ? operation_management : oldRoles[0].operation_management;
+      const opOn = !!nextOp;
+      const sub = (v, oldV) => (v !== undefined ? v : oldV);
       await db.execute(
         `UPDATE roles SET 
          role_name = ?, control_management = ?, booking_management = ?,
-         operation_management = ?, farm_management = ?, procurement_management = ?,
+         operation_management = ?, operation_general_dashboard = ?, operation_customer_support = ?,
+         operation_rider_management = ?, operation_deliveries_management = ?, operation_challan_management = ?,
+         farm_management = ?, procurement_management = ?,
          accounting_and_finance = ?, performance_management = ?
          WHERE role_id = ?`,
         [
           role_name || oldRoles[0].role_name,
           control_management !== undefined ? control_management : oldRoles[0].control_management,
           booking_management !== undefined ? booking_management : oldRoles[0].booking_management,
-          operation_management !== undefined ? operation_management : oldRoles[0].operation_management,
+          nextOp,
+          opOn ? !!sub(operation_general_dashboard, oldRoles[0].operation_general_dashboard) : 0,
+          opOn ? !!sub(operation_customer_support, oldRoles[0].operation_customer_support) : 0,
+          opOn ? !!sub(operation_rider_management, oldRoles[0].operation_rider_management) : 0,
+          opOn ? !!sub(operation_deliveries_management, oldRoles[0].operation_deliveries_management) : 0,
+          opOn ? !!sub(operation_challan_management, oldRoles[0].operation_challan_management) : 0,
           farm_management !== undefined ? farm_management : oldRoles[0].farm_management,
           procurement_management !== undefined ? procurement_management : oldRoles[0].procurement_management,
           accounting_and_finance !== undefined ? accounting_and_finance : oldRoles[0].accounting_and_finance,
