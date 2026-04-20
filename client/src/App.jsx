@@ -14,6 +14,9 @@ import Operations from './pages/Operations';
 import OperationsLayout from './pages/OperationsLayout';
 import OperationsDeliveries from './pages/OperationsDeliveries';
 import OperationsChallan from './pages/OperationsChallan';
+import OperationsGeneral from './pages/OperationsGeneral';
+import OperationsSupport from './pages/OperationsSupport';
+import OperationsRiders from './pages/OperationsRiders';
 import OperationPlaceholder from './pages/OperationPlaceholder';
 import ProcurementDashboard from './pages/ProcurementDashboard';
 import NewProcurement from './pages/NewProcurement';
@@ -291,9 +294,9 @@ function App() {
           <Route path="/operations" element={<ProtectedRoute><RequirePermission permission="operation_management"><MainLayout showSidebar={false} systemName="Operations Management" /></RequirePermission></ProtectedRoute>}>
             <Route element={<OperationsLayout />}>
               <Route index element={<Operations />} />
-              <Route path="general" element={<RequireOperationSub permission="operation_general_dashboard"><OperationPlaceholder title="General Dashboard" subtitle="Operational overview and KPIs will appear here." /></RequireOperationSub>} />
-              <Route path="support" element={<RequireOperationSub permission="operation_customer_support"><OperationPlaceholder title="Customer Support" subtitle="Support workflows will appear here." /></RequireOperationSub>} />
-              <Route path="riders" element={<RequireOperationSub permission="operation_rider_management"><OperationPlaceholder title="Rider Management" subtitle="Manage riders, vehicles, and availability. Use Deliveries to assign riders to challans." /></RequireOperationSub>} />
+              <Route path="general" element={<RequireOperationSub permission="operation_general_dashboard"><OperationsGeneral /></RequireOperationSub>} />
+              <Route path="support" element={<RequireOperationSub permission="operation_customer_support"><OperationsSupport /></RequireOperationSub>} />
+              <Route path="riders" element={<RequireOperationSub permission="operation_rider_management"><OperationsRiders /></RequireOperationSub>} />
               <Route path="deliveries" element={<RequireDeliveriesOnly><OperationsDeliveries /></RequireDeliveriesOnly>} />
               <Route path="challan" element={<RequireChallanOnly><OperationsChallan /></RequireChallanOnly>} />
             </Route>

@@ -89,14 +89,42 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
     try {
       const flags = await assertSub(req, res, (f) => f.operation_rider_management);
       if (!flags) return;
-      const { rider_name, contact, vehicle, cnic, number_plate } = req.body;
+
+      const {
+        rider_name,
+        contact,
+        vehicle,
+        cnic,
+        number_plate,
+        amount_per_delivery
+      } = req.body;
+
       if (!rider_name || typeof rider_name !== "string") {
         return res.status(400).json({ message: "rider_name is required" });
       }
+
+      const amount = amount_per_delivery == null || amount_per_delivery === ""
+        ? 0
+        : Number(amount_per_delivery);
+
+      if (!Number.isFinite(amount) || amount < 0) {
+        return res.status(400).json({ message: "amount_per_delivery must be a valid non-negative number" });
+      }
+
       const [result] = await db.execute(
-        `INSERT INTO riders (rider_name, contact, vehicle, cnic, number_plate) VALUES (?, ?, ?, ?, ?)`,
-        [rider_name.trim(), contact || null, vehicle || null, cnic || null, number_plate || null]
+        `INSERT INTO riders
+          (rider_name, contact, vehicle, cnic, number_plate, amount_per_delivery, total_paid, availability, status)
+         VALUES (?, ?, ?, ?, ?, ?, 0, 'Available', 'active')`,
+        [
+          rider_name.trim(),
+          contact || null,
+          vehicle || null,
+          cnic || null,
+          number_plate || null,
+          amount
+        ]
       );
+
       log("OPERATIONS", "Rider created", { rider_id: result.insertId });
       res.status(201).json({ rider_id: result.insertId });
     } catch (error) {
@@ -104,7 +132,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
       res.status(500).json({ message: "Server error" });
     }
   });
-
+  
   // --- Grouped orders (deliveries view) ---
   app.get("/api/operations/deliveries/groups", verifyToken, async (req, res) => {
     try {
@@ -468,4 +496,449 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
     if (!flags) return;
     res.status(501).json({ message: "Bulk challan PDF generation is not implemented yet." });
   });
+
+
+  // --- Rider detailed list for Rider Management screen ---
+  app.get("/api/operations/riders/details", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_rider_management);
+      if (!flags) return;
+
+      const day = req.query.day ? String(req.query.day).trim() : "";
+
+      const riderParams = [];
+      let riderSql = `
+        SELECT
+          r.rider_id,
+          r.rider_name,
+          r.contact,
+          r.vehicle,
+          r.cnic,
+          r.number_plate,
+          r.amount_per_delivery,
+          r.total_paid,
+          COALESCE(NULLIF(TRIM(r.availability), ''), 'Available') AS availability,
+          COALESCE(NULLIF(TRIM(r.status), ''), 'active') AS status
+        FROM riders r
+        WHERE r.status = 'active' OR r.status IS NULL
+        ORDER BY r.rider_name
+      `;
+
+      const [riders] = await db.execute(riderSql, riderParams);
+
+      const challanParams = [];
+      let challanWhere = `WHERE c.rider_id IS NOT NULL`;
+      if (day) {
+        challanWhere += ` AND TRIM(COALESCE(c.day, '')) = ?`;
+        challanParams.push(day);
+      }
+
+      const [challanStats] = await db.execute(
+        `
+        SELECT
+          c.rider_id,
+          COUNT(DISTINCT c.challan_id) AS challan_count,
+          SUM(CASE WHEN c.delivery_status = 'Delivered' THEN COALESCE(c.total_hissa, 0) ELSE 0 END) AS delivered_hissa_count,
+          SUM(CASE WHEN c.delivery_status IN ('Pending', 'Rider Assigned', 'Dispatched') THEN COALESCE(c.total_hissa, 0) ELSE 0 END) AS pending_hissa_count,
+          SUM(COALESCE(c.total_hissa, 0)) AS total_assigned_hissa
+        FROM challan c
+        ${challanWhere}
+        GROUP BY c.rider_id
+        `,
+        challanParams
+      );
+
+      const statsMap = new Map();
+      for (const row of challanStats) {
+        statsMap.set(Number(row.rider_id), row);
+      }
+
+      const items = riders.map((r) => {
+        const s = statsMap.get(Number(r.rider_id)) || {};
+        const amountPerDelivery = Number(r.amount_per_delivery || 0);
+        const deliveredCount = Number(s.delivered_hissa_count || 0);
+        const pendingCount = Number(s.pending_hissa_count || 0);
+        const totalAssigned = Number(s.total_assigned_hissa || 0);
+        const totalPaid = Number(r.total_paid || 0);
+        const totalAmountMade = deliveredCount * amountPerDelivery;
+
+        return {
+          ...r,
+          deliveries_completed: deliveredCount,
+          pending_deliveries: pendingCount,
+          total_assigned_hissa: totalAssigned,
+          challan_count: Number(s.challan_count || 0),
+          total_amount_made: Number(totalAmountMade.toFixed(2)),
+          balance_due: Number((totalAmountMade - totalPaid).toFixed(2)),
+        };
+      });
+
+      res.json({ riders: items });
+    } catch (error) {
+      logError("OPERATIONS", "Rider details error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // --- Rider assigned orders / challans detail ---
+  app.get("/api/operations/riders/:id/orders", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_rider_management);
+      if (!flags) return;
+
+      const riderId = Number(req.params.id);
+      if (!Number.isFinite(riderId) || riderId <= 0) {
+        return res.status(400).json({ message: "Invalid rider id" });
+      }
+
+      const day = req.query.day ? String(req.query.day).trim() : "";
+
+      const [rv] = await db.execute(
+        `SELECT rider_id, rider_name, contact, vehicle, number_plate, amount_per_delivery, total_paid,
+                COALESCE(NULLIF(TRIM(availability), ''), 'Available') AS availability
+         FROM riders
+         WHERE rider_id = ? AND (status = 'active' OR status IS NULL)`,
+        [riderId]
+      );
+      if (rv.length === 0) return res.status(404).json({ message: "Rider not found" });
+
+      const params = [riderId];
+      let sql = `
+        SELECT
+          c.challan_id,
+          c.qr_token,
+          c.day,
+          c.slot,
+          c.address,
+          c.area,
+          c.delivery_status,
+          o.order_id,
+          o.booking_name,
+          o.shareholder_name,
+          o.contact,
+          o.alt_contact,
+          o.order_type,
+          o.cow_number,
+          o.hissa_number
+        FROM challan c
+        INNER JOIN challan_orders co ON co.challan_id = c.challan_id
+        INNER JOIN orders o ON o.order_id = co.order_id
+        WHERE c.rider_id = ?
+      `;
+      if (day) {
+        sql += ` AND TRIM(COALESCE(c.day, '')) = ?`;
+        params.push(day);
+      }
+      sql += ` ORDER BY c.day, c.slot, c.challan_id, o.order_id`;
+
+      const [rows] = await db.execute(sql, params);
+
+      res.json({
+        rider: rv[0],
+        orders: rows
+      });
+    } catch (error) {
+      logError("OPERATIONS", "Rider orders error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // --- Update rider info / status / payments ---
+  app.patch("/api/operations/riders/:id", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_rider_management);
+      if (!flags) return;
+
+      const riderId = Number(req.params.id);
+      if (!Number.isFinite(riderId) || riderId <= 0) {
+        return res.status(400).json({ message: "Invalid rider id" });
+      }
+
+      const [existing] = await db.execute(
+        `SELECT rider_id FROM riders WHERE rider_id = ? AND (status = 'active' OR status IS NULL)`,
+        [riderId]
+      );
+      if (existing.length === 0) {
+        return res.status(404).json({ message: "Rider not found" });
+      }
+
+      const updates = [];
+      const values = [];
+
+      const {
+        rider_name,
+        contact,
+        vehicle,
+        cnic,
+        number_plate,
+        availability,
+        amount_per_delivery,
+        total_paid
+      } = req.body || {};
+
+      if (rider_name !== undefined) {
+        if (!String(rider_name).trim()) {
+          return res.status(400).json({ message: "rider_name cannot be empty" });
+        }
+        updates.push("rider_name = ?");
+        values.push(String(rider_name).trim());
+      }
+
+      if (contact !== undefined) {
+        updates.push("contact = ?");
+        values.push(contact ? String(contact).trim() : null);
+      }
+
+      if (vehicle !== undefined) {
+        updates.push("vehicle = ?");
+        values.push(vehicle ? String(vehicle).trim() : null);
+      }
+
+      if (cnic !== undefined) {
+        updates.push("cnic = ?");
+        values.push(cnic ? String(cnic).trim() : null);
+      }
+
+      if (number_plate !== undefined) {
+        updates.push("number_plate = ?");
+        values.push(number_plate ? String(number_plate).trim() : null);
+      }
+
+      if (availability !== undefined) {
+        const nextAvailability = String(availability || "").trim();
+        if (!RIDER_AVAILABILITY_STATUSES.includes(nextAvailability)) {
+          return res.status(400).json({
+            message: "Invalid rider availability",
+            allowed: RIDER_AVAILABILITY_STATUSES
+          });
+        }
+        updates.push("availability = ?");
+        values.push(nextAvailability);
+      }
+
+      if (amount_per_delivery !== undefined) {
+        const n = Number(amount_per_delivery);
+        if (!Number.isFinite(n) || n < 0) {
+          return res.status(400).json({ message: "amount_per_delivery must be a valid non-negative number" });
+        }
+        updates.push("amount_per_delivery = ?");
+        values.push(n);
+      }
+
+      if (total_paid !== undefined) {
+        const n = Number(total_paid);
+        if (!Number.isFinite(n) || n < 0) {
+          return res.status(400).json({ message: "total_paid must be a valid non-negative number" });
+        }
+        updates.push("total_paid = ?");
+        values.push(n);
+      }
+
+      if (updates.length === 0) {
+        return res.status(400).json({ message: "No valid fields provided for update" });
+      }
+
+      values.push(riderId);
+
+      await db.execute(
+        `UPDATE riders SET ${updates.join(", ")} WHERE rider_id = ?`,
+        values
+      );
+
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "RIDER_UPDATE",
+        entity_type: "rider",
+        entity_id: String(riderId),
+        new_values: req.body || {},
+        ip_address: req.ip,
+        user_agent: req.get("user-agent")
+      });
+
+      res.json({ message: "Rider updated" });
+    } catch (error) {
+      logError("OPERATIONS", "Rider update error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+// ─────────────────────────────────────────────────────────────
+// ADD THESE TWO ROUTE BLOCKS INSIDE registerOperationsRoutes()
+// Place them before the closing }; of the exported function
+// ─────────────────────────────────────────────────────────────
+
+  // ── Customer Support: filtered orders list ─────────────────
+  app.get("/api/operations/customer-support/orders", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_customer_support || f.operation_management);
+      if (!flags) return;
+
+      const { day, status, rider_id, area, order_type, search } = req.query;
+
+      const conditions = [];
+      const params = [];
+
+      if (day) {
+        conditions.push("TRIM(COALESCE(o.day, '')) = ?");
+        params.push(String(day).trim());
+      }
+      if (status) {
+        conditions.push("o.delivery_status = ?");
+        params.push(String(status).trim());
+      }
+      if (rider_id) {
+        conditions.push("o.rider_id = ?");
+        params.push(Number(rider_id));
+      }
+      if (area) {
+        conditions.push("TRIM(COALESCE(o.area, '')) = ?");
+        params.push(String(area).trim());
+      }
+      if (order_type) {
+        conditions.push("o.order_type = ?");
+        params.push(String(order_type).trim());
+      }
+      if (search) {
+        const q = `%${String(search).trim()}%`;
+        conditions.push(
+          "(o.booking_name LIKE ? OR o.shareholder_name LIKE ? OR o.contact LIKE ? OR o.alt_contact LIKE ? OR o.address LIKE ? OR o.cow_number LIKE ?)"
+        );
+        params.push(q, q, q, q, q, q);
+      }
+
+      const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+      const [orders] = await db.execute(
+        `SELECT
+           o.order_id, o.booking_name, o.shareholder_name,
+           o.contact, o.alt_contact,
+           o.address, o.area,
+           o.day, o.slot,
+           o.order_type, o.cow_number, o.hissa_number,
+           o.rider_id, o.delivery_status
+         FROM orders o
+         ${where}
+         ORDER BY o.day, o.slot, o.address, o.order_id`,
+        params
+      );
+
+      res.json({ orders });
+    } catch (error) {
+      logError("OPERATIONS", "Customer support orders error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+
+  // ── General Dashboard: aggregated stats ────────────────────
+  app.get("/api/operations/dashboard/stats", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_general_dashboard || f.operation_management);
+      if (!flags) return;
+
+      const { day, area, order_type } = req.query;
+
+      const conditions = [];
+      const params = [];
+
+      if (day) {
+        conditions.push("TRIM(COALESCE(o.day, '')) = ?");
+        params.push(String(day).trim());
+      }
+      if (area) {
+        conditions.push("TRIM(COALESCE(o.area, '')) = ?");
+        params.push(String(area).trim());
+      }
+      if (order_type) {
+        conditions.push("o.order_type = ?");
+        params.push(String(order_type).trim());
+      }
+
+      const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+      // ── Overall stat counts ──
+      const [[summary]] = await db.execute(
+        `SELECT
+           COUNT(*)                                                              AS total_hissas,
+           SUM(o.delivery_status = 'Delivered')                                 AS delivered,
+           SUM(o.delivery_status = 'Dispatched')                                AS in_transit,
+           SUM(o.delivery_status = 'Pending')                                   AS pending,
+           SUM(o.delivery_status = 'Returned to Farm')                          AS returned,
+           SUM(o.delivery_status = 'Rider Assigned')                            AS rider_assigned,
+           SUM(o.rider_id IS NULL)                                               AS unassigned
+         FROM orders o ${where}`,
+        params
+      );
+
+      // ── Active riders (not filtered by day/area/type — riders are global) ──
+      const [[riderCounts]] = await db.execute(
+        `SELECT
+           SUM(availability IN ('Available', 'On Delivery')) AS active_riders
+         FROM riders
+         WHERE status = 'active' OR status IS NULL`
+      );
+
+      // ── Area breakdown ──
+      const [areas] = await db.execute(
+        `SELECT
+           COALESCE(NULLIF(TRIM(o.area), ''), 'Unknown') AS area,
+           COUNT(*)                                        AS total,
+           SUM(o.delivery_status = 'Delivered')            AS delivered,
+           SUM(o.delivery_status = 'Pending')              AS pending,
+           SUM(o.delivery_status = 'Dispatched')           AS in_transit,
+           SUM(o.delivery_status = 'Returned to Farm')     AS returned
+         FROM orders o ${where}
+         GROUP BY area
+         ORDER BY area`,
+        params
+      );
+
+      // ── Per-rider summary ──
+      const riderParams = [...params];
+      const riderWhere  = conditions.length ? `AND ${conditions.join(" AND ")}` : "";
+
+      const [riderSummary] = await db.execute(
+        `SELECT
+           r.rider_id, r.rider_name,
+           COALESCE(NULLIF(TRIM(r.availability), ''), 'Available') AS availability,
+           SUM(o.delivery_status = 'Delivered')   AS delivered,
+           SUM(o.delivery_status IN ('Pending', 'Rider Assigned', 'Dispatched')) AS pending
+         FROM riders r
+         LEFT JOIN orders o ON o.rider_id = r.rider_id ${riderWhere}
+         WHERE r.status = 'active' OR r.status IS NULL
+         GROUP BY r.rider_id, r.rider_name, r.availability
+         ORDER BY r.rider_name`,
+        riderParams
+      );
+
+      // ── Avg deliveries per active rider ──
+      const activeCount = Number(riderCounts.active_riders || 0);
+      const totalDelivered = Number(summary.delivered || 0);
+      const avg = activeCount > 0 ? Math.round((totalDelivered / activeCount) * 10) / 10 : 0;
+
+      // ── Unique order types (for filter dropdown) ──
+      const [typesRows] = await db.execute(
+        `SELECT DISTINCT order_type FROM orders WHERE order_type IS NOT NULL AND TRIM(order_type) != '' ORDER BY order_type`
+      );
+
+      res.json({
+        total_hissas:             Number(summary.total_hissas   || 0),
+        delivered:                Number(summary.delivered      || 0),
+        in_transit:               Number(summary.in_transit     || 0),
+        pending:                  Number(summary.pending        || 0),
+        returned:                 Number(summary.returned       || 0),
+        rider_assigned:           Number(summary.rider_assigned || 0),
+        unassigned:               Number(summary.unassigned     || 0),
+        active_riders:            activeCount,
+        avg_deliveries_per_rider: avg,
+        areas,
+        rider_summary: riderSummary,
+        order_types: typesRows.map(r => r.order_type),
+      });
+    } catch (error) {
+      logError("OPERATIONS", "Dashboard stats error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
 };
