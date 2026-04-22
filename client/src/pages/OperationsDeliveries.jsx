@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import QRCode from 'qrcode';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE } from '../config/api';
@@ -56,6 +55,7 @@ const selectStyle = {
   color: '#333',
   maxWidth: '140px',
 };
+const PAGE_SIZE = 50;
 
 export default function OperationsDeliveries() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -66,16 +66,19 @@ export default function OperationsDeliveries() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [modal, setModal] = useState(null);
-  const [qrDataUrl, setQrDataUrl] = useState('');
   const [saving, setSaving] = useState(false);
 
   const [search, setSearch] = useState('');
-  const [filterDay, setFilterDay] = useState('');
-  const [filterSlot, setFilterSlot] = useState('');
+  const [filterDay, setFilterDay] = useState('Day 1');
+  const [filterSlots, setFilterSlots] = useState([]);
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterRider, setFilterRider] = useState('');
+  const [page, setPage] = useState(1);
   const [scanMatchToken, setScanMatchToken] = useState('');
   const [scanOpen, setScanOpen] = useState(false);
   const [scanErr, setScanErr] = useState('');
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [slotDropdownOpen, setSlotDropdownOpen] = useState(false);
 
   const scannerRef = useRef(null);
   const groupsRef = useRef(groups);
@@ -118,7 +121,9 @@ export default function OperationsDeliveries() {
   const slotOptions = useMemo(() => {
     const s = new Set();
     for (const g of groups) {
-      if (g.slot != null && String(g.slot).trim() !== '') s.add(String(g.slot).trim());
+      for (const slot of (g.slots || [])) {
+        if (slot != null && String(slot).trim() !== '') s.add(String(slot).trim());
+      }
     }
     return [...s].sort((a, b) => a.localeCompare(b));
   }, [groups]);
@@ -142,12 +147,32 @@ export default function OperationsDeliveries() {
       });
     }
     if (filterDay) list = list.filter((g) => String(g.day || '').trim() === filterDay);
-    if (filterSlot) list = list.filter((g) => String(g.slot || '').trim() === filterSlot);
+    if (filterSlots.length) list = list.filter((g) => (g.slots || []).some((s) => filterSlots.includes(String(s).trim())));
+    if (filterStatus) list = list.filter((g) => (g.challan?.delivery_status || 'Pending') === filterStatus);
+    if (filterRider) list = list.filter((g) => String(g.challan?.rider_id || '') === filterRider);
     if (scanMatchToken) {
       list = list.filter((g) => g.challan?.qr_token === scanMatchToken);
     }
     return list;
-  }, [groups, search, filterDay, filterSlot, scanMatchToken]);
+  }, [groups, search, filterDay, filterSlots, filterStatus, filterRider, scanMatchToken]);
+  const totalPages = Math.max(1, Math.ceil(displayGroups.length / PAGE_SIZE));
+  const pagedGroups = useMemo(() => displayGroups.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [displayGroups, page]);
+  useEffect(() => { setPage(1); }, [search, filterDay, filterSlots, filterStatus, filterRider, scanMatchToken]);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+
+  const summary = useMemo(() => {
+    let totalHissa = 0;
+    let totalPremium = 0;
+    let totalStandard = 0;
+    let totalGoat = 0;
+    for (const g of displayGroups) {
+      totalPremium += Number(g.premium_hissa_count || g.challan?.total_premium_hissa || 0);
+      totalStandard += Number(g.standard_hissa_count || g.challan?.total_standard_hissa || 0);
+      totalGoat += Number(g.goat_hissa_count || g.challan?.total_goat_hissa || 0);
+    }
+    totalHissa = totalPremium + totalStandard;
+    return { totalHissa, totalPremium, totalStandard, totalGoat };
+  }, [displayGroups]);
 
   const rowDomId = (g) => {
     if (g.challan?.challan_id) return `dlv-challan-${g.challan.challan_id}`;
@@ -171,8 +196,6 @@ export default function OperationsDeliveries() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Challan not found');
       setModal(data);
-      const url = `${window.location.origin}/operations/deliveries?challan=${encodeURIComponent(token)}`;
-      setQrDataUrl(await QRCode.toDataURL(url, { width: 160, margin: 1 }));
     } catch (e) {
       setErr(e.message || 'Failed to open challan');
     }
@@ -185,7 +208,6 @@ export default function OperationsDeliveries() {
 
   const closeModal = () => {
     setModal(null);
-    setQrDataUrl('');
     const next = new URLSearchParams(searchParams);
     next.delete('challan');
     setSearchParams(next, { replace: true });
@@ -327,10 +349,17 @@ export default function OperationsDeliveries() {
 
   const resetFilters = () => {
     setSearch('');
-    setFilterDay('');
-    setFilterSlot('');
+    setFilterDay('Day 1');
+    setFilterSlots([]);
+    setFilterStatus('');
+    setFilterRider('');
+    setSlotDropdownOpen(false);
     setScanMatchToken('');
   };
+  const toggleSlot = (slot) => {
+    setFilterSlots((prev) => (prev.includes(slot) ? prev.filter((s) => s !== slot) : [...prev, slot]));
+  };
+  const riderOptions = useMemo(() => riders.map((r) => ({ id: String(r.rider_id), label: `${r.rider_name || ''} (${r.contact || 'N/A'}) [${r.vehicle || 'No vehicle'}]` })), [riders]);
 
   return (
     <>
@@ -363,7 +392,7 @@ export default function OperationsDeliveries() {
           boxSizing: 'border-box',
         }}
       >
-        <div className="om-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
+        <div className="om-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', whiteSpace: 'nowrap' }}>Deliveries Management</h2>
             <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#888', fontWeight: '500', lineHeight: 1.45, maxWidth: '720px' }}>
@@ -371,6 +400,20 @@ export default function OperationsDeliveries() {
             </p>
           </div>
           {saving && <span style={{ fontSize: '10px', color: '#999', fontWeight: '600' }}>Saving…</span>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', marginBottom: '12px' }}>
+          {[['Total Hissa', summary.totalHissa], ['Total Premium Delivery', summary.totalPremium], ['Total Standard Delivery', summary.totalStandard], ['Total Goat(Hissa) Delivery', summary.totalGoat]].map(([k, v]) => (
+            <div key={k} style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: '8px', padding: '10px' }}>
+              <div style={{ fontSize: '10px', color: '#777' }}>{k}</div>
+              <div style={{ fontSize: '16px', fontWeight: 700 }}>{v}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ borderTop: '1px solid #e6e6e6', marginBottom: '12px' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', width: '100%', gap: '8px', marginBottom: '12px' }}>
+          {['Day 1', 'Day 2', 'Day 3'].map((d) => (
+            <button key={d} type="button" onClick={() => setFilterDay(d)} style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', background: filterDay === d ? '#FF5722' : '#fff', color: filterDay === d ? '#fff' : '#333', fontWeight: 600 }}>{d}</button>
+          ))}
         </div>
 
         <div className="om-filter-desktop" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', alignItems: 'flex-end', minWidth: 0, flexShrink: 0 }}>
@@ -393,13 +436,29 @@ export default function OperationsDeliveries() {
               ))}
             </select>
           </div>
-          <div style={{ width: 112, minWidth: 112, flexShrink: 0 }}>
-            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px', whiteSpace: 'nowrap' }}>Slot</label>
-            <select value={filterSlot} onChange={(e) => setFilterSlot(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
+          <div style={{ minWidth: 180, maxWidth: 240, position: 'relative' }}>
+            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Slots</label>
+            <button type="button" onClick={() => setSlotDropdownOpen((v) => !v)} style={{ width: '100%', textAlign: 'left', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '11px' }}>
+              {filterSlots.length ? `${filterSlots.length} slot(s) selected` : 'All slots'}
+            </button>
+            {slotDropdownOpen && (
+              <div style={{ position: 'absolute', zIndex: 30, left: 0, right: 0, top: '100%', marginTop: '4px', maxHeight: '180px', overflow: 'auto', border: '1px solid #e0e0e0', borderRadius: '6px', background: '#fff', padding: '6px' }}>
+                {slotOptions.map((s) => <label key={s} style={{ display: 'block', fontSize: '10px', padding: '3px 0' }}><input type="checkbox" checked={filterSlots.includes(s)} onChange={() => toggleSlot(s)} /> {s}</label>)}
+              </div>
+            )}
+          </div>
+          <div style={{ width: 130 }}>
+            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Status</label>
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
               <option value="">All</option>
-              {slotOptions.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
+              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{ width: 230 }}>
+            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Rider</label>
+            <select value={filterRider} onChange={(e) => setFilterRider(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
+              <option value="">All</option>
+              {riderOptions.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
             </select>
           </div>
           <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap' }}>
@@ -470,7 +529,7 @@ export default function OperationsDeliveries() {
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Slot</label>
-                <select value={filterSlot} onChange={(e) => setFilterSlot(e.target.value)} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }}>
+                <select value={filterSlots[0] || ''} onChange={(e) => setFilterSlots(e.target.value ? [e.target.value] : [])} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }}>
                   <option value="">All</option>
                   {slotOptions.map((s) => (
                     <option key={s} value={s}>{s}</option>
@@ -511,13 +570,13 @@ export default function OperationsDeliveries() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', tableLayout: 'auto' }}>
               <thead>
                 <tr style={{ background: '#f5f5f5' }}>
-                  {['Address', 'Day', 'Slot', 'Area', 'Hissa', 'Shareholders', 'Status', 'Rider', 'Set status'].map((h) => (
+                  {['Set Status', 'Rider', 'CustomerID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day', 'Slot', 'Area', 'Standard', 'Premium', 'Goat(Hissa)', 'Total Hissa', 'Shareholders'].map((h) => (
                     <th key={h} style={{ padding: '10px 8px', textAlign: 'left', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {displayGroups.map((g) => {
+                {pagedGroups.map((g) => {
                   const c = g.challan;
                   const st = c?.delivery_status || 'Pending';
                   const names = (g.shareholder_names || []).join(', ') || '—';
@@ -539,17 +598,11 @@ export default function OperationsDeliveries() {
                         e.currentTarget.style.background = isScanHit ? '#FFF8E1' : 'transparent';
                       }}
                     >
-                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', whiteSpace: 'normal', maxWidth: '220px', color: '#333', fontWeight: '500', verticalAlign: 'middle' }} title={g.address}>
-                        {g.address || '—'}
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', verticalAlign: 'middle' }} onClick={(e) => e.stopPropagation()}>
+                        <select value={st} disabled={!c} title={!c ? 'Generate challan data first (Challan tab)' : ''} onChange={(e) => patchGroupStatus(c.challan_id, e.target.value)} style={{ ...selectStyle, opacity: c ? 1 : 0.5 }}>
+                          {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
                       </td>
-                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', verticalAlign: 'middle' }}>{g.day || '—'}</td>
-                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', verticalAlign: 'middle' }}>{g.slot || '—'}</td>
-                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', verticalAlign: 'middle' }}>{g.area || '—'}</td>
-                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', verticalAlign: 'middle' }}>{g.hissa_count}</td>
-                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', whiteSpace: 'normal', maxWidth: '160px', color: '#666', verticalAlign: 'middle' }} title={names}>
-                        {names.length > 48 ? `${names.slice(0, 48)}…` : names}
-                      </td>
-                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', verticalAlign: 'middle' }}>{statusBadge(st)}</td>
                       <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', verticalAlign: 'middle' }} onClick={(e) => e.stopPropagation()}>
                         <select
                           value={c?.rider_id ?? ''}
@@ -560,23 +613,23 @@ export default function OperationsDeliveries() {
                         >
                           <option value="">—</option>
                           {riders.map((r) => (
-                            <option key={r.rider_id} value={r.rider_id}>{r.rider_name}</option>
+                            <option key={r.rider_id} value={r.rider_id}>{`${r.rider_name || ''} (${r.contact || 'N/A'}) [${r.vehicle || 'No vehicle'}]`}</option>
                           ))}
                         </select>
                       </td>
-                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', verticalAlign: 'middle' }} onClick={(e) => e.stopPropagation()}>
-                        <select
-                          value={st}
-                          disabled={!c}
-                          title={!c ? 'Generate challan data first (Challan tab)' : ''}
-                          onChange={(e) => patchGroupStatus(c.challan_id, e.target.value)}
-                          style={{ ...selectStyle, opacity: c ? 1 : 0.5 }}
-                        >
-                          {STATUSES.map((s) => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
-                      </td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0' }}>{(g.customer_ids || []).join(', ') || '—'}</td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0' }}>{(g.booking_names || []).join(', ') || '—'}</td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', maxWidth: '220px' }}>{g.address || '—'}</td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0' }}>{(g.contacts || []).join(', ') || '—'}</td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0' }}>{(g.alt_contacts || []).join(', ') || '—'}</td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0' }}>{g.day || '—'}</td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0' }}>{(g.slots || []).join(', ') || '—'}</td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0' }}>{g.area || '—'}</td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0' }}>{g.standard_hissa_count || 0}</td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0' }}>{g.premium_hissa_count || 0}</td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0' }}>{g.goat_hissa_count || 0}</td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0' }}>{g.hissa_count || 0}</td>
+                      <td style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', whiteSpace: 'normal', maxWidth: '160px', color: '#666', verticalAlign: 'middle' }} title={names}>{names.length > 48 ? `${names.slice(0, 48)}…` : names}</td>
                     </tr>
                   );
                 })}
@@ -589,6 +642,16 @@ export default function OperationsDeliveries() {
             </div>
           )}
         </div>
+        {!loading && displayGroups.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 0', borderTop: '1px solid #e0e0e0', marginTop: '8px', flexShrink: 0 }}>
+            <span style={{ fontSize: '11px', color: '#666' }}>Showing {pagedGroups.length} of {displayGroups.length} rows</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
+              <span style={{ fontSize: '11px' }}>Page {page} / {totalPages}</span>
+              <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Next</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {scanOpen && (
@@ -696,11 +759,6 @@ export default function OperationsDeliveries() {
                 ×
               </button>
             </div>
-            {qrDataUrl && (
-              <div style={{ textAlign: 'center', marginBottom: '12px' }}>
-                <img src={qrDataUrl} alt="Challan QR" style={{ width: 160, height: 160 }} />
-              </div>
-            )}
             <p style={{ fontSize: '11px', color: '#333', margin: '0 0 6px' }}><strong>Address:</strong> {modal.challan?.address}</p>
             <p style={{ fontSize: '11px', color: '#333', margin: '0 0 6px' }}><strong>Day / slot:</strong> {modal.challan?.day || '—'} · {modal.challan?.slot || '—'}</p>
             <p style={{ fontSize: '11px', color: '#333', margin: '0 0 12px' }}><strong>Rider:</strong> {modal.rider?.rider_name || '—'}</p>

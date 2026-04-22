@@ -44,7 +44,7 @@ export default function OperationsDashboard() {
   const [loading, setLoading] = useState(true);
   const [err, setErr]         = useState('');
 
-  const [dayFilter,  setDayFilter]  = useState('');
+  const [dayFilter,  setDayFilter]  = useState('Day 1');
   const [areaFilter, setAreaFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
 
@@ -117,16 +117,10 @@ export default function OperationsDashboard() {
         </div>
 
         {/* ── Day toggle ── */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexShrink: 0, flexWrap: 'wrap' }}>
-          {['', ...DAY_OPTIONS].map(d => (
-            <button key={d} type="button" onClick={() => setDayFilter(d)} style={{
-              padding: '7px 18px', borderRadius: '20px', cursor: 'pointer',
-              fontSize: '11px', fontWeight: '600',
-              background: dayFilter === d ? '#FF5722' : '#fff',
-              color:      dayFilter === d ? '#fff'    : '#555',
-              border:     dayFilter === d ? 'none'    : '1px solid #e0e0e0',
-              transition: 'all .15s',
-            }}>{d || 'All Days'}</button>
+        <div style={{ borderTop: '1px solid #e6e6e6', marginBottom: '12px' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', width: '100%', gap: '8px', marginBottom: '12px' }}>
+          {DAY_OPTIONS.map((d) => (
+            <button key={d} type="button" onClick={() => setDayFilter(d)} style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', background: dayFilter === d ? '#FF5722' : '#fff', color: dayFilter === d ? '#fff' : '#333', fontWeight: 600 }}>{d}</button>
           ))}
         </div>
 
@@ -134,11 +128,16 @@ export default function OperationsDashboard() {
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexShrink: 0, flexWrap: 'wrap' }}>
           <div style={{ width: 150 }}>
             <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Area / Zone</label>
-            <select value={areaFilter} onChange={e => setAreaFilter(e.target.value)}
-              style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
-              <option value="">All areas</option>
+            <input
+              list="operations-general-areas"
+              value={areaFilter}
+              onChange={e => setAreaFilter(e.target.value)}
+              placeholder="All areas"
+              style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '11px' }}
+            />
+            <datalist id="operations-general-areas">
               {allAreas.map(a => <option key={a} value={a}>{a}</option>)}
-            </select>
+            </datalist>
           </div>
           <div style={{ width: 150 }}>
             <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Order type</label>
@@ -164,19 +163,16 @@ export default function OperationsDashboard() {
               {/* ── Stat cards ── */}
               <div className="od-stat-grid" style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+                gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
+                width: '100%',
                 gap: '12px', marginBottom: '24px',
               }}>
-                <StatCard label="Total Hissas"       value={s.total_hissas}       accent="#607D8B" />
-                <StatCard label="Delivered"          value={s.delivered}          accent="#2E7D32"
-                  sub={pct(s.delivered, s.total_hissas) + ' complete'} />
-                <StatCard label="In Transit"         value={s.in_transit}         accent="#4527A0" />
-                <StatCard label="Pending"            value={s.pending}            accent="#F57C00" />
-                <StatCard label="Returned to Farm"   value={s.returned}           accent="#C62828" />
-                <StatCard label="Unassigned Orders"  value={s.unassigned}         accent="#B71C1C" />
-                <StatCard label="Active Riders"      value={s.active_riders}      accent="#1565C0"
-                  sub="Available + On Delivery" />
-                <StatCard label="Avg Deliveries / Rider" value={s.avg_deliveries_per_rider ?? '—'} accent="#FF5722" />
+                <StatCard label="Total Hissa" value={s.total_hissas} accent="#607D8B" />
+                <StatCard label="Pending" value={s.pending} accent="#F57C00" />
+                <StatCard label="Rider Assigned" value={s.rider_assigned} accent="#1565C0" />
+                <StatCard label="Dispatched" value={s.in_transit} accent="#4527A0" />
+                <StatCard label="Delivered" value={s.delivered} accent="#2E7D32" sub={pct(s.delivered, s.total_hissas) + ' complete'} />
+                <StatCard label="Returned to Farm" value={s.returned} accent="#C62828" />
               </div>
 
               {/* ── Area-wise breakdown ── */}

@@ -34,6 +34,8 @@ const inputStyle = {
 };
 
 const DAY_OPTIONS = ['Day 1', 'Day 2', 'Day 3'];
+const EXCLUDED_ORDER_TYPES = new Set(['fancy cow', 'cow', 'goat']);
+const PAGE_SIZE = 50;
 
 export default function OperationsCustomerSupport() {
   const { authFetch } = useAuth();
@@ -46,7 +48,7 @@ export default function OperationsCustomerSupport() {
 
   // filters
   const [search,      setSearch]      = useState('');
-  const [dayFilter,   setDayFilter]   = useState('');
+  const [dayFilter,   setDayFilter]   = useState('Day 1');
   const [statusFilter,setStatusFilter]= useState('');
   const [riderFilter, setRiderFilter] = useState('');
   const [areaFilter,  setAreaFilter]  = useState('');
@@ -93,15 +95,22 @@ export default function OperationsCustomerSupport() {
   useEffect(() => { load(); }, [load]); // eslint-disable-line
 
   const resetFilters = () => {
-    setSearch(''); setDayFilter(''); setStatusFilter('');
+    setSearch(''); setDayFilter('Day 1'); setStatusFilter('');
     setRiderFilter(''); setAreaFilter(''); setTypeFilter('');
   };
 
   // unique order types from loaded data
   const orderTypes = useMemo(
-    () => [...new Set(orders.map(o => o.order_type).filter(Boolean))].sort(),
+    () => [...new Set(orders.map((o) => String(o.order_type || '').trim()).filter(Boolean))]
+      .filter((t) => !EXCLUDED_ORDER_TYPES.has(t.toLowerCase()))
+      .sort((a, b) => a.localeCompare(b)),
     [orders]
   );
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(orders.length / PAGE_SIZE));
+  const pagedOrders = useMemo(() => orders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [orders, page]);
+  useEffect(() => { setPage(1); }, [search, dayFilter, statusFilter, riderFilter, areaFilter, typeFilter]);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
   const riderMap = useMemo(() => {
     const m = {};
@@ -153,19 +162,10 @@ export default function OperationsCustomerSupport() {
         </div>
 
         {/* ── Day Filter — prominent strip ── */}
-        <div style={{
-          display: 'flex', gap: '8px', marginBottom: '14px',
-          flexShrink: 0, flexWrap: 'wrap',
-        }}>
-          {['', ...DAY_OPTIONS].map(d => (
-            <button key={d} type="button" onClick={() => setDayFilter(d)} style={{
-              padding: '7px 18px', borderRadius: '20px', cursor: 'pointer',
-              fontSize: '11px', fontWeight: '600',
-              background: dayFilter === d ? '#FF5722' : '#fff',
-              color:      dayFilter === d ? '#fff'    : '#555',
-              border:     dayFilter === d ? 'none'    : '1px solid #e0e0e0',
-              transition: 'all .15s',
-            }}>{d || 'All Days'}</button>
+        <div style={{ borderTop: '1px solid #e6e6e6', marginBottom: '12px' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', width: '100%', gap: '8px', marginBottom: '12px' }}>
+          {DAY_OPTIONS.map((d) => (
+            <button key={d} type="button" onClick={() => setDayFilter(d)} style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', background: dayFilter === d ? '#FF5722' : '#fff', color: dayFilter === d ? '#fff' : '#333', fontWeight: 600 }}>{d}</button>
           ))}
         </div>
 
@@ -282,7 +282,7 @@ export default function OperationsCustomerSupport() {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o, idx) => (
+                {pagedOrders.map((o, idx) => (
                   <tr key={o.order_id} style={{
                     borderBottom: '1px solid #f3f3f3',
                     background: idx % 2 === 0 ? '#fff' : '#FAFAFA',
@@ -322,6 +322,16 @@ export default function OperationsCustomerSupport() {
             </table>
           )}
         </div>
+        {!loading && orders.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', paddingTop: '10px' }}>
+            <span style={{ fontSize: '10px', color: '#999' }}>Showing {pagedOrders.length} of {orders.length} orders</span>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
+              <span style={{ fontSize: '10px' }}>Page {page}/{totalPages}</span>
+              <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Next</button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

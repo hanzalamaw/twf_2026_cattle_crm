@@ -4,6 +4,7 @@ import { writeAuditLog } from "../utils/auditLog.js";
 
 const ALLOWED_STATUSES = ["Pending", "Rider Assigned", "Dispatched", "Delivered", "Returned to Farm"];
 const REGENERATE_ALLOWED_EMAIL = "hanzalamawahab@gmail.com";
+const OPERATIONS_YEAR = 2026;
 
 function normalizeAddr(a) {
   if (a == null) return "";
@@ -31,7 +32,7 @@ function classifyHissa(orderType) {
 const GSEP = "\x1F";
 
 function groupKeyForOrder(row) {
-  return `${normalizeDay(row.day)}${GSEP}${normalizeSlot(row.slot)}${GSEP}${normalizeAddr(row.address)}`;
+  return `${normalizeDay(row.day)}${GSEP}${normalizeAddr(row.address)}`;
 }
 
 async function fetchRoleOpsFlags(db, userId) {
@@ -142,7 +143,9 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
         `SELECT order_id, customer_id, contact, order_type, booking_name, shareholder_name, cow_number, hissa_number,
                 alt_contact, address, area, day, slot, description, rider_id
          FROM orders
+         WHERE booking_date IS NOT NULL AND YEAR(booking_date) = ?
          ORDER BY day, slot, address, order_id`
+        , [OPERATIONS_YEAR]
       );
 
       const map = new Map();
@@ -168,10 +171,12 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
         `SELECT c.challan_id, c.qr_token, c.rider_id, c.booking_name, c.address, c.area, c.description, c.slot, c.day,
                 c.delivery_status, c.total_hissa, c.challan_date,
                 c.total_premium_hissa, c.total_standard_hissa, c.total_waqf_hissa, c.total_goat_hissa
-         FROM challan c`
+         FROM challan c
+         WHERE c.challan_date IS NOT NULL AND YEAR(c.challan_date) = ?`,
+        [OPERATIONS_YEAR]
       );
       for (const c of challans) {
-        const k = `${normalizeDay(c.day)}${GSEP}${normalizeSlot(c.slot)}${GSEP}${normalizeAddr(c.address)}`;
+        const k = `${normalizeDay(c.day)}${GSEP}${normalizeAddr(c.address)}`;
         challanByKey.set(k, c);
       }
 
@@ -183,16 +188,38 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
           address: g.address
         });
         const shareholderNames = [...new Set(g.orders.map((x) => x.shareholder_name).filter(Boolean))];
-        const hissaCount = g.orders.length;
+        const bookingNames = [...new Set(g.orders.map((x) => x.booking_name).filter(Boolean))];
+        const customerIds = [...new Set(g.orders.map((x) => x.customer_id).filter(Boolean))];
+        const contacts = [...new Set(g.orders.map((x) => x.contact).filter(Boolean))];
+        const altContacts = [...new Set(g.orders.map((x) => x.alt_contact).filter(Boolean))];
+        const slots = [...new Set(g.orders.map((x) => String(x.slot || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+        let standardCount = 0;
+        let premiumCount = 0;
+        let goatCount = 0;
+        for (const row of g.orders) {
+          const kind = classifyHissa(row.order_type);
+          if (kind === "premium") premiumCount += 1;
+          else if (kind === "goat") goatCount += 1;
+          else if (kind === "standard") standardCount += 1;
+        }
+        const hissaCount = standardCount + premiumCount;
         groups.push({
           ...g,
           hissa_count: hissaCount,
+          standard_hissa_count: standardCount,
+          premium_hissa_count: premiumCount,
+          goat_hissa_count: goatCount,
+          slots,
+          customer_ids: customerIds,
+          booking_names: bookingNames,
+          contacts,
+          alt_contacts: altContacts,
           shareholder_names: shareholderNames,
           challan: challanByKey.get(k) || null
         });
       }
 
-      groups.sort((a, b) => String(a.day).localeCompare(String(b.day)) || String(a.slot).localeCompare(String(b.slot)));
+      groups.sort((a, b) => String(a.day).localeCompare(String(b.day)) || String(a.address).localeCompare(String(b.address)));
       res.json({ groups });
     } catch (error) {
       logError("OPERATIONS", "Deliveries groups error", error);
@@ -207,7 +234,10 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
       if (!flags) return;
       const token = String(req.params.token || "").trim();
       if (!token) return res.status(400).json({ message: "Invalid token" });
-      const [ch] = await db.execute(`SELECT * FROM challan WHERE qr_token = ?`, [token]);
+      const [ch] = await db.execute(
+        `SELECT * FROM challan WHERE qr_token = ? AND challan_date IS NOT NULL AND YEAR(challan_date) = ?`,
+        [token, OPERATIONS_YEAR]
+      );
       if (ch.length === 0) return res.status(404).json({ message: "Challan not found" });
       const challan = ch[0];
       const [orderRows] = await db.execute(
@@ -240,7 +270,9 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
            FROM challan_orders co2 INNER JOIN orders o ON o.order_id = co2.order_id WHERE co2.challan_id = c.challan_id) AS shareholders_csv
          FROM challan c
          LEFT JOIN riders r ON c.rider_id = r.rider_id
+         WHERE c.challan_date IS NOT NULL AND YEAR(c.challan_date) = ?
          ORDER BY c.day, c.slot, c.challan_id`
+        , [OPERATIONS_YEAR]
       );
       res.json({ challans: rows });
     } catch (error) {
@@ -385,7 +417,9 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
       const [orders] = await db.execute(
         `SELECT order_id, order_type, booking_name, shareholder_name, cow_number, hissa_number, contact, alt_contact,
                 address, area, day, slot, description
-         FROM orders`
+         FROM orders
+         WHERE booking_date IS NOT NULL AND YEAR(booking_date) = ?`,
+        [OPERATIONS_YEAR]
       );
 
       const grouped = new Map();
@@ -407,10 +441,9 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
         await conn.execute("DELETE FROM challan");
 
         const today = new Date();
-        const y = today.getFullYear();
         const m = String(today.getMonth() + 1).padStart(2, "0");
         const d = String(today.getDate()).padStart(2, "0");
-        const challanDate = `${y}-${m}-${d}`;
+        const challanDate = `${OPERATIONS_YEAR}-${m}-${d}`;
 
         let created = 0;
         for (const [, list] of grouped.entries()) {
@@ -427,9 +460,10 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
             else if (c === "waqf") tw++;
             else if (c === "goat") tg++;
           }
-          const totalHissa = list.length;
+          const totalHissa = tp + ts;
           const bookingNames = [...new Set(list.map((x) => x.booking_name).filter(Boolean))];
           const descParts = [...new Set(list.map((x) => x.description).filter(Boolean))];
+          const allSlots = [...new Set(list.map((x) => String(x.slot || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
           const [ins] = await conn.execute(
             `INSERT INTO challan (
@@ -440,10 +474,10 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
             [
               qrToken,
               bookingNames.join(", ") || null,
-              first.address,
+              normalizeAddr(first.address),
               first.area || null,
               descParts.join("\n") || null,
-              normalizeSlot(first.slot) === "_none_" ? null : first.slot,
+              allSlots.length ? allSlots.join(", ") : null,
               normalizeDay(first.day) === "_none_" ? null : first.day,
               tp,
               ts,
@@ -528,6 +562,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
 
       const challanParams = [];
       let challanWhere = `WHERE c.rider_id IS NOT NULL`;
+      challanWhere += ` AND c.challan_date IS NOT NULL AND YEAR(c.challan_date) = ${OPERATIONS_YEAR}`;
       if (day) {
         challanWhere += ` AND TRIM(COALESCE(c.day, '')) = ?`;
         challanParams.push(day);
@@ -624,6 +659,8 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
         INNER JOIN challan_orders co ON co.challan_id = c.challan_id
         INNER JOIN orders o ON o.order_id = co.order_id
         WHERE c.rider_id = ?
+          AND o.booking_date IS NOT NULL
+          AND YEAR(o.booking_date) = ${OPERATIONS_YEAR}
       `;
       if (day) {
         sql += ` AND TRIM(COALESCE(c.day, '')) = ?`;
@@ -777,6 +814,9 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
 
       const conditions = [];
       const params = [];
+      conditions.push("o.booking_date IS NOT NULL");
+      conditions.push("YEAR(o.booking_date) = ?");
+      params.push(OPERATIONS_YEAR);
 
       if (day) {
         conditions.push("TRIM(COALESCE(o.day, '')) = ?");
@@ -840,6 +880,9 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
 
       const conditions = [];
       const params = [];
+      conditions.push("o.booking_date IS NOT NULL");
+      conditions.push("YEAR(o.booking_date) = ?");
+      params.push(OPERATIONS_YEAR);
 
       if (day) {
         conditions.push("TRIM(COALESCE(o.day, '')) = ?");

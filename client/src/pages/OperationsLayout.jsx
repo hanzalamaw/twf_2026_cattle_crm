@@ -360,7 +360,6 @@ export default function OperationsLayout() {
         ) : (
           <div className="ops-sub-topbar">
             <div className="ops-sub-topbar-nav">
-              <Link to="/">← Back to main page</Link>
               <Link to="/operations">← Operations modules</Link>
             </div>
             <button type="button" className="ops-sub-logout" onClick={logout}>
