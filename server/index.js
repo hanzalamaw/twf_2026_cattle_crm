@@ -17,7 +17,6 @@ import { registerPerformanceRoutes } from "./routes/performanceRoutes.js";
 import { registerFarmRoutes } from "./routes/farmRoutes.js";
 import { registerProcurementRoutes } from "./routes/procurement.js";
 import { registerAccountingRoutes } from "./routes/accountingRoutes.js";
-import { registerWhatsAppRoutes } from "./routes/whatsapp.js";
 import { log, logError } from "./utils/logger.js";
 import { writeAuditLog } from "./utils/auditLog.js";
 import { sendLoginNotificationEmail } from "./utils/email.js";
@@ -393,7 +392,6 @@ const startServer = async () => {
     registerPerformanceRoutes(app, db, verifyToken);
     registerProcurementRoutes(app, db, verifyToken);
     registerAccountingRoutes(app, db, verifyToken);
-    registerWhatsAppRoutes(app, verifyToken);
 
     // ---------- 404 ----------
     app.use((req, res) => {
