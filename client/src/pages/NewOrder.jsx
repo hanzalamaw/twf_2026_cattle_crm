@@ -15,6 +15,7 @@ const EMPTY_FORM = {
   address: '', area: '', day: '', booking_date: '', total_amount: '',
   order_source: '', reference: '', closed_by: '', description: '', slot: '',
 };
+const GOAT_NUMBER_PATTERN = /^G[1-9]\d*$/;
 
 const NewOrder = () => {
   const navigate = useNavigate();
@@ -91,7 +92,6 @@ const NewOrder = () => {
 
   const getAvailableCowHissa = useCallback(async (orderType, day, bookingDate) => {
     if (!orderType) { setFormData((p) => ({ ...p, cow_number: '', hissa_number: '' })); return; }
-    if (orderType === 'Goat (Hissa)') { setFormData((p) => ({ ...p, cow_number: '0', hissa_number: '0' })); return; }
     const token = localStorage.getItem('token');
     if (!token) return;
     try {
@@ -106,8 +106,8 @@ const NewOrder = () => {
 
   const shouldSkipCowHissaDuplicate = (orderType, cow, hissa) => {
     if (orderType !== 'Goat (Hissa)') return false;
-    const c = String(cow ?? '').trim(); const h = String(hissa ?? '').trim();
-    return (c === '0' || c === '') && (h === '0' || h === '');
+    const c = String(cow ?? '').trim();
+    return !GOAT_NUMBER_PATTERN.test(c);
   };
 
   const checkCowHissaDuplicate = useCallback(async (cow, hissa, orderType, day, bookingDate) => {
@@ -142,7 +142,7 @@ const NewOrder = () => {
         return { ...p, order_type: v, total_amount: getPresetAmount(v), cow_number: '0', hissa_number: '0', day: '', slot: '' };
       }
       getAvailableCowHissa(v, p.day, p.booking_date);
-      return { ...p, order_type: v, total_amount: getPresetAmount(v) };
+      return { ...p, order_type: v, total_amount: getPresetAmount(v), hissa_number: v === 'Goat (Hissa)' ? '0' : p.hissa_number };
     });
   };
 
@@ -151,7 +151,18 @@ const NewOrder = () => {
     setFormData((p) => { if (p.order_type) getAvailableCowHissa(p.order_type, v, p.booking_date); return { ...p, day: v }; });
   };
 
-  const handleCowNumberChange = (e) => { setFormData((p) => ({ ...p, cow_number: e.target.value })); setDuplicateError(null); };
+  const handleCowNumberChange = (e) => {
+    const raw = e.target.value;
+    if (formData.order_type === 'Goat (Hissa)') {
+      const clean = raw.toUpperCase().replace(/[^G0-9]/g, '');
+      const normalized = clean.startsWith('G') ? `G${clean.slice(1).replace(/G/g, '')}` : clean.replace(/G/g, '');
+      setFormData((p) => ({ ...p, cow_number: normalized, hissa_number: '0' }));
+      setDuplicateError(null);
+      return;
+    }
+    setFormData((p) => ({ ...p, cow_number: raw }));
+    setDuplicateError(null);
+  };
   const handleHissaNumberChange = (e) => { setFormData((p) => ({ ...p, hissa_number: e.target.value })); setDuplicateError(null); };
 
   const handleCowNumberBlur = async () => {
@@ -177,6 +188,11 @@ const NewOrder = () => {
       const dup = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day, booking_date);
       if (dup) { setDuplicateError(dup); setLoading(false); return; }
     }
+    if (!isFarm && order_type === 'Goat (Hissa)' && !GOAT_NUMBER_PATTERN.test(String(cow_number || '').trim().toUpperCase())) {
+      setError('Goat Number must follow G1, G2, G3 format.');
+      setLoading(false);
+      return;
+    }
     const token = localStorage.getItem('token');
     if (!token) { setError('You must be logged in to create an order'); setLoading(false); return; }
     const payload = isFarm
@@ -188,7 +204,11 @@ const NewOrder = () => {
           hissa_number: '0',
           shareholder_name: '-',
         }
-      : formData;
+      : {
+          ...formData,
+          cow_number: order_type === 'Goat (Hissa)' ? String(cow_number || '').trim().toUpperCase() : formData.cow_number,
+          hissa_number: order_type === 'Goat (Hissa)' ? '0' : formData.hissa_number,
+        };
     try {
       const res = await fetch(`${API}/booking/orders`, {
         method: 'POST',
@@ -486,17 +506,17 @@ const NewOrder = () => {
 
           {/* Livestock Information — booking only; farm saves 0/0 server-side */}
           {!isFarm && (
-            <div className="no-section" style={{ ...sectionStyle, opacity: isGoat ? 0.6 : 1, pointerEvents: isGoat ? 'none' : 'auto' }}>
+          <div className="no-section" style={sectionStyle}>
               <div className="no-section-title" style={sectionTitleStyle}>Livestock Information</div>
               <div className="no-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '13px' }}>
                 <div>
-                  <label className="no-label" style={labelStyle}>Cow Number</label>
-                  <input className="no-input" type="text" value={formData.cow_number} onChange={handleCowNumberChange} placeholder="Enter cow number" style={inputStyle} disabled={isGoat}
+                  <label className="no-label" style={labelStyle}>{isGoat ? 'Goat Number' : 'Cow Number'}</label>
+                  <input className="no-input" type="text" value={formData.cow_number} onChange={handleCowNumberChange} placeholder={isGoat ? 'Auto/Manual: G1, G2...' : 'Enter cow number'} style={inputStyle}
                     onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => { e.target.style.borderColor = '#e0e0e0'; handleCowNumberBlur(); }} />
                 </div>
                 <div>
                   <label className="no-label" style={labelStyle}>Hissa Number</label>
-                  <input className="no-input" type="text" value={formData.hissa_number} onChange={handleHissaNumberChange} placeholder="Enter hissa number" style={inputStyle} disabled={isGoat}
+                  <input className="no-input" type="text" value={isGoat ? '0' : formData.hissa_number} onChange={handleHissaNumberChange} placeholder="Enter hissa number" style={inputStyle} disabled={isGoat}
                     onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => { e.target.style.borderColor = '#e0e0e0'; handleHissaNumberBlur(); }} />
                 </div>
               </div>

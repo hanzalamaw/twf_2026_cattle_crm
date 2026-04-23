@@ -5,11 +5,12 @@ import { API_BASE as API } from '../config/api';
 import { useAuth } from '../context/AuthContext';
 const PAGE_SIZE = 50;
 const HIDDEN_TYPES_BOOKING = ['Cow', 'Fancy Cow', 'Goat'];
-const CONFIRM_ORDER_TYPES_BOOKING = ['Fancy Cow', 'Goat', 'Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];
+const CONFIRM_ORDER_TYPES_BOOKING = ['Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];
 const CONFIRM_ORDER_TYPES_FARM = ['Fancy Cow', 'Goat'];
 const CLOSED_BY_OPTIONS = ['Ashhad Bhai', 'Ammar Bhai', 'Ashhal', 'Abuzar', 'Omer', 'Abdullah', 'Huzaifa', 'Hanzala', 'External'];
 const DAYS = ['DAY 1', 'DAY 2', 'DAY 3'];
 const ORDER_TYPE_PRESET_AMOUNTS = { 'Hissa - Standard': '25000', 'Hissa - Premium': '30000', 'Hissa - Waqf': '21000' };
+const GOAT_NUMBER_PATTERN = /^G[1-9]\d*$/;
 
 const COLUMNS = [
   { key: 'lead_id',          label: 'Lead ID'          },
@@ -77,6 +78,7 @@ export default function QueryManagement() {
   const [yearFilter, setYearFilter] = useState('2026');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -174,7 +176,6 @@ export default function QueryManagement() {
     };
     const getCowHissa = async () => {
       if (!ot || isFarm) return;
-      if (ot === 'Goat (Hissa)') { setConfirmForm((p) => ({ ...p, cow_number: '0', hissa_number: '0' })); return; }
       try {
         const res = await authFetch(`${API}/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order_type: ot, day: d || null, booking_date: ds || null }) });
         if (res.ok) { const d2 = await res.json(); setConfirmForm((p) => ({ ...p, cow_number: d2.cow_number || '', hissa_number: d2.hissa_number || '' })); }
@@ -190,12 +191,12 @@ export default function QueryManagement() {
 
   const toggleSelect = (id) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleSelectAll = () => selectedIds.size === leads.length ? setSelectedIds(new Set()) : setSelectedIds(new Set(leads.map((r) => r.lead_id)));
-  const handleResetFilters = () => { setSearch(''); setOrderType(''); setDay(''); setReference(''); setArea(''); setYearFilter('2026'); setSelectedIds(new Set()); setError(''); };
+  const handleResetFilters = () => { setSearch(''); setOrderType(''); setDay(''); setReference(''); setArea(''); setYearFilter('2026'); setSelectedIds(new Set()); setError(''); setSuccess(''); };
 
   const shouldSkip = (ot, c, h) => {
     if (ot !== 'Goat (Hissa)') return false;
-    const cv = String(c ?? '').trim(); const hv = String(h ?? '').trim();
-    return (cv === '0' || cv === '') && (hv === '0' || hv === '');
+    const cv = String(c ?? '').trim().toUpperCase();
+    return !GOAT_NUMBER_PATTERN.test(cv);
   };
 
   const checkDup = useCallback(async (c, h, ot, d, bd) => {
@@ -254,6 +255,7 @@ export default function QueryManagement() {
     const totalAmount = Number(confirmForm.total_amount);
     const c = (confirmForm.cow_number || '').trim();
     const h = (confirmForm.hissa_number || '').trim();
+    const normalizedGoatNumber = c.toUpperCase();
     const fe = {};
     if (!ot) fe.order_type = 'Order type is required';
     if (!(confirmForm.total_amount || '').toString().trim()) fe.total_amount = 'Total amount is required';
@@ -273,12 +275,16 @@ export default function QueryManagement() {
       if (!h) fe.hissa_number = 'Hissa number is required';
     }
     if (Object.keys(fe).length > 0) { setConfirmFormErrors(fe); return; }
+    if (!isFarm && ot === 'Goat (Hissa)' && !GOAT_NUMBER_PATTERN.test(normalizedGoatNumber)) {
+      setConfirmFormErrors((p) => ({ ...p, cow_number: 'Goat number must be in G1, G2 format' }));
+      return;
+    }
     setConfirmFormErrors({});
     if (!isFarm && c && h && ot && !shouldSkip(ot, c, h)) {
       const dup = await checkDup(c, h, ot, d, bd);
       if (dup) { setConfirmDuplicateError(dup); return; }
     }
-    setConfirmDuplicateError(null); setConfirmingLeadId(lead.lead_id); setError('');
+    setConfirmDuplicateError(null); setConfirmingLeadId(lead.lead_id); setError(''); setSuccess('');
     try {
       const res = await authFetch(`${API}/booking/leads/${encodeURIComponent(lead.lead_id)}/confirm-order`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -306,8 +312,8 @@ export default function QueryManagement() {
           order_id: (confirmForm.order_id || '').trim(),
           slot: (confirmForm.slot || '').trim() || null,
           booking_date: bd || null,
-          cow_number: c || null,
-          hissa_number: h || null
+          cow_number: ot === 'Goat (Hissa)' ? normalizedGoatNumber : (c || null),
+          hissa_number: ot === 'Goat (Hissa)' ? '0' : (h || null)
         })
       });
       const data = await res.json().catch(() => ({}));
@@ -316,6 +322,8 @@ export default function QueryManagement() {
         setConfirmForm({ order_type: '', total_amount: '', address: '', area: '', day: '', closed_by: '', shareholder_name: '', order_id: '', slot: '', booking_date: '', cow_number: '', hissa_number: '' });
         setConfirmDuplicateError(null); setConfirmFormErrors({});
         setSelectedIds((p) => { const n = new Set(p); n.delete(lead.lead_id); return n; });
+        setSuccess(`Order ${data.order_id} saved successfully.`);
+        setTimeout(() => setSuccess(''), 3000);
         fetchLeads();
       } else setError(data.message || 'Failed to confirm order');
     } catch (e) { setError('Failed to confirm order'); }
@@ -566,6 +574,7 @@ export default function QueryManagement() {
         </div>
 
         {error && <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', flexShrink: 0, fontSize: '10px' }}>{error}</div>}
+        {success && <div style={{ padding: '10px', background: '#F0FDF4', color: '#166534', borderRadius: '6px', marginBottom: '13px', flexShrink: 0, fontSize: '10px', border: '1px solid #BBF7D0' }}>{success}</div>}
 
         {/* Desktop table */}
         <div className="qm-table-wrap" style={{ flex: 1, minHeight: '304px', overflow: 'auto', border: '1px solid #e0e0e0', borderRadius: '6px', background: '#fff' }}>
@@ -631,13 +640,14 @@ export default function QueryManagement() {
                     onChange={(e) => {
                       const nextType = e.target.value;
                       const preset = ORDER_TYPE_PRESET_AMOUNTS[nextType];
+                      const isGoatType = nextType === 'Goat (Hissa)';
                       setConfirmForm((p) => ({
                         ...p,
                         order_type: nextType,
                         total_amount: preset || '0',
                         order_id: '',
-                        cow_number: isFarm ? '0' : '',
-                        hissa_number: isFarm ? '0' : ''
+                        cow_number: isFarm ? '0' : (isGoatType ? p.cow_number : ''),
+                        hissa_number: isFarm ? '0' : (isGoatType ? '0' : '')
                       }));
                       setConfirmDuplicateError(null);
                       setConfirmFormErrors((p) => ({ ...p, order_type: undefined }));
@@ -698,7 +708,12 @@ export default function QueryManagement() {
                     value={confirmForm.day}
                     onChange={(e) => {
                       const nextDay = e.target.value;
-                      setConfirmForm((p) => ({ ...p, day: nextDay, cow_number: '', hissa_number: '' }));
+                      setConfirmForm((p) => ({
+                        ...p,
+                        day: nextDay,
+                        cow_number: p.order_type === 'Goat (Hissa)' ? p.cow_number : '',
+                        hissa_number: p.order_type === 'Goat (Hissa)' ? '0' : '',
+                      }));
                       setConfirmDuplicateError(null);
                       setConfirmFormErrors((p) => ({ ...p, day: undefined }));
                     }}
@@ -743,7 +758,7 @@ export default function QueryManagement() {
                     const nd = e.target.value;
                     setConfirmForm((p) => ({ ...p, booking_date: nd }));
                     setConfirmFormErrors((p) => ({ ...p, booking_date: undefined }));
-                    if (!isFarm && confirmForm.order_type && confirmForm.order_type !== 'Goat (Hissa)' && token) {
+                    if (!isFarm && confirmForm.order_type && token) {
                       authFetch(`${API}/booking/get-available-cow-hissa`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order_type: confirmForm.order_type, day: confirmForm.day || null, booking_date: nd || null }) })
                         .then((r) => r.ok ? r.json() : {})
                         .then((d2) => { if (d2 && (d2.cow_number != null || d2.hissa_number != null)) setConfirmForm((p) => ({ ...p, cow_number: d2.cow_number || '', hissa_number: d2.hissa_number || '' })); })
@@ -755,19 +770,29 @@ export default function QueryManagement() {
                 {!isFarm && (
                 <div className="qm-cow-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Cow Number <span style={{ color: '#dc2626' }}>*</span></label>
+                    <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>{confirmForm.order_type === 'Goat (Hissa)' ? 'Goat Number' : 'Cow Number'} <span style={{ color: '#dc2626' }}>*</span></label>
                     <input value={confirmForm.cow_number}
-                      onChange={(e) => { setConfirmForm((p) => ({ ...p, cow_number: e.target.value })); setConfirmDuplicateError(null); setConfirmFormErrors((p) => ({ ...p, cow_number: undefined })); }}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const nextValue = confirmForm.order_type === 'Goat (Hissa)'
+                          ? (raw.toUpperCase().replace(/[^G0-9]/g, '').startsWith('G')
+                            ? `G${raw.toUpperCase().replace(/[^G0-9]/g, '').slice(1).replace(/G/g, '')}`
+                            : raw.toUpperCase().replace(/[^G0-9]/g, '').replace(/G/g, ''))
+                          : raw;
+                        setConfirmForm((p) => ({ ...p, cow_number: nextValue, hissa_number: p.order_type === 'Goat (Hissa)' ? '0' : p.hissa_number }));
+                        setConfirmDuplicateError(null);
+                        setConfirmFormErrors((p) => ({ ...p, cow_number: undefined }));
+                      }}
                       onBlur={async () => { if (!confirmModalLead) return; const { cow_number: c, hissa_number: h, booking_date: bd, order_type: ot, day: d } = confirmForm; if (c && h && ot && !shouldSkip(ot, c, h)) { const dup = await checkDup(c, h, ot, d, bd); if (dup) setConfirmDuplicateError(dup); } }}
                       placeholder="Auto-generated" style={miStyle(confirmFormErrors.cow_number || confirmDuplicateError)} />
                     {confirmFormErrors.cow_number && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.cow_number}</div>}
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Hissa Number <span style={{ color: '#dc2626' }}>*</span></label>
-                    <input value={confirmForm.hissa_number}
+                    <input value={confirmForm.order_type === 'Goat (Hissa)' ? '0' : confirmForm.hissa_number}
                       onChange={(e) => { setConfirmForm((p) => ({ ...p, hissa_number: e.target.value })); setConfirmDuplicateError(null); setConfirmFormErrors((p) => ({ ...p, hissa_number: undefined })); }}
                       onBlur={async () => { if (!confirmModalLead) return; const { cow_number: c, hissa_number: h, booking_date: bd, order_type: ot, day: d } = confirmForm; if (c && h && ot && !shouldSkip(ot, c, h)) { const dup = await checkDup(c, h, ot, d, bd); if (dup) setConfirmDuplicateError(dup); } }}
-                      placeholder="Auto-generated" style={miStyle(confirmFormErrors.hissa_number || confirmDuplicateError)} />
+                      placeholder="Auto-generated" style={miStyle(confirmFormErrors.hissa_number || confirmDuplicateError)} disabled={confirmForm.order_type === 'Goat (Hissa)'} />
                     {confirmFormErrors.hissa_number && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.hissa_number}</div>}
                   </div>
                 </div>

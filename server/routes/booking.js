@@ -153,6 +153,27 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     const raw = String(value || "").trim();
     return raw === "Cow" ? "Fancy Cow" : raw;
   };
+  const isGoatHissaType = (orderType) => normalizeOrderType(orderType) === "Goat (Hissa)";
+  const normalizeGoatNumber = (value) => String(value || "").trim().toUpperCase();
+  const isValidGoatNumber = (value) => /^G[1-9]\d*$/.test(normalizeGoatNumber(value));
+  const normalizeHissaNumber = (value) => String(value ?? "").trim();
+
+  async function getNextAvailableGoatNumber(year) {
+    const [goatRows] = await db.execute(
+      "SELECT cow_number FROM orders WHERE order_type = 'Goat (Hissa)' AND (YEAR(booking_date) = ? OR booking_date IS NULL) AND cow_number IS NOT NULL AND cow_number <> ''",
+      [year]
+    );
+
+    const used = new Set();
+    for (const row of goatRows) {
+      const m = normalizeGoatNumber(row.cow_number).match(/^G([1-9]\d*)$/);
+      if (m) used.add(Number(m[1]));
+    }
+
+    let next = 1;
+    while (used.has(next)) next += 1;
+    return `G${next}`;
+  }
   // Generate customer ID based on contact lookup
   app.post("/api/booking/generate-customer-id", verifyToken, async (req, res) => {
     try {
@@ -279,6 +300,11 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const hissaTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf", "Goat (Hissa)"];
       if (!hissaTypes.includes(orderType)) {
         return res.json({ cow_number: "", hissa_number: "" });
+      }
+
+      if (isGoatHissaType(orderType)) {
+        const nextGoatNumber = await getNextAvailableGoatNumber(year);
+        return res.json({ cow_number: nextGoatNumber, hissa_number: "0" });
       }
 
       // Get all used cow/hissa combinations for this order_type, day, and year
@@ -424,6 +450,14 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const orderType = normalizeOrderType(order_type);
       const dayValue = day ? String(day).trim() : null;
       const year = booking_date ? (new Date(booking_date).getFullYear() || 2026) : 2026;
+      if (isGoatHissaType(orderType)) {
+        if (!isValidGoatNumber(cowNum)) {
+          return res.status(400).json({ message: "Goat number must be in G1, G2 format" });
+        }
+        if (normalizeHissaNumber(hissaNum) !== "0") {
+          return res.status(400).json({ message: "Hissa number must be 0 for Goat (Hissa)" });
+        }
+      }
 
       let query = `
         SELECT order_id, booking_name, shareholder_name, contact 
@@ -433,7 +467,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       `;
       const params = [cowNum, hissaNum, orderType, year];
 
-      if (dayValue) {
+      if (dayValue && !isGoatHissaType(orderType)) {
         query += " AND day = ?";
         params.push(dayValue);
       }
@@ -510,6 +544,17 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         return res.status(400).json({ message: "Order ID already exists" });
       }
 
+      const normalizedOrderType = normalizeOrderType(order_type);
+      let finalCowNumber = cow_number != null && String(cow_number).trim() !== "" ? String(cow_number).trim() : null;
+      let finalHissaNumber = hissa_number != null && String(hissa_number).trim() !== "" ? String(hissa_number).trim() : null;
+      if (isGoatHissaType(normalizedOrderType)) {
+        finalCowNumber = normalizeGoatNumber(finalCowNumber);
+        finalHissaNumber = "0";
+        if (!isValidGoatNumber(finalCowNumber)) {
+          return res.status(400).json({ message: "Goat number must be in G1, G2 format" });
+        }
+      }
+
       const totalAmount = Math.max(0, Number(total_amount) || 0);
       const receivedAmount = 0;
       const pendingAmount = totalAmount;
@@ -525,11 +570,11 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           order_id,
           customer_id,
           contact,
-          normalizeOrderType(order_type),
+          normalizedOrderType,
           booking_name || null,
           shareholder_name || null,
-          cow_number || null,
-          hissa_number || null,
+          finalCowNumber || null,
+          finalHissaNumber || null,
           alt_contact || null,
           address || null,
           area || null,
@@ -558,8 +603,8 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
           order_type,
           booking_name,
           shareholder_name,
-          cow_number: cow_number || null,
-          hissa_number: hissa_number || null,
+          cow_number: finalCowNumber || null,
+          hissa_number: finalHissaNumber || null,
           alt_contact: alt_contact || null,
           address: address || null,
           area: area || null,
@@ -1084,6 +1129,13 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         slotVal = null;
         cowNumber = "0";
         hissaNumber = "0";
+      }
+      if (isGoatHissaType(orderType)) {
+        cowNumber = normalizeGoatNumber(cowNumber);
+        hissaNumber = "0";
+        if (!isValidGoatNumber(cowNumber)) {
+          return res.status(400).json({ message: "Goat number must be in G1, G2 format" });
+        }
       }
 
       await db.execute(
@@ -2073,17 +2125,17 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
           "Helvetica",
           10
         );
-        const showCowHissa = row.type !== "Goat (Hissa)";
-        const itemSub = showCowHissa ? `Cow: ${row.cow || "—"} | Hissa: ${row.hissa || "—"}` : "";
+        const isGoatHissaOrder = row.type === "Goat (Hissa)";
+        const itemSub = isGoatHissaOrder
+          ? `Goat Number: ${row.cow || "—"}`
+          : `Cow: ${row.cow || "—"} | Hissa: ${row.hissa || "—"}`;
 
         doc.font("Helvetica-Bold").fontSize(11).fillColor("#1a1a1a")
           .text(itemTitle, COL_DESC, rowY + 7, { lineBreak: false });
         doc.font("Helvetica").fontSize(10).fillColor("#4a4a4a")
           .text(shareholderLine, COL_DESC, rowY + 22, { lineBreak: false });
-        if (itemSub) {
-          doc.font("Helvetica").fontSize(9.5).fillColor("#5f5f5f")
-            .text(itemSub, COL_DESC, rowY + 36, { lineBreak: false });
-        }
+        doc.font("Helvetica").fontSize(9.5).fillColor("#5f5f5f")
+          .text(itemSub, COL_DESC, rowY + 36, { lineBreak: false });
 
         // Quantity — vertically centred in row with description block
         const qtyY = rowY + 19;
