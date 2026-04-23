@@ -5,7 +5,8 @@ import { API_BASE as API } from '../config/api';
 const ORDER_TYPES = ['Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];
 const FARM_ORDER_TYPES = ['Fancy Cow', 'Goat'];
 const ORDER_SOURCES = ['Tele-Sales', 'Social Media (Organic)', 'Social Media (Ads)', 'Previous Customer', 'Website', 'Reference', 'Farm', 'International Calling'];
-const SLOTS = ['SLOT 1', 'SLOT 2', 'SLOT 3', 'SLOT GOAT', 'SLOT WAQF'];
+const BOOKING_SLOTS = ['SLOT 1', 'SLOT 2', 'SLOT 3', 'SLOT WAQF'];
+const FARM_SLOTS = ['SLOT 1', 'SLOT 2', 'SLOT 3', 'SLOT GOAT', 'SLOT WAQF'];
 const REFERENCES = ['Ashhad Bhai', 'Ammar Bhai', 'Ashhal', 'Abuzar', 'Omer', 'Abdullah', 'Huzaifa', 'Hanzala', 'External'];
 const DAYS = ['DAY 1', 'DAY 2', 'DAY 3'];
 
@@ -21,6 +22,7 @@ const NewOrder = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const isFarm = location.pathname.startsWith('/farm');
+  const slotOptions = isFarm ? FARM_SLOTS : BOOKING_SLOTS;
   const orderTypes = isFarm ? FARM_ORDER_TYPES : ORDER_TYPES;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -422,7 +424,9 @@ const NewOrder = () => {
                 <select className="no-input" value={formData.order_source} onChange={(e) => setFormData((p) => ({ ...p, order_source: e.target.value }))} required style={inputStyle}
                   onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}>
                   <option value="" disabled>Select Order Source</option>
-                  {ORDER_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  {slotOptions.map((s) => (
+  <option key={s} value={s}>{s}</option>
+))}
                 </select>
               </div>
               <div>
@@ -457,7 +461,9 @@ const NewOrder = () => {
                     <select className="no-input" value={formData.slot} onChange={(e) => setFormData((p) => ({ ...p, slot: e.target.value }))} required style={inputStyle}
                       onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}>
                       <option value="" disabled>Select Slot</option>
-                      {SLOTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                      {slotOptions.map((s) => (
+  <option key={s} value={s}>{s}</option>
+))}
                     </select>
                   </div>
                   <div>

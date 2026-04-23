@@ -35,8 +35,6 @@ const BOOKING_VISIBLE_COLUMN_KEYS = new Set([
   'lead_id',
   'booking_name',
   'phone_number',
-  'area',
-  'type',
   'booking_date',
   'source',
   'reference',
@@ -46,7 +44,8 @@ const BOOKING_VISIBLE_COLUMN_KEYS = new Set([
 ]);
 
 const AMOUNT_KEYS = ['total_amount'];
-const SLOTS = ['SLOT 1', 'SLOT 2', 'SLOT 3', 'SLOT GOAT', 'SLOT WAQF'];
+const BOOKING_SLOTS = ['SLOT 1', 'SLOT 2', 'SLOT 3', 'SLOT WAQF'];
+const FARM_SLOTS = ['SLOT 1', 'SLOT 2', 'SLOT 3', 'SLOT GOAT', 'SLOT WAQF'];
 
 function formatAmount(val) {
   if (val == null || val === '') return '—';
@@ -126,6 +125,7 @@ export default function QueryManagement() {
   const token = localStorage.getItem('token');
   const location = useLocation();
   const isFarm = location.pathname.startsWith('/farm');
+  const slotOptions = isFarm ? FARM_SLOTS : BOOKING_SLOTS;
   const isRestrictedBookingRole = ['Staff - Bookings', 'Co-Manager - Bookings'].includes(user?.role);
   const hideConfirmOrder = !isFarm;
   const hideDeleteAction = !isFarm && isRestrictedBookingRole;
@@ -150,12 +150,12 @@ export default function QueryManagement() {
     try {
       const params = new URLSearchParams();
       if (search.trim()) params.set('search', search.trim());
-      if (orderType) params.set('order_type', orderType);
+      if (isFarm && orderType) params.set('order_type', orderType);
       if (day) params.set('day', day);
       if (reference) params.set('reference', reference);
-      if (area) params.set('area', area);
-      if (isFarm) params.set('source', 'Farm');
-      if (!isFarm) params.set('omit_hidden_types', '1');
+      if (isFarm && area) params.set('area', area);
+if (isFarm) params.set('source', 'Farm');
+if (!isFarm) params.set('omit_hidden_types', '1');
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
@@ -410,12 +410,12 @@ export default function QueryManagement() {
     do {
       const params = new URLSearchParams();
       if (search.trim()) params.set('search', search.trim());
-      if (orderType) params.set('order_type', orderType);
-      if (day) params.set('day', day);
-      if (reference) params.set('reference', reference);
-      if (area) params.set('area', area);
-      if (isFarm) params.set('source', 'Farm');
-      if (!isFarm) params.set('omit_hidden_types', '1');
+      if (isFarm && orderType) params.set('order_type', orderType);
+if (day) params.set('day', day);
+if (reference) params.set('reference', reference);
+if (isFarm && area) params.set('area', area);
+if (isFarm) params.set('source', 'Farm');
+if (!isFarm) params.set('omit_hidden_types', '1');
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
       params.set('page', String(pageNum));
       params.set('limit', String(limit));
@@ -444,8 +444,10 @@ export default function QueryManagement() {
     XLSX.writeFile(wb, `queries-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
     try {
       const af = {};
-      if (search?.trim()) af.search = search.trim(); if (area) af.area = area;
-      if (orderType) af.order_type = orderType; if (day) af.day = day;
+      if (search?.trim()) af.search = search.trim();
+if (isFarm && area) af.area = area;
+if (isFarm && orderType) af.order_type = orderType;
+if (day) af.day = day;
       if (reference) af.reference = reference; if (yearFilter) af.year = yearFilter;
       await authFetch(`${API}/booking/leads/export-audit`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -519,16 +521,18 @@ export default function QueryManagement() {
         {/* Desktop filter bar */}
         <div className="qm-filter-desktop" style={{ display: 'flex', flexWrap: 'nowrap', gap: '10px', marginBottom: '16px', alignItems: 'flex-end', overflowX: 'auto', minWidth: 0, flexShrink: 0 }}>
           <div style={{ flex: '1 1 180px', minWidth: 0 }}>
-            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Search (name, phone, area, address)</label>
+            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Search (name, phone, address)</label>
             <input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && fetchLeads()}
               style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }} />
           </div>
           {[
-            { label: 'Area', val: area, set: setArea, opts: filters.areas || [], w: 88 },
-            { label: 'Type', val: orderType, set: setOrderType, opts: visibleOrderTypes, w: 104 },
-            { label: 'Day',  val: day,  set: setDay,  opts: filters.days || [], w: 80 },
-            { label: 'Reference', val: reference, set: setReference, opts: filters.references || [], w: 88 },
-          ].map(({ label, val, set, opts, w }) => (
+  ...(isFarm ? [
+    { label: 'Area', val: area, set: setArea, opts: filters.areas || [], w: 88 },
+    { label: 'Type', val: orderType, set: setOrderType, opts: visibleOrderTypes, w: 104 },
+  ] : []),
+  { label: 'Day',  val: day,  set: setDay,  opts: filters.days || [], w: 80 },
+  { label: 'Reference', val: reference, set: setReference, opts: filters.references || [], w: 88 },
+].map(({ label, val, set, opts, w }) => (
             <div key={label} style={{ width: w, minWidth: w, flexShrink: 0 }}>
               <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px', whiteSpace: 'nowrap' }}>{label}</label>
               <select value={val} onChange={(e) => set(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
@@ -564,11 +568,13 @@ export default function QueryManagement() {
           {mobileFiltersOpen && (
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {[
-                { label: 'Area', val: area, set: setArea, opts: filters.areas || [] },
-                { label: 'Type', val: orderType, set: setOrderType, opts: visibleOrderTypes },
-                { label: 'Day',  val: day,  set: setDay,  opts: filters.days || [] },
-                { label: 'Reference', val: reference, set: setReference, opts: filters.references || [] },
-              ].map(({ label, val, set, opts }) => (
+  ...(isFarm ? [
+    { label: 'Area', val: area, set: setArea, opts: filters.areas || [] },
+    { label: 'Type', val: orderType, set: setOrderType, opts: visibleOrderTypes },
+  ] : []),
+  { label: 'Day',  val: day,  set: setDay,  opts: filters.days || [] },
+  { label: 'Reference', val: reference, set: setReference, opts: filters.references || [] },
+].map(({ label, val, set, opts }) => (
                 <div key={label}>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>{label}</label>
                   <select value={val} onChange={(e) => set(e.target.value)} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }}>
@@ -761,7 +767,9 @@ export default function QueryManagement() {
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '2px' }}>Slot <span style={{ color: '#dc2626' }}>*</span></label>
                   <select value={confirmForm.slot} onChange={(e) => { setConfirmForm((p) => ({ ...p, slot: e.target.value })); setConfirmFormErrors((p) => ({ ...p, slot: undefined })); }} style={miStyle(confirmFormErrors.slot)}>
                     <option value="">Select Slot</option>
-                    {SLOTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {slotOptions.map((s) => (
+  <option key={s} value={s}>{s}</option>
+))}
                   </select>
                   {confirmFormErrors.slot && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{confirmFormErrors.slot}</div>}
                 </div>

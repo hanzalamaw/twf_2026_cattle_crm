@@ -17,6 +17,7 @@ const TYPES = [
   { key: 'standard', label: 'HISSA - STANDARD', orderType: 'Hissa - Standard', cowPrefix: 'S' },
   { key: 'premium', label: 'HISSA - PREMIUM', orderType: 'Hissa - Premium', cowPrefix: 'P' },
   { key: 'waqf', label: 'HISSA - WAQF', orderType: 'Hissa - Waqf', cowPrefix: 'W' },
+  { key: 'goat_hissa', label: 'GOAT (HISSA)', orderType: 'Goat (Hissa)', cowPrefix: 'G' },
 ];
 
 const SLOT_ORDER = ['SLOT 1', 'SLOT 2', 'SLOT 3'];
@@ -61,14 +62,13 @@ export default function Stats() {
   const [error, setError] = useState('');
   const [raw, setRaw] = useState(null);
   const [year, setYear] = useState(() => new Date().getFullYear());
+  const [ordersRaw, setOrdersRaw] = useState([]);
 
   const yearOptions = useMemo(() => statsYearOptions(), []);
 
   const hdrs = useCallback(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
   const fetchSheet = useCallback(async () => {
-    setLoading(true);
-    setError('');
     try {
       const res = await authFetch(`${API}/booking/hissa-sheet?year=${encodeURIComponent(year)}`, {
         headers: hdrs(),
@@ -78,36 +78,84 @@ export default function Stats() {
       setRaw(data);
     } catch (e) {
       setRaw(null);
-      setError(e?.message || 'Failed to load stats sheet');
-    } finally {
-      setLoading(false);
+      throw e;
+    }
+  }, [authFetch, hdrs, year]);
+
+  const fetchOrders = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      params.set('year', String(year));
+      params.set('page', '1');
+      params.set('limit', '5000');
+  
+      const res = await authFetch(`${API}/booking/orders?${params.toString()}`, {
+        headers: hdrs(),
+      });
+  
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || 'Failed to load orders');
+  
+      const rows = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+      setOrdersRaw(rows);
+    } catch (e) {
+      setOrdersRaw([]);
+      throw e;
     }
   }, [authFetch, hdrs, year]);
 
   useEffect(() => {
-    fetchSheet();
-  }, [fetchSheet]);
+    let alive = true;
+  
+    (async () => {
+      setLoading(true);
+      setError('');
+      try {
+        await Promise.all([fetchSheet(), fetchOrders()]);
+      } catch (e) {
+        if (!alive) return;
+        setError(e?.message || 'Failed to load stats sheet');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+  
+    return () => {
+      alive = false;
+    };
+  }, [fetchSheet, fetchOrders]);
+
+
 
   const sheet = useMemo(() => {
-    // Expected from API: { year, days, types: { [orderType]: { [day]: { [cow]: { total_hissa, slot_counts } }}}}
     const types = raw?.types && typeof raw.types === 'object' ? raw.types : {};
     const out = {};
+  
     for (const t of TYPES) {
       out[t.key] = {};
       for (const day of DAYS) {
+        out[t.key][day] = [];
+      }
+    }
+  
+    // existing standard / premium / waqf from hissa-sheet
+    for (const t of TYPES.filter((x) => x.key !== 'goat_hissa')) {
+      for (const day of DAYS) {
         const cowsObj = types?.[t.orderType]?.[day] || {};
         const cowIds = Object.keys(cowsObj);
+  
         cowIds.sort((a, b) => {
           const na = parseInt(String(a).replace(/^\D+/, ''), 10) || 0;
           const nb = parseInt(String(b).replace(/^\D+/, ''), 10) || 0;
           return na - nb;
         });
-
+  
         out[t.key][day] = cowIds.map((cow) => {
           const cell = cowsObj[cow] || {};
           const total = clampInt(cell.total_hissa);
           const slot = chooseSlot(cell.slot_counts);
           const status = computeStatus(total, 7);
+  
           return {
             cow,
             totalHissa: total,
@@ -117,8 +165,45 @@ export default function Stats() {
         });
       }
     }
+  
+    // goat (hissa) from orders table
+    const goatOrders = (Array.isArray(ordersRaw) ? ordersRaw : []).filter((row) => {
+      const cow = String(row?.cow ?? '').trim().toUpperCase();
+      const day = String(row?.day ?? '').trim().toUpperCase();
+      return cow.startsWith('G') && DAYS.includes(day);
+    });
+  
+    const groupedGoats = {
+      'DAY 1': [],
+      'DAY 2': [],
+      'DAY 3': [],
+    };
+  
+    for (const row of goatOrders) {
+      const cow = String(row?.cow ?? '').trim().toUpperCase();
+      const day = String(row?.day ?? '').trim().toUpperCase();
+      const slot = SLOT_ORDER.includes(row?.slot) ? row.slot : null;
+  
+      groupedGoats[day].push({
+        cow,
+        totalHissa: '-',
+        slot,
+        status: 'Closed',
+      });
+    }
+  
+    for (const day of DAYS) {
+      groupedGoats[day].sort((a, b) => {
+        const na = parseInt(String(a.cow).replace(/^\D+/, ''), 10) || 0;
+        const nb = parseInt(String(b.cow).replace(/^\D+/, ''), 10) || 0;
+        return na - nb;
+      });
+  
+      out.goat_hissa[day] = groupedGoats[day];
+    }
+  
     return out;
-  }, [raw]);
+  }, [raw, ordersRaw]);
 
   const exportCsv = useCallback(() => {
     if (!sheet) return;
