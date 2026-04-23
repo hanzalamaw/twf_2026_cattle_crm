@@ -388,7 +388,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
         };
         const leadsConverted = o.orderCount;
         const queryCount = leadMap.get(name) || 0;
-        const leadsGenerated = o.orderCount + queryCount;
+        const leadsGenerated = queryCount;
         const conversionRate = leadsGenerated > 0 ? (leadsConverted / leadsGenerated) * 100 : 0;
         return {
           name,
