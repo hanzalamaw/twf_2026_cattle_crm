@@ -31,6 +31,19 @@ const COLUMNS = [
   { key: 'description',      label: 'Description'      },
   { key: 'created_at',       label: 'Created'          },
 ];
+const BOOKING_VISIBLE_COLUMN_KEYS = new Set([
+  'lead_id',
+  'booking_name',
+  'phone_number',
+  'area',
+  'type',
+  'booking_date',
+  'source',
+  'reference',
+  'query_by',
+  'description',
+  'created_at',
+]);
 
 const AMOUNT_KEYS = ['total_amount'];
 const SLOTS = ['SLOT 1', 'SLOT 2', 'SLOT 3', 'SLOT GOAT', 'SLOT WAQF'];
@@ -114,8 +127,9 @@ export default function QueryManagement() {
   const location = useLocation();
   const isFarm = location.pathname.startsWith('/farm');
   const isRestrictedBookingRole = ['Staff - Bookings', 'Co-Manager - Bookings'].includes(user?.role);
-  const hideConfirmOrder = !isFarm && isRestrictedBookingRole;
+  const hideConfirmOrder = !isFarm;
   const hideDeleteAction = !isFarm && isRestrictedBookingRole;
+  const visibleColumns = isFarm ? COLUMNS : COLUMNS.filter((c) => BOOKING_VISIBLE_COLUMN_KEYS.has(c.key));
   const visibleOrderTypes = (filters.order_types || []).filter((t) => (isFarm ? true : !HIDDEN_TYPES_BOOKING.includes(t)));
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
@@ -590,7 +604,7 @@ export default function QueryManagement() {
                   {!hideConfirmOrder && (
                     <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap', width: '120px' }}>Confirm Order</th>
                   )}
-                  {COLUMNS.map((col) => (
+                  {visibleColumns.map((col) => (
                     <th key={col.key} style={{ padding: '10px 8px', textAlign: 'left', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap' }}>{col.label}</th>
                   ))}
                   <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: '600', color: '#333', borderBottom: '2px solid #e0e0e0', whiteSpace: 'nowrap' }}>Actions</th>
@@ -598,7 +612,7 @@ export default function QueryManagement() {
               </thead>
               <tbody>
                 {leads.length === 0 ? (
-                  <tr><td colSpan={COLUMNS.length + (hideConfirmOrder ? 2 : 3)} style={{ padding: '24px', textAlign: 'center', color: '#666' }}>No queries found.</td></tr>
+                  <tr><td colSpan={visibleColumns.length + (hideConfirmOrder ? 2 : 3)} style={{ padding: '24px', textAlign: 'center', color: '#666' }}>No queries found.</td></tr>
                 ) : leads.map((row) => (
                   <tr key={row.lead_id} style={{ borderBottom: '1px solid #eee' }}>
                     <td style={{ padding: '8px', whiteSpace: 'nowrap' }}><input type="checkbox" checked={selectedIds.has(row.lead_id)} onChange={() => toggleSelect(row.lead_id)} style={{ cursor: 'pointer' }} /></td>
@@ -610,7 +624,7 @@ export default function QueryManagement() {
                         </button>
                       </td>
                     )}
-                    {COLUMNS.map((col) => (
+                    {visibleColumns.map((col) => (
                       <td key={col.key} style={{ padding: '8px', whiteSpace: 'nowrap' }}>{cellVal(col, row)}</td>
                     ))}
                     <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
