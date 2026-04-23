@@ -193,18 +193,21 @@ export default function OrderManagement() {
   useEffect(() => { setPage(1); }, [search, slot, orderType, day, reference, cowNumber, yearFilter]);
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  const shouldSkipCowHissaDup = (type, c, h) => {
+  const GOAT_NUMBER_PATTERN = /^G[1-9]\d*$/;
+  const shouldSkipCowHissaDup = (type, c) => {
     if (type !== 'Goat (Hissa)') return false;
-    const cv = String(c ?? '').trim(); const hv = String(h ?? '').trim();
-    return (cv === '0' || cv === '') && (hv === '0' || hv === '');
+    const cv = String(c ?? '').trim().toUpperCase();
+    return !GOAT_NUMBER_PATTERN.test(cv);
   };
 
   const checkCowHissaDuplicate = useCallback(async (c, h, type, d, bd, excludeId) => {
-    if (!c || !h || !type || !token || shouldSkipCowHissaDup(type, c, h)) return null;
+    if (!c || !h || !type || !token || shouldSkipCowHissaDup(type, c)) return null;
     try {
+      const cowNorm = type === 'Goat (Hissa)' ? String(c).trim().toUpperCase() : String(c).trim();
+      const hissaNorm = type === 'Goat (Hissa)' ? '0' : String(h).trim();
       const res = await authFetch(`${API}/booking/check-cow-hissa`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cow_number: c, hissa_number: h, order_type: type, day: d || null, booking_date: bd || null }),
+        body: JSON.stringify({ cow_number: cowNorm, hissa_number: hissaNorm, order_type: type, day: d || null, booking_date: bd || null }),
       });
       if (res.ok) { const d2 = await res.json(); if (d2.exists && d2.order_id !== excludeId) return d2; }
     } catch (e) { console.error(e); }
@@ -214,10 +217,10 @@ export default function OrderManagement() {
   useEffect(() => {
     if (!editOpen || isFarm) return;
     const { cow, hissa, type, day: d, booking_date: bd, order_id } = editRow || {};
-    if (!(cow || '').trim() || !(hissa || '').trim() || !type || shouldSkipCowHissaDup(type, cow, hissa)) { setEditDuplicateError(null); return; }
+    if (!(cow || '').trim() || !type || shouldSkipCowHissaDup(type, cow)) { setEditDuplicateError(null); return; }
     if (editDuplicateCheckTimeoutRef.current) clearTimeout(editDuplicateCheckTimeoutRef.current);
     editDuplicateCheckTimeoutRef.current = setTimeout(async () => {
-      const dup = await checkCowHissaDuplicate(String(cow).trim(), String(hissa).trim(), type, d, bd, order_id);
+      const dup = await checkCowHissaDuplicate(String(cow).trim(), String(hissa ?? '').trim(), type, d, bd, order_id);
       setEditDuplicateError(dup || null);
       editDuplicateCheckTimeoutRef.current = null;
     }, 400);

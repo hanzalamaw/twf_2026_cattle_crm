@@ -158,10 +158,15 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
   const isValidGoatNumber = (value) => /^G[1-9]\d*$/.test(normalizeGoatNumber(value));
   const normalizeHissaNumber = (value) => String(value ?? "").trim();
 
-  async function getNextAvailableGoatNumber(year) {
+  async function getNextAvailableGoatNumber(year, dayValue) {
     const [goatRows] = await db.execute(
-      "SELECT cow_number FROM orders WHERE order_type = 'Goat (Hissa)' AND (YEAR(booking_date) = ? OR booking_date IS NULL) AND cow_number IS NOT NULL AND cow_number <> ''",
-      [year]
+      `SELECT cow_number
+       FROM orders
+       WHERE order_type = 'Goat (Hissa)'
+         AND day = ?
+         AND (YEAR(booking_date) = ? OR booking_date IS NULL)
+         AND cow_number IS NOT NULL AND cow_number <> ''`,
+      [dayValue, year]
     );
 
     const used = new Set();
@@ -303,7 +308,10 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       }
 
       if (isGoatHissaType(orderType)) {
-        const nextGoatNumber = await getNextAvailableGoatNumber(year);
+        if (!dayValue) {
+          return res.json({ cow_number: "", hissa_number: "0" });
+        }
+        const nextGoatNumber = await getNextAvailableGoatNumber(year, dayValue);
         return res.json({ cow_number: nextGoatNumber, hissa_number: "0" });
       }
 
@@ -467,7 +475,11 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       `;
       const params = [cowNum, hissaNum, orderType, year];
 
-      if (dayValue && !isGoatHissaType(orderType)) {
+      if (dayValue) {
+        query += " AND day = ?";
+        params.push(dayValue);
+      }
+      if (dayValue && isGoatHissaType(orderType)) {
         query += " AND day = ?";
         params.push(dayValue);
       }
