@@ -424,9 +424,7 @@ const NewOrder = () => {
                 <select className="no-input" value={formData.order_source} onChange={(e) => setFormData((p) => ({ ...p, order_source: e.target.value }))} required style={inputStyle}
                   onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => (e.target.style.borderColor = '#e0e0e0')}>
                   <option value="" disabled>Select Order Source</option>
-                  {slotOptions.map((s) => (
-  <option key={s} value={s}>{s}</option>
-))}
+                  {ORDER_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div>
