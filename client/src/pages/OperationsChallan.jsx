@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE } from '../config/api';
+import { getOperationsSocket } from '../utils/operationsSocket';
 
 const REGENERATE_EMAIL = 'hanzalamawahab@gmail.com';
 
@@ -139,6 +140,19 @@ export default function OperationsChallan() {
 
   useEffect(() => { loadBatches(); loadRiders(); }, []);
   useEffect(() => { if (selectedBatch !== null) load(); }, [load, selectedBatch]);
+
+  useEffect(() => {
+    const socket = getOperationsSocket();
+    const refresh = () => { loadBatches(); loadRiders(); if (selectedBatch !== null) load(); };
+    socket.on('operations:changed', refresh);
+    socket.on('challans:changed', refresh);
+    socket.on('riders:changed', refresh);
+    return () => {
+      socket.off('operations:changed', refresh);
+      socket.off('challans:changed', refresh);
+      socket.off('riders:changed', refresh);
+    };
+  }, [load, loadBatches, loadRiders, selectedBatch]);
 
   const riderMap = useMemo(() => {
     const m = {};
@@ -349,7 +363,7 @@ export default function OperationsChallan() {
                       </td>
                       <td style={{ padding: '9px 10px' }}><StatusBadge status={st} /></td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>
-                        {c.rider_id ? (riderMap[c.rider_id] || `Rider #${c.rider_id}`) : <span style={{ color: '#bbb', fontStyle: 'italic' }}>Unassigned</span>}
+                        {c.rider_count > 1 ? <span style={{ color: '#777', fontWeight: 600 }}>Multiple Riders</span> : (c.rider_id ? (riderMap[c.rider_id] || `Rider #${c.rider_id}`) : <span style={{ color: '#bbb', fontStyle: 'italic' }}>Unassigned</span>)}
                       </td>
                       <td style={{ padding: '9px 10px', color: '#777', fontWeight: '500' }}>{customerIds}</td>
                       <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333' }}>{c.booking_name || '—'}</td>

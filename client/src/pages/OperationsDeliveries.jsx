@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE } from '../config/api';
+import { getOperationsSocket } from '../utils/operationsSocket';
 
 const STATUSES = ['Pending', 'Rider Assigned', 'Dispatched', 'Delivered', 'Returned to Farm'];
 
@@ -36,37 +37,82 @@ const selectStyle = { fontSize: '10px', padding: '6px 8px', borderRadius: '6px',
 const inputStyle  = { width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px', background: '#fff' };
 const PAGE_SIZE = 50;
 
-function SearchableRiderSelect({ value, disabled, onChange, riders, title }) {
+function SearchableRiderSelect({ value, disabled, onChange, riders, title, menuPlacement = 'above', fallbackLabel, fullWidth = false }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [menuStyle, setMenuStyle] = useState(null);
   const containerRef = useRef(null);
   const selected = riders.find((r) => String(r.rider_id) === String(value));
-  const label = selected ? `${selected.rider_name} (${selected.contact || 'N/A'})` : '— Unassigned';
+  const label = selected
+  ? `${selected.rider_name} (${selected.contact || 'N/A'})${selected.vehicle ? ` · ${selected.vehicle}` : ''}`
+  : (fallbackLabel || '— Unassigned');
+
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     if (!q) return riders;
-    return riders.filter((r) => (r.rider_name||'').toLowerCase().includes(q)||(r.contact||'').toLowerCase().includes(q)||(r.vehicle||'').toLowerCase().includes(q));
+    return riders.filter((r) =>
+      (r.rider_name || '').toLowerCase().includes(q) ||
+      (r.contact || '').toLowerCase().includes(q) ||
+      (r.vehicle || '').toLowerCase().includes(q) ||
+      (r.number_plate || '').toLowerCase().includes(q)
+    );
   }, [riders, query]);
+
+  const updateMenuPosition = useCallback(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const menuWidth = fullWidth ? Math.min(Math.max(rect.width, 260), 360) : 260;
+    const menuHeight = 250;
+    const left = Math.min(Math.max(8, rect.left), window.innerWidth - menuWidth - 8);
+    const preferredTop = menuPlacement === 'below' ? rect.bottom + 4 : rect.top - menuHeight - 4;
+    const top = Math.min(Math.max(8, preferredTop), window.innerHeight - menuHeight - 8);
+    setMenuStyle({
+      position: 'fixed',
+      zIndex: 5000,
+      top,
+      left,
+      width: `${menuWidth}px`,
+      background: '#fff',
+      border: '1px solid #e0e0e0',
+      borderRadius: '8px',
+      boxShadow: '0 10px 28px rgba(0,0,0,0.18)',
+      overflow: 'hidden',
+    });
+  }, [menuPlacement, fullWidth]);
+
   useEffect(() => {
     if (!open) return;
-    const handler = (e) => { if (containerRef.current && !containerRef.current.contains(e.target)) { setOpen(false); setQuery(''); } };
+    updateMenuPosition();
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target) && !e.target.closest?.('[data-rider-menu="true"]')) {
+        setOpen(false);
+        setQuery('');
+      }
+    };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+    window.addEventListener('scroll', updateMenuPosition, true);
+    window.addEventListener('resize', updateMenuPosition);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      window.removeEventListener('scroll', updateMenuPosition, true);
+      window.removeEventListener('resize', updateMenuPosition);
+    };
+  }, [open, updateMenuPosition]);
+
   return (
-    <div ref={containerRef} style={{ position: 'relative', minWidth: '130px', maxWidth: '160px' }}>
+    <div ref={containerRef} style={{ position: 'relative', minWidth: '130px', maxWidth: fullWidth ? '100%' : '160px', width: fullWidth ? '100%' : undefined }}>
       <button type="button" disabled={disabled} title={title} onClick={() => { if (!disabled) { setOpen((v) => !v); setQuery(''); } }}
-        style={{ width: '100%', textAlign: 'left', fontSize: '10px', padding: '5px 8px', borderRadius: '6px', border: '1px solid #E0E0E0', background: disabled ? '#F5F5F5' : '#FAFAFA', color: disabled ? '#aaa' : '#333', cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+        style={{ width: '100%', textAlign: 'left', fontSize: '10px', padding: fullWidth ? '10px 12px' : '5px 8px', borderRadius: fullWidth ? '8px' : '6px', border: '1px solid #E0E0E0', background: disabled ? '#F5F5F5' : '#FAFAFA', color: disabled ? '#aaa' : '#333', cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', boxSizing: 'border-box' }}>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{label}</span>
         <span style={{ fontSize: '8px', flexShrink: 0, opacity: 0.5 }}>▼</span>
       </button>
-      {open && (
-        <div style={{ position: 'absolute', zIndex: 200, top: '100%', left: 0, marginTop: '4px', width: '230px', background: '#fff', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 6px 20px rgba(0,0,0,0.12)', overflow: 'hidden' }}>
+      {open && menuStyle && (
+        <div data-rider-menu="true" style={menuStyle}>
           <div style={{ padding: '8px' }}>
             <input autoFocus type="text" placeholder="Search name, phone, vehicle…" value={query} onChange={(e) => setQuery(e.target.value)} onClick={(e) => e.stopPropagation()}
               style={{ width: '100%', boxSizing: 'border-box', padding: '6px 8px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '10px', outline: 'none' }} />
           </div>
-          <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+          <div style={{ maxHeight: '190px', overflowY: 'auto' }}>
             <div style={{ padding: '7px 12px', fontSize: '10px', color: '#888', cursor: 'pointer', borderTop: '1px solid #f5f5f5' }}
               onMouseDown={(e) => { e.preventDefault(); onChange(''); setOpen(false); setQuery(''); }}
               onMouseEnter={(e) => { e.currentTarget.style.background = '#fafafa'; }}
@@ -77,11 +123,114 @@ function SearchableRiderSelect({ value, disabled, onChange, riders, title }) {
                 onMouseEnter={(e) => { if (String(r.rider_id) !== String(value)) e.currentTarget.style.background = '#fafafa'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = String(r.rider_id) === String(value) ? '#FFF4F0' : 'transparent'; }}>
                 <div style={{ fontWeight: '500' }}>{r.rider_name}</div>
-                <div style={{ fontSize: '9px', color: '#999', marginTop: '1px' }}>{[r.contact, r.vehicle].filter(Boolean).join(' · ')}</div>
+                <div style={{ fontSize: '9px', color: '#999', marginTop: '1px' }}>{[r.contact, r.vehicle, r.number_plate].filter(Boolean).join(' · ')}</div>
               </div>
             ))}
             {filtered.length === 0 && <div style={{ padding: '10px 12px', fontSize: '10px', color: '#aaa', textAlign: 'center' }}>No riders found</div>}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SearchableStatusSelect({ value, disabled, onChange, menuPlacement = 'below', fullWidth = true }) {
+  const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState(null);
+  const containerRef = useRef(null);
+  const selected = value || 'Pending';
+
+  const updateMenuPosition = useCallback(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const menuWidth = fullWidth ? Math.min(Math.max(rect.width, 220), 360) : 220;
+    const menuHeight = 220;
+    const left = Math.min(Math.max(8, rect.left), window.innerWidth - menuWidth - 8);
+    const preferredTop = menuPlacement === 'below' ? rect.bottom + 4 : rect.top - menuHeight - 4;
+    const top = Math.min(Math.max(8, preferredTop), window.innerHeight - menuHeight - 8);
+    setMenuStyle({
+      position: 'fixed',
+      zIndex: 5000,
+      top,
+      left,
+      width: `${menuWidth}px`,
+      background: '#fff',
+      border: '1px solid #e0e0e0',
+      borderRadius: '8px',
+      boxShadow: '0 10px 28px rgba(0,0,0,0.18)',
+      overflow: 'hidden',
+    });
+  }, [menuPlacement, fullWidth]);
+
+  useEffect(() => {
+    if (!open) return;
+    updateMenuPosition();
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target) && !e.target.closest?.('[data-status-menu="true"]')) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    window.addEventListener('scroll', updateMenuPosition, true);
+    window.addEventListener('resize', updateMenuPosition);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      window.removeEventListener('scroll', updateMenuPosition, true);
+      window.removeEventListener('resize', updateMenuPosition);
+    };
+  }, [open, updateMenuPosition]);
+
+  return (
+    <div ref={containerRef} style={{ width: fullWidth ? '100%' : undefined, minWidth: fullWidth ? undefined : '140px' }}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => { if (!disabled) setOpen((v) => !v); }}
+        style={{
+          width: '100%',
+          textAlign: 'left',
+          padding: fullWidth ? '10px 12px' : '6px 10px',
+          borderRadius: fullWidth ? '8px' : '6px',
+          border: '1px solid #E0E0E0',
+          background: disabled ? '#F5F5F5' : '#FAFAFA',
+          color: disabled ? '#aaa' : '#333',
+          fontSize: '10px',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '4px',
+          boxSizing: 'border-box',
+        }}
+      >
+        <span>{selected}</span>
+        <span style={{ fontSize: '8px', flexShrink: 0, opacity: 0.5 }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && menuStyle && (
+        <div data-status-menu="true" style={menuStyle}>
+          {STATUSES.map((s) => (
+            <div
+              key={s}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(s);
+                setOpen(false);
+              }}
+              style={{
+                padding: '8px 12px',
+                cursor: 'pointer',
+                fontSize: '11px',
+                background: s === selected ? '#FFF4F0' : 'transparent',
+                color: s === selected ? '#FF5722' : '#333',
+                borderTop: '1px solid #f5f5f5',
+                fontWeight: s === selected ? '600' : '400',
+              }}
+              onMouseEnter={(e) => { if (s !== selected) e.currentTarget.style.background = '#fafafa'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = s === selected ? '#FFF4F0' : 'transparent'; }}
+            >
+              {s}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -210,6 +359,19 @@ export default function OperationsDeliveries() {
 
   useEffect(() => { loadBatches(); }, []);
   useEffect(() => { if (selectedBatch !== null) load(); }, [load, selectedBatch]);
+
+  useEffect(() => {
+    const socket = getOperationsSocket();
+    const refresh = () => { loadBatches(); if (selectedBatch !== null) load(); };
+    socket.on('operations:changed', refresh);
+    socket.on('challans:changed', refresh);
+    socket.on('riders:changed', refresh);
+    return () => {
+      socket.off('operations:changed', refresh);
+      socket.off('challans:changed', refresh);
+      socket.off('riders:changed', refresh);
+    };
+  }, [load, loadBatches, selectedBatch]);
 
   // slot options: collect from all sources, deduplicate case-insensitively,
   // keep first-seen display label, then sort numerically/alphabetically.
@@ -576,7 +738,7 @@ export default function OperationsDeliveries() {
             <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'11px' }}>
               <thead style={{ position:'sticky', top:0, zIndex:1 }}>
                 <tr style={{ background:'#fafafa' }}>
-                  {['Status', 'Rider', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa', 'Shareholders'].map((h) => (
+                  {['Status', 'Rider', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa'].map((h) => (
                     <th key={h} style={{ textAlign:'left', padding:'10px 10px', borderBottom:'1px solid #e0e0e0', color:'#555', fontWeight:'600', whiteSpace:'nowrap', fontSize:'10px' }}>{h}</th>
                   ))}
                 </tr>
@@ -584,7 +746,7 @@ export default function OperationsDeliveries() {
               <tbody>
                 {pagedGroups.map((g, idx) => {
                   const st = g.derived_status || 'Pending';
-                  const names = (g.shareholder_names||[]).join(', ') || '—';
+
                   const isScanHit = scanMatchToken && g.qr_token === scanMatchToken;
                   return (
                     <tr
@@ -601,7 +763,7 @@ export default function OperationsDeliveries() {
                         </select>
                       </td>
                       <td style={{ padding:'9px 10px' }} onClick={(e)=>e.stopPropagation()}>
-                        <SearchableRiderSelect value={g.rider_id??''} riders={riders} onChange={(rid)=>patchGroupRider(g.challan_id, rid)} />
+                        <SearchableRiderSelect value={g.rider_id??''} riders={riders} fallbackLabel={g.rider_count > 1 ? 'Multiple Riders' : undefined} onChange={(rid)=>patchGroupRider(g.challan_id, rid)} />
                       </td>
                       <td style={{ padding:'9px 10px', color:'#777', fontWeight:'500' }}>{(g.customer_ids||[]).join(', ')||'—'}</td>
                       <td style={{ padding:'9px 10px', fontWeight:'500', color:'#333' }}>{(g.booking_names||[]).join(', ')||'—'}</td>
@@ -619,7 +781,7 @@ export default function OperationsDeliveries() {
                       <td style={{ padding:'9px 10px', color:'#555' }}>{g.premium_hissa_count||0}</td>
                       <td style={{ padding:'9px 10px', color:'#555' }}>{g.goat_hissa_count||0}</td>
                       <td style={{ padding:'9px 10px', color:'#555', fontWeight:'600' }}>{g.hissa_count||0}</td>
-                      <td style={{ padding:'9px 10px', color:'#666', maxWidth:'160px' }} title={names}>{names.length>48?`${names.slice(0,48)}…`:names}</td>
+
                     </tr>
                   );
                 })}
@@ -678,17 +840,28 @@ export default function OperationsDeliveries() {
             <div style={{ borderTop:'1px solid #f0f0f0', margin:'14px 0' }} />
 
             <label style={{ display:'block', fontSize:'11px', fontWeight:'600', marginBottom:'4px', color:'#333' }}>Update Status (all orders)</label>
-            <select value={modal.challan?.derived_status||'Pending'} disabled={saving} onChange={(e)=>updateModalStatus(e.target.value)}
-              style={{ width:'100%', padding:'10px 12px', borderRadius:'8px', border:'1px solid #E0E0E0', fontSize:'10px', marginBottom:'12px', background:'#FAFAFA', boxSizing:'border-box' }}>
-              {STATUSES.map((s)=><option key={s} value={s}>{s}</option>)}
-            </select>
+            <div style={{ width:'100%', marginBottom:'12px' }}>
+              <SearchableStatusSelect
+                value={modal.challan?.derived_status || 'Pending'}
+                disabled={saving}
+                onChange={(val)=>updateModalStatus(val)}
+                menuPlacement="below"
+                fullWidth
+              />
+            </div>
 
             <label style={{ display:'block', fontSize:'11px', fontWeight:'600', marginBottom:'4px', color:'#333' }}>Assign Rider</label>
-            <select value={modal.challan?.rider_id??''} disabled={saving} onChange={(e)=>updateModalRider(e.target.value)}
-              style={{ width:'100%', padding:'10px 12px', borderRadius:'8px', border:'1px solid #E0E0E0', fontSize:'10px', marginBottom:'14px', background:'#FAFAFA', boxSizing:'border-box' }}>
-              <option value="">— Unassigned</option>
-              {riders.map((r)=><option key={r.rider_id} value={r.rider_id}>{r.rider_name}</option>)}
-            </select>
+            <div style={{ width:'100%', marginBottom:'14px' }}>
+              <SearchableRiderSelect
+                value={modal.challan?.rider_id??''}
+                disabled={saving}
+                riders={riders}
+                fallbackLabel={modal.challan?.rider_count > 1 ? 'Multiple Riders' : undefined}
+                onChange={(rid)=>updateModalRider(rid)}
+                menuPlacement="below"
+                fullWidth
+              />
+            </div>
 
             <div style={{ borderTop:'1px solid #f0f0f0', marginBottom:'10px' }} />
             <p style={{ margin:'0 0 8px', fontSize:'11px', fontWeight:'600', color:'#333' }}>Orders on this challan</p>

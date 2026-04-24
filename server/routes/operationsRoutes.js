@@ -5,10 +5,19 @@ import { writeAuditLog } from "../utils/auditLog.js";
 const ALLOWED_STATUSES = ["Pending", "Rider Assigned", "Dispatched", "Delivered", "Returned to Farm"];
 const REGENERATE_ALLOWED_EMAIL = "hanzalamawahab@gmail.com";
 const OPERATIONS_YEAR = 2026;
+const nonWaqfOrder = (alias = "o") => `LOWER(COALESCE(${alias}.order_type, '')) NOT LIKE '%waqf%'`;
+
+function emitOperationsChanged(io, event, payload = {}) {
+  if (!io) return;
+  io.to("operations").emit("operations:changed", { event, ...payload, at: new Date().toISOString() });
+  io.to("operations").emit(event, { ...payload, at: new Date().toISOString() });
+}
+
 
 // ── DB migration (run once on startup or via migration script) ───────────────
 // ALTER TABLE challan ADD COLUMN IF NOT EXISTS batch_id INT NULL AFTER challan_id;
 // ALTER TABLE challan DROP COLUMN IF EXISTS delivery_status;
+// ALTER TABLE challan DROP COLUMN IF EXISTS rider_id; -- rider assignment now lives only in orders.rider_id
 // CREATE TABLE IF NOT EXISTS challan_batch (
 //   batch_id INT AUTO_INCREMENT PRIMARY KEY,
 //   label VARCHAR(255) NOT NULL,
@@ -44,6 +53,20 @@ function groupKeyForOrder(row) {
   return `${normalizeDay(row.day)}${GSEP}${normalizeAddr(row.address)}`;
 }
 
+function uniqueRiderIdsFromOrders(orders = []) {
+  return [...new Set(orders
+    .map((o) => o.rider_id)
+    .filter((v) => v !== null && v !== undefined && v !== "")
+    .map(Number))];
+}
+
+async function resolveSingleRiderFromOrders(db, orders = []) {
+  const riderIds = uniqueRiderIdsFromOrders(orders);
+  if (riderIds.length !== 1) return { rider: null, rider_id: null, rider_count: riderIds.length };
+  const [rs] = await db.execute(`SELECT rider_id, rider_name, contact FROM riders WHERE rider_id = ?`, [riderIds[0]]);
+  return { rider: rs[0] || null, rider_id: riderIds[0], rider_count: 1 };
+}
+
 async function fetchRoleOpsFlags(db, userId) {
   const [rows] = await db.execute(
     `SELECT r.operation_management, r.operation_general_dashboard, r.operation_customer_support,
@@ -74,7 +97,7 @@ async function resolveLatestBatchId(db) {
  * @param {import("mysql2/promise").Pool} db
  * @param {Function} verifyToken
  */
-export const registerOperationsRoutes = (app, db, verifyToken) => {
+export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
   const assertSub = async (req, res, checker) => {
     const flags = await fetchRoleOpsFlags(db, req.userId);
     if (!requireOperationParent(req, res, flags)) return null;
@@ -137,6 +160,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
         [rider_name.trim(), contact || null, vehicle || null, cnic || null, number_plate || null, amount]
       );
       log("OPERATIONS", "Rider created", { rider_id: result.insertId });
+      emitOperationsChanged(io, "riders:changed", { action: "created", rider_id: result.insertId });
       res.status(201).json({ rider_id: result.insertId });
     } catch (error) {
       logError("OPERATIONS", "Create rider error", error);
@@ -158,8 +182,13 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
       const [rows] = await db.execute(
         `SELECT c.*,
                 cb.label AS batch_label, cb.created_at AS batch_created_at,
-                r.rider_name,
-                (SELECT COUNT(*) FROM challan_orders co WHERE co.challan_id = c.challan_id) AS order_count,
+                (SELECT CASE WHEN COUNT(DISTINCT o0.rider_id) = 1 THEN MAX(o0.rider_id) ELSE NULL END
+                 FROM challan_orders co0 INNER JOIN orders o0 ON o0.order_id = co0.order_id
+                 WHERE co0.challan_id = c.challan_id AND o0.rider_id IS NOT NULL AND ${nonWaqfOrder('o0')}) AS rider_id,
+                (SELECT COUNT(DISTINCT o0b.rider_id)
+                 FROM challan_orders co0b INNER JOIN orders o0b ON o0b.order_id = co0b.order_id
+                 WHERE co0b.challan_id = c.challan_id AND o0b.rider_id IS NOT NULL AND ${nonWaqfOrder('o0b')}) AS rider_count,
+                (SELECT COUNT(*) FROM challan_orders co INNER JOIN orders ox ON ox.order_id = co.order_id WHERE co.challan_id = c.challan_id AND ${nonWaqfOrder('ox')}) AS order_count,
                 -- Aggregated from linked orders
                 (SELECT GROUP_CONCAT(DISTINCT NULLIF(TRIM(o.shareholder_name), '') ORDER BY o.order_id SEPARATOR ', ')
                  FROM challan_orders co2 INNER JOIN orders o ON o.order_id = co2.order_id WHERE co2.challan_id = c.challan_id) AS shareholders_csv,
@@ -178,8 +207,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
                  WHERE co7.challan_id = c.challan_id) AS orders_total
          FROM challan c
          LEFT JOIN challan_batch cb ON cb.batch_id = c.batch_id
-         LEFT JOIN riders r ON c.rider_id = r.rider_id
-         WHERE c.batch_id = ?
+         WHERE c.batch_id = ? AND COALESCE(c.total_hissa, 0) > 0
          ORDER BY c.day, c.slot, c.challan_id`,
         [batchId]
       );
@@ -211,15 +239,12 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
                 o.description, o.delivery_status, o.rider_id, o.customer_id
          FROM orders o
          INNER JOIN challan_orders co ON co.order_id = o.order_id
-         WHERE co.challan_id = ?
+         WHERE co.challan_id = ? AND ${nonWaqfOrder('o')}
          ORDER BY o.order_id`,
         [challan.challan_id]
       );
-      let rider = null;
-      if (challan.rider_id) {
-        const [rs] = await db.execute(`SELECT rider_id, rider_name, contact FROM riders WHERE rider_id = ?`, [challan.rider_id]);
-        rider = rs[0] || null;
-      }
+      const riderInfo = await resolveSingleRiderFromOrders(db, orderRows);
+      const rider = riderInfo.rider;
       const statuses = orderRows.map((o) => o.delivery_status || "Pending");
       const allDelivered = statuses.length > 0 && statuses.every((s) => s === "Delivered");
       const anyReturned  = statuses.some((s) => s === "Returned to Farm");
@@ -231,7 +256,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
       else if (anyDispatched) derivedStatus = "Dispatched";
       else if (anyRiderAssigned) derivedStatus = "Rider Assigned";
 
-      res.json({ challan: { ...challan, derived_status: derivedStatus }, orders: orderRows, rider });
+      res.json({ challan: { ...challan, rider_id: riderInfo.rider_id, rider_count: riderInfo.rider_count, derived_status: derivedStatus }, orders: orderRows, rider });
     } catch (error) {
       logError("OPERATIONS", "Challan by token error", error);
       res.status(500).json({ message: "Server error" });
@@ -251,8 +276,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
       if (ids.length === 0) return res.status(400).json({ message: "No valid challan ids" });
       const placeholders = ids.map(() => "?").join(",");
       const [challans] = await db.execute(
-        `SELECT c.*, r.rider_name, r.contact AS rider_contact FROM challan c
-         LEFT JOIN riders r ON c.rider_id = r.rider_id
+        `SELECT c.* FROM challan c
          WHERE c.challan_id IN (${placeholders})`,
         ids
       );
@@ -263,18 +287,15 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
         if (!c) continue;
         const [orderRows] = await db.execute(
           `SELECT o.order_id, o.booking_name, o.shareholder_name, o.contact, o.alt_contact,
-                  o.order_type, o.cow_number, o.hissa_number, o.slot, o.description, o.delivery_status
+                  o.order_type, o.cow_number, o.hissa_number, o.slot, o.description, o.delivery_status, o.rider_id
            FROM orders o
            INNER JOIN challan_orders co ON co.order_id = o.order_id
-           WHERE co.challan_id = ?
+           WHERE co.challan_id = ? AND ${nonWaqfOrder('o')}
            ORDER BY o.order_id`,
           [id]
         );
-        let rider = null;
-        if (c.rider_id) {
-          rider = { rider_id: c.rider_id, rider_name: c.rider_name, contact: c.rider_contact };
-        }
-        items.push({ challan: c, orders: orderRows, rider });
+        const riderInfo = await resolveSingleRiderFromOrders(db, orderRows);
+        items.push({ challan: { ...c, rider_id: riderInfo.rider_id, rider_count: riderInfo.rider_count }, orders: orderRows, rider: riderInfo.rider });
       }
       await writeAuditLog(db, {
         user_id: req.userId, action: "CHALLAN_BULK_DETAIL",
@@ -314,6 +335,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
         new_values: { delivery_status },
         ip_address: req.ip, user_agent: req.get("user-agent")
       });
+      emitOperationsChanged(io, "challans:changed", { action: "status", challan_id: Number(id), delivery_status });
       res.json({ message: "Updated" });
     } catch (error) {
       logError("OPERATIONS", "Challan status error", error);
@@ -321,7 +343,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
     }
   });
 
-  // ── Rider assignment on a challan ───────────────────────────
+  // ── Rider assignment on a challan: orders.rider_id is the only source of truth ───────────────────────────
   app.patch("/api/operations/challans/:id/rider", verifyToken, async (req, res) => {
     try {
       const flags = await assertSub(req, res, (f) => f.operation_deliveries_management || f.operation_challan_management);
@@ -330,36 +352,39 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
       const id = req.params.id;
       const [ex] = await db.execute(`SELECT challan_id FROM challan WHERE challan_id = ?`, [id]);
       if (ex.length === 0) return res.status(404).json({ message: "Challan not found" });
-      if (riderId === null || riderId === "" || riderId === undefined) {
-        await db.execute(`UPDATE challan SET rider_id = NULL WHERE challan_id = ?`, [id]);
-      } else {
-        const [rv] = await db.execute(`SELECT rider_id FROM riders WHERE rider_id = ?`, [riderId]);
+
+      const nextRiderId = riderId === null || riderId === "" || riderId === undefined ? null : Number(riderId);
+      if (nextRiderId !== null) {
+        if (!Number.isFinite(nextRiderId) || nextRiderId <= 0) return res.status(400).json({ message: "Invalid rider id" });
+        const [rv] = await db.execute(`SELECT rider_id FROM riders WHERE rider_id = ?`, [nextRiderId]);
         if (rv.length === 0) return res.status(400).json({ message: "Rider not found" });
-        await db.execute(`UPDATE challan SET rider_id = ? WHERE challan_id = ?`, [riderId, id]);
       }
-      const [orderIds] = await db.execute(`SELECT order_id FROM challan_orders WHERE challan_id = ?`, [id]);
-      for (const row of orderIds) {
-        if (riderId === null || riderId === "" || riderId === undefined) {
-          await db.execute(`UPDATE orders SET rider_id = NULL WHERE order_id = ?`, [row.order_id]);
-        } else {
-          await db.execute(`UPDATE orders SET rider_id = ? WHERE order_id = ?`, [riderId, row.order_id]);
-        }
-      }
-      if (riderId) {
+
+      await db.execute(
+        `UPDATE orders o
+         INNER JOIN challan_orders co ON co.order_id = o.order_id
+         SET o.rider_id = ?
+         WHERE co.challan_id = ? AND ${nonWaqfOrder('o')}`,
+        [nextRiderId, id]
+      );
+
+      if (nextRiderId !== null) {
         await db.execute(
           `UPDATE orders o
            INNER JOIN challan_orders co ON co.order_id = o.order_id
            SET o.delivery_status = 'Rider Assigned'
-           WHERE co.challan_id = ? AND o.delivery_status = 'Pending'`,
+           WHERE co.challan_id = ? AND o.delivery_status = 'Pending' AND ${nonWaqfOrder('o')}`,
           [id]
         );
       }
+
       await writeAuditLog(db, {
         user_id: req.userId, action: "CHALLAN_RIDER_UPDATE",
         entity_type: "challan", entity_id: String(id),
-        new_values: { rider_id: riderId === "" || riderId === undefined ? null : riderId },
+        new_values: { rider_id: nextRiderId },
         ip_address: req.ip, user_agent: req.get("user-agent")
       });
+      emitOperationsChanged(io, "challans:changed", { action: "rider", challan_id: Number(id), rider_id: nextRiderId });
       res.json({ message: "Rider updated" });
     } catch (error) {
       logError("OPERATIONS", "Challan rider error", error);
@@ -382,13 +407,14 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
         `SELECT order_id, order_type, booking_name, shareholder_name, cow_number, hissa_number, contact, alt_contact,
                 address, area, day, slot, description, customer_id
          FROM orders
-         WHERE booking_date IS NOT NULL AND YEAR(booking_date) = ?`,
+         WHERE booking_date IS NOT NULL AND YEAR(booking_date) = ? AND LOWER(COALESCE(order_type, '')) NOT LIKE '%waqf%'`,
         [OPERATIONS_YEAR]
       );
 
       const grouped = new Map();
       let skippedNoAddress = 0;
       for (const o of orders) {
+        if (classifyHissa(o.order_type) === "waqf") continue;
         if (o.address == null || String(o.address).trim() === "") { skippedNoAddress++; continue; }
         const k = groupKeyForOrder(o);
         if (!grouped.has(k)) grouped.set(k, []);
@@ -432,10 +458,10 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
 
           const [ins] = await conn.execute(
             `INSERT INTO challan (
-               batch_id, qr_token, rider_id, booking_name, address, area, description, slot, day,
+               batch_id, qr_token, booking_name, address, area, description, slot, day,
                total_premium_hissa, total_standard_hissa, total_waqf_hissa, total_goat_hissa, total_hissa,
                challan_date
-             ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               batchId, qrToken,
               bookingNames.join(", ") || null,
@@ -462,6 +488,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
           new_values: { batch_id: batchId, batch_label: batchLabel, groups: created, skippedNoAddress },
           ip_address: req.ip, user_agent: req.get("user-agent")
         });
+        emitOperationsChanged(io, "challans:changed", { action: "regenerated", batch_id: batchId, batch_label: batchLabel, groups: created });
         res.json({ message: "Challan data regenerated", groups: created, skipped_no_address: skippedNoAddress, batch_id: batchId, batch_label: batchLabel });
       } catch (e) {
         await conn.rollback();
@@ -488,13 +515,13 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
       // Optional day filter
       const dayFilter = req.query.day ? String(req.query.day).trim() : null;
 
-      let challanSql = `SELECT c.challan_id, c.qr_token, c.rider_id, c.booking_name, c.address, c.area,
+      let challanSql = `SELECT c.challan_id, c.qr_token, c.booking_name, c.address, c.area,
                 c.description, c.slot, c.day, c.challan_date,
                 c.total_hissa, c.total_premium_hissa, c.total_standard_hissa, c.total_goat_hissa,
                 cb.label AS batch_label
          FROM challan c
          LEFT JOIN challan_batch cb ON cb.batch_id = c.batch_id
-         WHERE c.batch_id = ?`;
+         WHERE c.batch_id = ? AND COALESCE(c.total_hissa, 0) > 0`;
       const challanParams = [batchId];
 
       if (dayFilter) {
@@ -518,7 +545,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
                 o.delivery_status, o.rider_id
          FROM challan_orders co
          INNER JOIN orders o ON o.order_id = co.order_id
-         WHERE co.challan_id IN (${placeholders})
+         WHERE co.challan_id IN (${placeholders}) AND ${nonWaqfOrder('o')}
          ORDER BY co.challan_id, o.order_id`,
         challanIds
       );
@@ -538,6 +565,8 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
         const contacts         = [...new Set(orders.map((x) => x.contact).filter(Boolean))];
         const altContacts      = [...new Set(orders.map((x) => x.alt_contact).filter(Boolean))];
         const slots            = [...new Set(orders.map((x) => String(x.slot || "").trim()).filter(Boolean))].sort();
+        const riderIds         = uniqueRiderIdsFromOrders(orders);
+        const groupRiderId     = riderIds.length === 1 ? riderIds[0] : null;
 
         const statuses = orders.map((o) => o.delivery_status || "Pending");
         const allDelivered    = statuses.length > 0 && statuses.every((s) => s === "Delivered");
@@ -554,7 +583,8 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
           group_key: `${c.challan_id}`,
           challan_id: c.challan_id,
           qr_token: c.qr_token,
-          rider_id: c.rider_id,
+          rider_id: groupRiderId,
+          rider_count: riderIds.length,
           day: c.day,
           slots,
           slot: c.slot,
@@ -576,7 +606,8 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
           challan: {
             challan_id: c.challan_id,
             qr_token: c.qr_token,
-            rider_id: c.rider_id,
+            rider_id: groupRiderId,
+          rider_count: riderIds.length,
             address: c.address,
             area: c.area,
             day: c.day,
@@ -606,7 +637,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
 
       const { day, status, rider_id, area, order_type, search } = req.query;
 
-      const conditions = ["co.challan_id IS NOT NULL", "c.batch_id = ?"];
+      const conditions = ["co.challan_id IS NOT NULL", "c.batch_id = ?", nonWaqfOrder("o")];
       const params = [batchId];
 
       if (day) { conditions.push("TRIM(COALESCE(o.day, '')) = ?"); params.push(String(day).trim()); }
@@ -658,6 +689,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
       conditions.push("o.booking_date IS NOT NULL");
       conditions.push("YEAR(o.booking_date) = ?");
       params.push(OPERATIONS_YEAR);
+      conditions.push(nonWaqfOrder("o"));
       if (day) { conditions.push("TRIM(COALESCE(o.day, '')) = ?"); params.push(String(day).trim()); }
       if (area) { conditions.push("TRIM(COALESCE(o.area, '')) = ?"); params.push(String(area).trim()); }
       if (order_type) { conditions.push("o.order_type = ?"); params.push(String(order_type).trim()); }
@@ -702,7 +734,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
       const activeCount = Number(riderCounts.active_riders || 0);
       const avg = activeCount > 0 ? Math.round((Number(summary.delivered || 0) / activeCount) * 10) / 10 : 0;
       const [typesRows] = await db.execute(
-        `SELECT DISTINCT order_type FROM orders WHERE order_type IS NOT NULL AND TRIM(order_type) != '' ORDER BY order_type`
+        `SELECT DISTINCT order_type FROM orders WHERE order_type IS NOT NULL AND TRIM(order_type) != '' AND LOWER(COALESCE(order_type, '')) NOT LIKE '%waqf%' ORDER BY order_type`
       );
       res.json({
         total_hissas: Number(summary.total_hissas || 0),
@@ -737,15 +769,18 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
          FROM riders r WHERE r.status = 'active' OR r.status IS NULL ORDER BY r.rider_name`
       );
       const challanParams = [];
-      let challanWhere = `WHERE c.rider_id IS NOT NULL AND c.challan_date IS NOT NULL AND YEAR(c.challan_date) = ${OPERATIONS_YEAR}`;
+      let challanWhere = `WHERE o.rider_id IS NOT NULL AND o.booking_date IS NOT NULL AND YEAR(o.booking_date) = ${OPERATIONS_YEAR} AND ${nonWaqfOrder('o')}`;
       if (day) { challanWhere += ` AND TRIM(COALESCE(c.day, '')) = ?`; challanParams.push(day); }
       const [challanStats] = await db.execute(
-        `SELECT c.rider_id,
+        `SELECT o.rider_id,
                 COUNT(DISTINCT c.challan_id) AS challan_count,
-                SUM(CASE WHEN (SELECT COUNT(*) FROM challan_orders co INNER JOIN orders o ON o.order_id = co.order_id WHERE co.challan_id = c.challan_id AND o.delivery_status != 'Delivered') = 0 THEN c.total_hissa ELSE 0 END) AS delivered_hissa_count,
-                SUM(c.total_hissa) AS total_assigned_hissa
-         FROM challan c ${challanWhere}
-         GROUP BY c.rider_id`,
+                SUM(o.delivery_status = 'Delivered') AS delivered_hissa_count,
+                COUNT(o.order_id) AS total_assigned_hissa
+         FROM challan c
+         INNER JOIN challan_orders co ON co.challan_id = c.challan_id
+         INNER JOIN orders o ON o.order_id = co.order_id
+         ${challanWhere}
+         GROUP BY o.rider_id`,
         challanParams
       );
       const statsMap = new Map();
@@ -794,7 +829,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
                  FROM challan c
                  INNER JOIN challan_orders co ON co.challan_id = c.challan_id
                  INNER JOIN orders o ON o.order_id = co.order_id
-                 WHERE c.rider_id = ? AND o.booking_date IS NOT NULL AND YEAR(o.booking_date) = ${OPERATIONS_YEAR}`;
+                 WHERE o.rider_id = ? AND o.booking_date IS NOT NULL AND YEAR(o.booking_date) = ${OPERATIONS_YEAR} AND ${nonWaqfOrder('o')}`;
       if (day) { sql += ` AND TRIM(COALESCE(c.day, '')) = ?`; params.push(day); }
       sql += ` ORDER BY c.day, c.slot, c.challan_id, o.order_id`;
       const [rows] = await db.execute(sql, params);
@@ -843,6 +878,7 @@ export const registerOperationsRoutes = (app, db, verifyToken) => {
         user_id: req.userId, action: "RIDER_UPDATE", entity_type: "rider", entity_id: String(riderId),
         new_values: req.body || {}, ip_address: req.ip, user_agent: req.get("user-agent")
       });
+      emitOperationsChanged(io, "riders:changed", { action: "updated", rider_id: riderId });
       res.json({ message: "Rider updated" });
     } catch (error) {
       logError("OPERATIONS", "Rider update error", error);

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE } from '../config/api';
+import { getOperationsSocket } from '../utils/operationsSocket';
 import { useAuth } from '../context/AuthContext';
 
 const ALL_STATUSES = ['Pending', 'Rider Assigned', 'Dispatched', 'Delivered', 'Returned to Farm'];
@@ -87,6 +88,19 @@ export default function OperationsCustomerSupport() {
 
   useEffect(() => { loadBatches(); }, []);
   useEffect(() => { if (selectedBatch !== null) load(); }, [load, selectedBatch]);
+
+  useEffect(() => {
+    const socket = getOperationsSocket();
+    const refresh = () => { loadBatches(); if (selectedBatch !== null) load(); };
+    socket.on('operations:changed', refresh);
+    socket.on('challans:changed', refresh);
+    socket.on('riders:changed', refresh);
+    return () => {
+      socket.off('operations:changed', refresh);
+      socket.off('challans:changed', refresh);
+      socket.off('riders:changed', refresh);
+    };
+  }, [load, loadBatches, selectedBatch]);
 
   const riderMap = useMemo(() => {
     const m = {};
@@ -265,7 +279,7 @@ export default function OperationsCustomerSupport() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                 <tr style={{ background: '#fafafa' }}>
-                  {['Status', 'Rider', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa', 'Shareholders'].map((h) => (
+                  {['Status', 'Rider', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa'].map((h) => (
                     <th key={h} style={{ textAlign: 'left', padding: '10px 10px', borderBottom: '1px solid #e0e0e0', color: '#555', fontWeight: '600', whiteSpace: 'nowrap', fontSize: '10px' }}>{h}</th>
                   ))}
                 </tr>
@@ -273,7 +287,6 @@ export default function OperationsCustomerSupport() {
               <tbody>
                 {pagedGroups.map((g, idx) => {
                   const st = g.derived_status || 'Pending';
-                  const names = (g.shareholder_names || []).join(', ') || '—';
                   return (
                     <tr key={g.group_key || g.challan_id}
                       style={{ borderBottom: '1px solid #f3f3f3', background: idx % 2 === 0 ? '#fff' : '#FAFAFA', cursor: 'pointer' }}
@@ -283,9 +296,11 @@ export default function OperationsCustomerSupport() {
                     >
                       <td style={{ padding: '9px 10px' }}><StatusBadge status={st} /></td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>
-                        {g.rider_id
-                          ? (riderMap[g.rider_id] || `Rider #${g.rider_id}`)
-                          : <span style={{ color: '#bbb', fontStyle: 'italic' }}>Unassigned</span>}
+                        {g.rider_count > 1
+                          ? <span style={{ color: '#777', fontWeight: 600 }}>Multiple Riders</span>
+                          : (g.rider_id
+                            ? (riderMap[g.rider_id] || `Rider #${g.rider_id}`)
+                            : <span style={{ color: '#bbb', fontStyle: 'italic' }}>Unassigned</span>)}
                       </td>
                       <td style={{ padding: '9px 10px', color: '#777', fontWeight: '500' }}>{(g.customer_ids || []).join(', ') || '—'}</td>
                       <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333' }}>{(g.booking_names || []).join(', ') || '—'}</td>
@@ -305,9 +320,6 @@ export default function OperationsCustomerSupport() {
                       <td style={{ padding: '9px 10px', color: '#555' }}>{g.premium_hissa_count || 0}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{g.goat_hissa_count || 0}</td>
                       <td style={{ padding: '9px 10px', color: '#555', fontWeight: '600' }}>{g.hissa_count || 0}</td>
-                      <td style={{ padding: '9px 10px', color: '#666', maxWidth: '160px' }} title={names}>
-                        {names.length > 48 ? `${names.slice(0, 48)}…` : names}
-                      </td>
                     </tr>
                   );
                 })}
@@ -358,7 +370,7 @@ export default function OperationsCustomerSupport() {
               ['Area',      modal.area || '—'],
               ['Day',       modal.day || '—'],
               ['Slot',      (modal.slots || []).join(', ') || modal.slot || '—'],
-              ['Rider',     modal.rider_id ? (riderMap[modal.rider_id] || `Rider #${modal.rider_id}`) : 'Unassigned'],
+              ['Rider',     modal.rider_count > 1 ? 'Multiple Riders' : (modal.rider_id ? (riderMap[modal.rider_id] || `Rider #${modal.rider_id}`) : 'Unassigned')],
               ['Standard',  String(modal.standard_hissa_count || 0)],
               ['Premium',   String(modal.premium_hissa_count || 0)],
               ['Goat',      String(modal.goat_hissa_count || 0)],
@@ -381,7 +393,7 @@ export default function OperationsCustomerSupport() {
                   <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse' }}>
                     <thead style={{ position: 'sticky', top: 0 }}>
                       <tr style={{ background: '#FAFAFA' }}>
-                        {['Order', 'Contact', 'Alt Contact', 'Shareholder', 'Type', 'Cow #', 'Hissa #', 'Slot', 'Description', 'Status'].map((h) => (
+                        {['Order', 'Contact', 'Alt Contact', 'Type', 'Cow #', 'Hissa #', 'Slot', 'Description', 'Status'].map((h) => (
                           <th key={h} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#555', borderBottom: '1px solid #E0E0E0', whiteSpace: 'nowrap' }}>{h}</th>
                         ))}
                       </tr>
@@ -392,7 +404,6 @@ export default function OperationsCustomerSupport() {
                           <td style={{ padding: '8px', color: '#777' }}>#{o.order_id}</td>
                           <td style={{ padding: '8px', color: '#555' }}>{o.contact || '—'}</td>
                           <td style={{ padding: '8px', color: '#555' }}>{o.alt_contact || '—'}</td>
-                          <td style={{ padding: '8px', color: '#333', fontWeight: '500' }}>{o.shareholder_name || '—'}</td>
                           <td style={{ padding: '8px', color: '#555', whiteSpace: 'nowrap' }}>{o.order_type || '—'}</td>
                           <td style={{ padding: '8px', color: '#555' }}>{o.cow_number ? `Cow ${o.cow_number}` : '—'}</td>
                           <td style={{ padding: '8px', color: '#555' }}>{o.hissa_number ? `Hissa ${o.hissa_number}` : '—'}</td>

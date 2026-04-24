@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { API_BASE } from '../config/api';
+import { getOperationsSocket } from '../utils/operationsSocket';
 import { useAuth } from '../context/AuthContext';
 
 const STATUS_COLORS = {
@@ -71,6 +72,19 @@ export default function OperationsDashboard() {
   }, [authFetch, dayFilter, areaFilter, typeFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const socket = getOperationsSocket();
+    const refresh = () => load();
+    socket.on('operations:changed', refresh);
+    socket.on('challans:changed', refresh);
+    socket.on('riders:changed', refresh);
+    return () => {
+      socket.off('operations:changed', refresh);
+      socket.off('challans:changed', refresh);
+      socket.off('riders:changed', refresh);
+    };
+  }, [load]);
 
   const s = stats || {};
   const areas      = s.areas || [];

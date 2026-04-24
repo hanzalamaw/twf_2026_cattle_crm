@@ -1,4 +1,6 @@
 import express from "express";
+import { createServer } from "http";
+import { Server as SocketIOServer } from "socket.io";
 import cors from "cors";
 import dotenv from "dotenv";
 import mysql from "mysql2/promise";
@@ -27,6 +29,18 @@ import { ensurePasswordResetTable } from "./utils/ensurePasswordResetTable.js";
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app);
+const io = new SocketIOServer(httpServer, {
+  cors: {
+    origin: process.env.CLIENT_ORIGIN || "*",
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
+  },
+});
+
+io.on("connection", (socket) => {
+  socket.join("operations");
+});
+
 app.use(cors());
 app.use(express.json());
 
@@ -370,7 +384,7 @@ const startServer = async () => {
     registerPerformanceRoutes(app, db, verifyToken);
     registerProcurementRoutes(app, db, verifyToken);
     registerAccountingRoutes(app, db, verifyToken);
-    registerOperationsRoutes(app, db, verifyToken);
+    registerOperationsRoutes(app, db, verifyToken, io);
 
     // ---------- 404 ----------
     app.use((req, res) => {
@@ -379,7 +393,7 @@ const startServer = async () => {
     });
 
     const PORT = process.env.PORT || 5000;
-    app.listen(PORT, () => {
+    httpServer.listen(PORT, () => {
       log("SERVER", "Server started", { port: PORT });
       console.log(`Server running on http://localhost:${PORT}`);
       console.log('Auth: POST /api/login, POST /api/logout');
