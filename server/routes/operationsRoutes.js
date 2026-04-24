@@ -286,8 +286,20 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
         const c = byId.get(id);
         if (!c) continue;
         const [orderRows] = await db.execute(
-          `SELECT o.order_id, o.booking_name, o.shareholder_name, o.contact, o.alt_contact,
-                  o.order_type, o.cow_number, o.hissa_number, o.slot, o.description, o.delivery_status, o.rider_id
+          `SELECT 
+            o.order_id,
+            o.customer_id,
+            o.booking_name,
+            o.shareholder_name,
+            o.contact,
+            o.alt_contact,
+            o.order_type,
+            o.cow_number,
+            o.hissa_number,
+            o.slot,
+            o.description,
+            o.delivery_status,
+            o.rider_id
            FROM orders o
            INNER JOIN challan_orders co ON co.order_id = o.order_id
            WHERE co.challan_id = ? AND ${nonWaqfOrder('o')}

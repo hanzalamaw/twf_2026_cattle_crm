@@ -3,6 +3,7 @@ import { jsPDF } from 'jspdf';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE } from '../config/api';
 import { getOperationsSocket } from '../utils/operationsSocket';
+import QRCode from 'qrcode';
 
 const REGENERATE_EMAIL = 'hanzalamawahab@gmail.com';
 
@@ -35,53 +36,325 @@ function short(v, n = 64) {
   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
 }
 
-function generatePdf(items) {
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-  const left = 34, right = 561;
-  let pageNo = 0;
-  for (const item of items) {
-    const orders = Array.isArray(item.orders) ? item.orders : [];
-    const rowsPerPage = 22;
-    const pages = Math.max(1, Math.ceil(orders.length / rowsPerPage));
-    for (let p = 0; p < pages; p++) {
-      if (pageNo > 0) doc.addPage();
-      pageNo++;
-      const c = item.challan;
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
-      doc.text(`Challan #${c.challan_id}`, left, 40);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-      doc.text(`Date: ${c.challan_date || '—'}   Day/Slot: ${c.day || '—'} / ${c.slot || '—'}`, left, 58);
-      doc.text(`Address: ${short(c.address, 90) || '—'}`, left, 73);
-      doc.text(`Area: ${short(c.area || '—', 22)}   Rider: ${short(item.rider?.rider_name || '—', 22)}`, left, 88);
-      doc.text(`Total hissa: ${c.total_hissa ?? 0}`, left, 103);
-      doc.text(`Page ${p + 1}/${pages}`, right, 40, { align: 'right' });
-      doc.setFillColor(245, 245, 245);
-      doc.rect(left, 120, right - left, 18, 'F');
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
-      doc.text('Order', left + 8, 132);
-      doc.text('Contact', left + 76, 132);
-      doc.text('Shareholder', left + 182, 132);
-      doc.text('Type / Hissa', left + 380, 132);
+/* ─────────────────────────────────────────────
+   generatePdf  –  exact challan design
+   ───────────────────────────────────────────── */
+   async function generatePdf(items) {
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  
+    const PW = 595.28;
+    const PH = 841.89;
+    const ML = 36;
+    const MR = PW - 36;
+    const CONTENT_W = MR - ML;
+  
+    const safe = (v, fallback = '') => {
+      const s = String(v ?? '').trim();
+      return s || fallback;
+    };
+  
+    const split = (text, maxWidth) => {
+      return doc.splitTextToSize(safe(text), maxWidth);
+    };
+  
+    const drawWrappedLabelValue = (label, value, x, y, valueMaxWidth, lineHeight = 12) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(20, 20, 20);
+      doc.text(`${label}:`, x, y);
+  
+      const labelW = doc.getTextWidth(`${label}: `);
       doc.setFont('helvetica', 'normal');
-      let y = 150;
-      const start = p * rowsPerPage;
-      const end = Math.min(start + rowsPerPage, orders.length);
-      if (start >= end) {
-        doc.text('No orders linked to this challan.', left + 8, y);
-      } else {
-        for (let i = start; i < end; i++) {
-          const o = orders[i];
-          doc.text(String(o.order_id ?? '—'), left + 8, y);
-          doc.text(short(o.contact || '—', 20), left + 76, y);
-          doc.text(short(o.shareholder_name || '—', 42), left + 182, y);
-          doc.text(short(`${o.order_type || '—'} / ${o.hissa_number || '—'}`, 24), left + 380, y);
-          y += 18;
+      doc.setTextColor(35, 35, 35);
+  
+      const lines = split(value, valueMaxWidth - labelW - 4);
+      doc.text(lines, x + labelW + 2, y);
+  
+      return Math.max(lineHeight, lines.length * lineHeight);
+    };
+  
+    const drawLineValue = (label, value, x, y, lineEndX) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(20, 20, 20);
+      doc.text(`${label}:`, x, y);
+  
+      const labelW = doc.getTextWidth(`${label}: `);
+      const valueX = x + labelW + 6;
+  
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(35, 35, 35);
+  
+      const valueLines = split(value || '', lineEndX - valueX - 4).slice(0, 1);
+      if (valueLines.length) doc.text(valueLines, valueX, y);
+  
+      doc.setDrawColor(30, 30, 30);
+      doc.setLineWidth(0.8);
+      doc.line(valueX, y + 4, lineEndX, y + 4);
+    };
+  
+    for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+      const item = items[itemIndex] || {};
+      const c = item.challan || {};
+      const orders = Array.isArray(item.orders) ? item.orders : [];
+      const rider = item.rider || {};
+  
+      const premium = Number(c.total_premium_hissa || 0);
+      const standard = Number(c.total_standard_hissa || 0);
+      const goat = Number(c.total_goat_hissa || 0);
+      const totalHissa = Number(c.total_hissa || c.order_count || premium + standard + goat || 0);
+  
+      const totalHissaText = `${totalHissa} (${premium} Premium, ${standard} Standard, ${goat} Goat)`;
+  
+      const uniqueJoin = (arr) =>
+        [...new Set(arr.map((v) => String(v || '').trim()).filter(Boolean))].join(', ');
+      
+      const customerId =
+        c.customer_ids_csv ||
+        c.customer_id ||
+        uniqueJoin(orders.map((o) => o.customer_id)) ||
+        '—';
+      
+      const customerName =
+        c.booking_name ||
+        uniqueJoin(orders.map((o) => o.booking_name)) ||
+        '—';
+      
+      const contact =
+        [c.contacts_csv, c.alt_contacts_csv].filter(Boolean).join(' & ') ||
+        uniqueJoin([
+          ...orders.map((o) => o.contact),
+          ...orders.map((o) => o.alt_contact),
+        ]) ||
+        '—';
+  
+      let pageNo = 0;
+      let orderIndex = 0;
+  
+      while (orderIndex < Math.max(orders.length, 1)) {
+        if (itemIndex > 0 || pageNo > 0) doc.addPage();
+        pageNo++;
+  
+        // Header
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(19);
+        doc.setTextColor(20, 20, 20);
+        doc.text(`CHALLAN # ${safe(c.challan_id, '')}`, ML, 42);
+  
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.text('THE WARSI FARM', ML, 58);
+  
+        // QR
+        const qrToken = c.qr_token || c.challan_token || '';
+        const qrText = qrToken
+          ? `${window.location.origin}/operations/deliveries?challan=${encodeURIComponent(qrToken)}`
+          : `CHALLAN-${safe(c.challan_id, '')}`;
+  
+        try {
+          const qrDataUrl = await QRCode.toDataURL(qrText, {
+            margin: 0,
+            width: 90,
+            errorCorrectionLevel: 'M',
+          });
+          doc.addImage(qrDataUrl, 'PNG', MR - 70, 24, 58, 58);
+        } catch {
+          doc.rect(MR - 70, 24, 58, 58);
+          doc.setFontSize(7);
+          doc.text('QR', MR - 41, 55, { align: 'center' });
         }
+  
+        let y = 112;
+  
+        // Print customer/rider info ONLY ON FIRST PAGE
+        if (pageNo === 1) {
+          const boxX = ML;
+const boxY = y;
+const boxH = 118;
+const midX = ML + CONTENT_W / 2;
+
+doc.setFillColor(252, 252, 252);
+doc.setDrawColor(215, 215, 215);
+doc.setLineWidth(0.8);
+doc.roundedRect(boxX, boxY, CONTENT_W, boxH, 6, 6, 'FD');
+
+// subtle middle separator
+doc.setDrawColor(235, 235, 235);
+doc.line(midX, boxY + 14, midX, boxY + boxH - 14);
+
+const leftX = boxX + 28;
+const rightX = midX + 28;
+const rowGap = 28;
+
+const drawInfoRow = (label, value, x, yPos, maxWidth) => {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(25, 25, 25);
+  doc.text(`${label}:`, x, yPos);
+
+  const labelW = doc.getTextWidth(`${label}: `);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  doc.setTextColor(45, 45, 45);
+
+  const lines = doc.splitTextToSize(
+    safe(value),
+    maxWidth - labelW - 6
+  ).slice(0, 2);
+
+  doc.text(lines, x + labelW + 4, yPos);
+};
+
+drawInfoRow('Customer ID', customerId, leftX, boxY + 30, CONTENT_W / 2 - 52);
+drawInfoRow('Customer Name', customerName, leftX, boxY + 58, CONTENT_W / 2 - 52);
+drawInfoRow('Contact', contact, leftX, boxY + 86, CONTENT_W / 2 - 52);
+
+drawInfoRow('Address', c.address || '—', rightX, boxY + 30, CONTENT_W / 2 - 52);
+drawInfoRow('Area', c.area || '—', rightX, boxY + 58, CONTENT_W / 2 - 52);
+
+// Total hissa better layout
+doc.setFont('helvetica', 'bold');
+doc.setFontSize(9.5);
+doc.setTextColor(25, 25, 25);
+doc.text('Total Hissa:', rightX, boxY + 86);
+
+doc.setFont('helvetica', 'bold');
+doc.setFontSize(10);
+doc.setTextColor(255, 87, 34);
+doc.text(String(totalHissa), rightX + 72, boxY + 86);
+
+doc.setFont('helvetica', 'normal');
+doc.setFontSize(8.5);
+doc.setTextColor(75, 75, 75);
+doc.text(
+  `(${premium} Premium, ${standard} Standard, ${goat} Goat)`,
+  rightX + 95,
+  boxY + 86
+);
+
+y = boxY + boxH + 32;
+  
+          y = boxY + boxH + 32;
+  
+          drawLineValue('Rider Name', rider.rider_name || '', ML + 4, y, ML + 250);
+          drawLineValue('Vehicle', [rider.vehicle, rider.number_plate].filter(Boolean).join(' ') || '', midX + 18, y, MR);
+  
+          y += 28;
+        } else {
+          // continuation pages start higher, no repeated info block
+          y = 96;
+  
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(90, 90, 90);
+          doc.text(`Continuation of Challan # ${safe(c.challan_id, '')}`, ML, y - 18);
+        }
+  
+        // Table header
+        const tableY = y;
+        const headerH = 28;
+  
+        doc.setFillColor(250, 250, 250);
+        doc.roundedRect(ML, tableY, CONTENT_W, headerH, 4, 4, 'F');
+        doc.setDrawColor(215, 215, 215);
+        doc.roundedRect(ML, tableY, CONTENT_W, headerH, 4, 4);
+  
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(30, 30, 30);
+  
+        const col1X = ML + 16;
+        const col2X = ML + 235;
+        const col3X = MR - 44;
+  
+        doc.text('SHAREHOLDER NAME', col1X, tableY + 18);
+        doc.text('DESCRIPTION', col2X, tableY + 18);
+        doc.text('QUANTITY', col3X, tableY + 18, { align: 'center' });
+  
+        y = tableY + headerH + 14;
+  
+        const footerSpace = 88;
+        const maxY = PH - footerSpace;
+        const rowH = 48;
+  
+        if (!orders.length) {
+          doc.setFillColor(247, 248, 250);
+          doc.roundedRect(ML, y, CONTENT_W, rowH, 4, 4, 'F');
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(10);
+          doc.setTextColor(120, 120, 120);
+          doc.text('No orders linked to this challan.', ML + CONTENT_W / 2, y + 28, { align: 'center' });
+          orderIndex = 1;
+        } else {
+          while (orderIndex < orders.length && y + rowH <= maxY) {
+            const o = orders[orderIndex];
+  
+            doc.setFillColor(247, 248, 250);
+            doc.roundedRect(ML, y, CONTENT_W, rowH, 4, 4, 'F');
+  
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9.5);
+            doc.setTextColor(25, 25, 25);
+  
+            const nameLines = split(o.shareholder_name || o.booking_name || '—', 180).slice(0, 2);
+            doc.text(nameLines, col1X, y + 20);
+  
+            const orderType = safe(o.order_type, 'Hissa');
+            const day = o.day ? ` (${o.day})` : '';
+            const mainDesc = `${orderType}${day}`;
+  
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9.5);
+            doc.setTextColor(25, 25, 25);
+            doc.text(split(mainDesc, 250).slice(0, 1), col2X, y + 17);
+  
+            const subDesc = [
+              o.cow_number ? `Cow: ${o.cow_number}` : null,
+              o.hissa_number ? `Hissa: ${o.hissa_number}` : null,
+            ].filter(Boolean).join('  |  ');
+  
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(95, 95, 95);
+            doc.text(split(subDesc || '—', 250).slice(0, 1), col2X, y + 32);
+  
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.setTextColor(25, 25, 25);
+            doc.text('1', col3X, y + 24, { align: 'center' });
+  
+            y += rowH + 10;
+            orderIndex++;
+          }
+        }
+  
+        // Approval/signature ONLY after all rows printed
+        if (orderIndex >= Math.max(orders.length, 1)) {
+          const footerY = PH - 48;
+  
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(10);
+          doc.setTextColor(20, 20, 20);
+  
+          doc.text('Approval:', ML + 4, footerY);
+          doc.setDrawColor(30, 30, 30);
+          doc.setLineWidth(0.8);
+          doc.line(ML + 58, footerY + 3, ML + 220, footerY + 3);
+  
+          doc.text('Customer Signature:', ML + CONTENT_W / 2 + 18, footerY);
+          doc.line(ML + CONTENT_W / 2 + 130, footerY + 3, MR - 8, footerY + 3);
+        }
+  
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(160, 160, 160);
+        doc.text(`Page ${pageNo}`, MR, PH - 20, { align: 'right' });
       }
     }
+  
+    doc.save(`challan-${new Date().toISOString().slice(0, 10)}.pdf`);
   }
-  doc.save(`challan-${new Date().toISOString().slice(0, 10)}.pdf`);
-}
 
 const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px', background: '#fff' };
 
@@ -232,22 +505,20 @@ export default function OperationsChallan() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Could not build PDF');
       if (!Array.isArray(data.items) || data.items.length === 0) throw new Error('No data to print');
-      generatePdf(data.items);
+      await generatePdf(data.items);
     } catch (e) { setErr(e.message || 'PDF generation failed'); }
     setBusy(false);
   };
 
   function challanDerivedStatus(c) {
-    const total = Number(c.orders_total || 0);
+    const total     = Number(c.orders_total     || 0);
     const delivered = Number(c.orders_delivered || 0);
-    if (total === 0) return 'Pending';
-    if (delivered === total) return 'Delivered';
-    if (delivered > 0) return 'Dispatched';
-    if (c.rider_id) return 'Rider Assigned';
+    if (total === 0)            return 'Pending';
+    if (delivered === total)    return 'Delivered';
+    if (delivered > 0)          return 'Dispatched';
+    if (c.rider_id)             return 'Rider Assigned';
     return 'Pending';
   }
-
-  const selectedBatchLabel = batches.find((b) => b.batch_id === selectedBatch)?.label || '';
 
   return (
     <>
@@ -263,7 +534,6 @@ export default function OperationsChallan() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             {busy && <span style={{ fontSize: '10px', color: '#999', fontWeight: '600' }}>Working…</span>}
-            {/* Batch dropdown */}
             {batches.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <label style={{ fontSize: '11px', color: '#666', whiteSpace: 'nowrap' }}>Batch:</label>
@@ -305,9 +575,13 @@ export default function OperationsChallan() {
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button type="button" disabled={busy} onClick={onPrintPdf}
-              style={{ padding: '6px 13px', height: '29px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Print PDF</button>
+              style={{ padding: '6px 13px', height: '29px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>
+              Print PDF
+            </button>
             <button type="button" onClick={load}
-              style={{ padding: '6px 13px', height: '29px', background: '#fff', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>Refresh</button>
+              style={{ padding: '6px 13px', height: '29px', background: '#fff', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>
+              Refresh
+            </button>
             {emailOk && (
               <button type="button" onClick={() => setConfirmRegen(true)}
                 style={{ padding: '6px 13px', height: '29px', background: '#FFEBEE', color: '#C62828', border: '1px solid #FFCDD2', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>
@@ -346,11 +620,11 @@ export default function OperationsChallan() {
                 {pagedRows.length === 0 ? (
                   <tr><td colSpan={15} style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>No rows found.</td></tr>
                 ) : pagedRows.map((c, idx) => {
-                  const st = challanDerivedStatus(c);
-                  const names = c.shareholders_csv || '—';
-                  const contacts = c.contacts_csv || '—';
-                  const altContacts = c.alt_contacts_csv || '';
-                  const customerIds = c.customer_ids_csv || '—';
+                  const st          = challanDerivedStatus(c);
+                  const names       = c.shareholders_csv  || '—';
+                  const contacts    = c.contacts_csv      || '—';
+                  const altContacts = c.alt_contacts_csv  || '';
+                  const customerIds = c.customer_ids_csv  || '—';
                   return (
                     <tr key={c.challan_id}
                       style={{ borderBottom: '1px solid #f3f3f3', background: idx % 2 === 0 ? '#fff' : '#FAFAFA', cursor: c.qr_token ? 'pointer' : 'default' }}
@@ -363,7 +637,9 @@ export default function OperationsChallan() {
                       </td>
                       <td style={{ padding: '9px 10px' }}><StatusBadge status={st} /></td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>
-                        {c.rider_count > 1 ? <span style={{ color: '#777', fontWeight: 600 }}>Multiple Riders</span> : (c.rider_id ? (riderMap[c.rider_id] || `Rider #${c.rider_id}`) : <span style={{ color: '#bbb', fontStyle: 'italic' }}>Unassigned</span>)}
+                        {c.rider_count > 1
+                          ? <span style={{ color: '#777', fontWeight: 600 }}>Multiple Riders</span>
+                          : (c.rider_id ? (riderMap[c.rider_id] || `Rider #${c.rider_id}`) : <span style={{ color: '#bbb', fontStyle: 'italic' }}>Unassigned</span>)}
                       </td>
                       <td style={{ padding: '9px 10px', color: '#777', fontWeight: '500' }}>{customerIds}</td>
                       <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333' }}>{c.booking_name || '—'}</td>
@@ -393,16 +669,97 @@ export default function OperationsChallan() {
         </div>
 
         {/* Pagination */}
-        {!loading && displayRows.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', paddingTop: '10px', flexShrink: 0 }}>
-            <span style={{ fontSize: '10px', color: '#999' }}>Showing {pagedRows.length} of {displayRows.length} challans</span>
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
-              <span style={{ fontSize: '10px' }}>Page {page}/{totalPages}</span>
-              <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Next</button>
-            </div>
-          </div>
-        )}
+        {/* Pagination */}
+{!loading && displayRows.length > 0 && (
+  <div
+    className="om-pagination"
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      gap: '12px',
+      padding: '12px 0',
+      borderTop: '1px solid #e0e0e0',
+      marginTop: '8px',
+      flexShrink: 0,
+    }}
+  >
+    <span style={{ fontSize: '13px', color: '#666' }}>
+      Showing {pagedRows.length} of {displayRows.length} challans
+    </span>
+
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => setPage((p) => Math.max(1, p - 1))}
+        style={{
+          padding: '6px 12px',
+          fontSize: '10px',
+          background: page <= 1 ? '#f0f0f0' : '#fff',
+          color: page <= 1 ? '#999' : '#333',
+          border: '1px solid #e0e0e0',
+          borderRadius: '6px',
+          cursor: page <= 1 ? 'not-allowed' : 'pointer',
+        }}
+      >
+        Previous
+      </button>
+
+      {(() => {
+        const sp = 5;
+        let start = Math.max(1, page - Math.floor(sp / 2));
+        let end = Math.min(totalPages, start + sp - 1);
+
+        if (end - start + 1 < sp) {
+          start = Math.max(1, end - sp + 1);
+        }
+
+        const pages = [];
+        for (let i = start; i <= end; i++) pages.push(i);
+
+        return pages.map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setPage(p)}
+            style={{
+              minWidth: '32px',
+              padding: '6px 10px',
+              fontSize: '10px',
+              background: p === page ? '#FF5722' : '#fff',
+              color: p === page ? '#fff' : '#333',
+              border: '1px solid #e0e0e0',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: p === page ? 600 : 400,
+            }}
+          >
+            {p}
+          </button>
+        ));
+      })()}
+
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+        style={{
+          padding: '6px 12px',
+          fontSize: '10px',
+          background: page >= totalPages ? '#f0f0f0' : '#fff',
+          color: page >= totalPages ? '#999' : '#333',
+          border: '1px solid #e0e0e0',
+          borderRadius: '6px',
+          cursor: page >= totalPages ? 'not-allowed' : 'pointer',
+        }}
+      >
+        Next
+      </button>
+    </div>
+  </div>
+)}
       </div>
 
       {/* Confirm regenerate */}
@@ -425,7 +782,7 @@ export default function OperationsChallan() {
         </div>
       )}
 
-      {/* Challan detail modal — view only, no status/rider editing */}
+      {/* Challan detail modal — view only */}
       {modal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
           onClick={() => setModal(null)} role="presentation">
@@ -460,7 +817,7 @@ export default function OperationsChallan() {
               <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse' }}>
                 <thead style={{ position: 'sticky', top: 0 }}>
                   <tr style={{ background: '#FAFAFA' }}>
-                    {['Order', 'Contact', 'Alt Contact', 'Shareholder', 'Type', 'Cow #', 'Hissa #', 'Slot', 'Description', 'Status'].map((h) => (
+                    {['Order', 'Shareholder', 'Contact', 'Alt Contact', 'Type', 'Cow #', 'Hissa #', 'Slot', 'Description', 'Status'].map((h) => (
                       <th key={h} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#555', borderBottom: '1px solid #E0E0E0', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -471,9 +828,9 @@ export default function OperationsChallan() {
                   ) : (modal.orders || []).map((o, i) => (
                     <tr key={o.order_id} style={{ borderBottom: '1px solid #F0F0F0', background: i % 2 === 0 ? '#fff' : '#FAFAFA' }}>
                       <td style={{ padding: '8px', color: '#777' }}>#{o.order_id}</td>
+                      <td style={{ padding: '8px', color: '#333', fontWeight: '500' }}>{o.shareholder_name || '—'}</td>
                       <td style={{ padding: '8px', color: '#555' }}>{o.contact || '—'}</td>
                       <td style={{ padding: '8px', color: '#555' }}>{o.alt_contact || '—'}</td>
-                      <td style={{ padding: '8px', color: '#333', fontWeight: '500' }}>{o.shareholder_name || '—'}</td>
                       <td style={{ padding: '8px', color: '#555', whiteSpace: 'nowrap' }}>{o.order_type || '—'}</td>
                       <td style={{ padding: '8px', color: '#555' }}>{o.cow_number ? `Cow ${o.cow_number}` : '—'}</td>
                       <td style={{ padding: '8px', color: '#555' }}>{o.hissa_number ? `Hissa ${o.hissa_number}` : '—'}</td>

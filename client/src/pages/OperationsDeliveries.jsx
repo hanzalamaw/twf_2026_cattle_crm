@@ -43,9 +43,7 @@ function SearchableRiderSelect({ value, disabled, onChange, riders, title, menuP
   const [menuStyle, setMenuStyle] = useState(null);
   const containerRef = useRef(null);
   const selected = riders.find((r) => String(r.rider_id) === String(value));
-  const label = selected
-  ? `${selected.rider_name} (${selected.contact || 'N/A'})${selected.vehicle ? ` · ${selected.vehicle}` : ''}`
-  : (fallbackLabel || '— Unassigned');
+  const label = selected ? `${selected.rider_name} (${selected.contact || 'N/A'})` : (fallbackLabel || '— Unassigned');
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
@@ -486,16 +484,25 @@ export default function OperationsDeliveries() {
         scannerRef.current = html5;
         await html5.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 260, height: 260 } },
           (decodedText) => {
-            const token = extractChallanToken(decodedText); if (!token) return;
+            const token = extractChallanToken(decodedText);
+            if (!token) return;
+
             const found = groupsRef.current.some((g) => g.qr_token === token);
-            if (!found) { setScanErr('No delivery row matches this challan QR.'); return; }
-            setScanMatchToken(token); setScanOpen(false); stopScanner();
+            if (!found) {
+              setScanErr('No delivery row matches this challan QR.');
+              return;
+            }
+
+            setScanOpen(false);
+            setScanMatchToken('');
+            stopScanner();
+            openChallanModal(token);
           }, () => {}
         );
       } catch (e) { if (!cancelled) setScanErr(e.message || 'Could not start camera'); }
     })();
     return () => { cancelled = true; stopScanner(); };
-  }, [scanOpen, stopScanner]);
+  }, [scanOpen, stopScanner, openChallanModal]);
 
   const updateModalStatus = async (delivery_status) => {
     if (!modal?.challan?.challan_id) return;
@@ -791,16 +798,101 @@ export default function OperationsDeliveries() {
         </div>
 
         {/* Pagination */}
-        {!loading && displayGroups.length > 0 && (
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'12px', paddingTop:'10px', flexShrink:0 }}>
-            <span style={{ fontSize:'10px', color:'#999' }}>Showing {pagedGroups.length} of {displayGroups.length} groups</span>
-            <div style={{ display:'flex', gap:'6px', alignItems:'center' }}>
-              <button type="button" disabled={page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Previous</button>
-              <span style={{ fontSize:'10px' }}>Page {page}/{totalPages}</span>
-              <button type="button" disabled={page>=totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>Next</button>
-            </div>
-          </div>
-        )}
+        {/* Pagination */}
+{!loading && displayGroups.length > 0 && (
+  <div
+    className="om-pagination"
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      gap: '12px',
+      padding: '12px 0',
+      borderTop: '1px solid #e0e0e0',
+      marginTop: '8px',
+      flexShrink: 0,
+    }}
+  >
+    <span style={{ fontSize: '13px', color: '#666' }}>
+      Showing {pagedGroups.length} of {displayGroups.length} groups
+    </span>
+
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+      
+      {/* Previous */}
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => setPage((p) => Math.max(1, p - 1))}
+        style={{
+          padding: '6px 12px',
+          fontSize: '10px',
+          background: page <= 1 ? '#f0f0f0' : '#fff',
+          color: page <= 1 ? '#999' : '#333',
+          border: '1px solid #e0e0e0',
+          borderRadius: '6px',
+          cursor: page <= 1 ? 'not-allowed' : 'pointer',
+        }}
+      >
+        Previous
+      </button>
+
+      {/* Page Numbers */}
+      {(() => {
+        const sp = 5;
+        let start = Math.max(1, page - Math.floor(sp / 2));
+        let end = Math.min(totalPages, start + sp - 1);
+
+        if (end - start + 1 < sp) {
+          start = Math.max(1, end - sp + 1);
+        }
+
+        const pages = [];
+        for (let i = start; i <= end; i++) pages.push(i);
+
+        return pages.map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setPage(p)}
+            style={{
+              minWidth: '32px',
+              padding: '6px 10px',
+              fontSize: '10px',
+              background: p === page ? '#FF5722' : '#fff',
+              color: p === page ? '#fff' : '#333',
+              border: '1px solid #e0e0e0',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: p === page ? 600 : 400,
+            }}
+          >
+            {p}
+          </button>
+        ));
+      })()}
+
+      {/* Next */}
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+        style={{
+          padding: '6px 12px',
+          fontSize: '10px',
+          background: page >= totalPages ? '#f0f0f0' : '#fff',
+          color: page >= totalPages ? '#999' : '#333',
+          border: '1px solid #e0e0e0',
+          borderRadius: '6px',
+          cursor: page >= totalPages ? 'not-allowed' : 'pointer',
+        }}
+      >
+        Next
+      </button>
+    </div>
+  </div>
+)}
       </div>
 
       {/* Scan QR modal */}

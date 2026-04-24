@@ -45,8 +45,8 @@ export default function OperationsCustomerSupport() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
 
-  const [modal,      setModal]      = useState(null);
-  const [modalData,  setModalData]  = useState(null);
+  const [modal,        setModal]        = useState(null);
+  const [modalData,    setModalData]    = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
 
   const loadBatches = useCallback(async () => {
@@ -152,6 +152,13 @@ export default function OperationsCustomerSupport() {
     } catch { /* silent */ } finally { setModalLoading(false); }
   };
 
+  /* ── helpers for modal info grid ── */
+  const modalRiderLabel = (g) => {
+    if (!g) return '—';
+    if (g.rider_count > 1) return 'Multiple Riders';
+    return g.rider_id ? (riderMap[g.rider_id] || `Rider #${g.rider_id}`) : 'Unassigned';
+  };
+
   return (
     <>
       <style>{`
@@ -162,6 +169,7 @@ export default function OperationsCustomerSupport() {
           .cs-filter-toggle { display: flex !important; }
           .cs-filter-mobile { display: block !important; }
           .cs-table-wrap { display: block !important; }
+          .modal-info-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>
 
@@ -267,7 +275,7 @@ export default function OperationsCustomerSupport() {
           </div>
         )}
 
-        {/* Table — same columns as Deliveries */}
+        {/* Table */}
         <div className="cs-table-wrap" style={{ flex: 1, minHeight: 0, overflow: 'auto', borderRadius: '10px', border: '1px solid #ececec' }}>
           {loading ? (
             <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading…</div>
@@ -329,19 +337,100 @@ export default function OperationsCustomerSupport() {
         </div>
 
         {/* Pagination */}
-        {!loading && filteredGroups.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', paddingTop: '10px', flexShrink: 0 }}>
-            <span style={{ fontSize: '10px', color: '#999' }}>Showing {pagedGroups.length} of {filteredGroups.length} groups</span>
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
-              <span style={{ fontSize: '10px' }}>Page {page}/{totalPages}</span>
-              <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Next</button>
-            </div>
-          </div>
-        )}
+        {/* Pagination */}
+{!loading && filteredGroups.length > 0 && (
+  <div
+    className="om-pagination"
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      gap: '12px',
+      padding: '12px 0',
+      borderTop: '1px solid #e0e0e0',
+      marginTop: '8px',
+      flexShrink: 0,
+    }}
+  >
+    <span style={{ fontSize: '13px', color: '#666' }}>
+      Showing {pagedGroups.length} of {filteredGroups.length} groups
+    </span>
+
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => setPage((p) => Math.max(1, p - 1))}
+        style={{
+          padding: '6px 12px',
+          fontSize: '10px',
+          background: page <= 1 ? '#f0f0f0' : '#fff',
+          color: page <= 1 ? '#999' : '#333',
+          border: '1px solid #e0e0e0',
+          borderRadius: '6px',
+          cursor: page <= 1 ? 'not-allowed' : 'pointer',
+        }}
+      >
+        Previous
+      </button>
+
+      {(() => {
+        const sp = 5;
+        let start = Math.max(1, page - Math.floor(sp / 2));
+        let end = Math.min(totalPages, start + sp - 1);
+
+        if (end - start + 1 < sp) {
+          start = Math.max(1, end - sp + 1);
+        }
+
+        const pages = [];
+        for (let i = start; i <= end; i++) pages.push(i);
+
+        return pages.map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setPage(p)}
+            style={{
+              minWidth: '32px',
+              padding: '6px 10px',
+              fontSize: '10px',
+              background: p === page ? '#FF5722' : '#fff',
+              color: p === page ? '#fff' : '#333',
+              border: '1px solid #e0e0e0',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: p === page ? 600 : 400,
+            }}
+          >
+            {p}
+          </button>
+        ));
+      })()}
+
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+        style={{
+          padding: '6px 12px',
+          fontSize: '10px',
+          background: page >= totalPages ? '#f0f0f0' : '#fff',
+          color: page >= totalPages ? '#999' : '#333',
+          border: '1px solid #e0e0e0',
+          borderRadius: '6px',
+          cursor: page >= totalPages ? 'not-allowed' : 'pointer',
+        }}
+      >
+        Next
+      </button>
+    </div>
+  </div>
+)}
       </div>
 
-      {/* Challan detail modal — view only */}
+      {/* ── Challan detail modal ── */}
       {modal && (
         <div
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
@@ -349,69 +438,106 @@ export default function OperationsCustomerSupport() {
           role="presentation"
         >
           <div
-            style={{ background: '#FFFFFF', borderRadius: '18px', border: '1.5px solid #F0F0F0', padding: '20px', maxWidth: '620px', width: '100%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.12)' }}
+            style={{ background: '#FFFFFF', borderRadius: '18px', border: '1.5px solid #F0F0F0', padding: '24px', maxWidth: '700px', width: '100%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.12)' }}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-label={`Challan #${modalData?.challan?.challan_id || modal.challan_id}`}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#333' }}>
-                Challan #{modalData?.challan?.challan_id || modal.challan_id}
-              </h2>
-              <button type="button" onClick={() => { setModal(null); setModalData(null); }} style={{ background: 'none', border: 'none', fontSize: '24px', color: '#888', cursor: 'pointer', padding: '0', width: '30px', height: '30px', lineHeight: 1 }}>×</button>
-            </div>
-
-            <div style={{ marginBottom: '16px' }}>
-              <StatusBadge status={modalData?.challan?.derived_status || modal.derived_status} />
-            </div>
-
-            {[
-              ['Address',   modal.address || '—'],
-              ['Area',      modal.area || '—'],
-              ['Day',       modal.day || '—'],
-              ['Slot',      (modal.slots || []).join(', ') || modal.slot || '—'],
-              ['Rider',     modal.rider_count > 1 ? 'Multiple Riders' : (modal.rider_id ? (riderMap[modal.rider_id] || `Rider #${modal.rider_id}`) : 'Unassigned')],
-              ['Standard',  String(modal.standard_hissa_count || 0)],
-              ['Premium',   String(modal.premium_hissa_count || 0)],
-              ['Goat',      String(modal.goat_hissa_count || 0)],
-              ['Total Hissa', String(modal.hissa_count || 0)],
-            ].map(([label, value]) => (
-              <div key={label} style={{ display: 'flex', gap: '8px', marginBottom: '8px', fontSize: '11px' }}>
-                <span style={{ fontWeight: '600', minWidth: '90px', flexShrink: 0, color: '#555' }}>{label}:</span>
-                <span style={{ color: value === 'Unassigned' ? '#bbb' : '#333', fontStyle: value === 'Unassigned' ? 'italic' : 'normal' }}>{value}</span>
+            {/* Modal header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: '#222' }}>
+                  Challan #{modalData?.challan?.challan_id || modal.challan_id || '—'}
+                </h2>
+                <div style={{ marginTop: '6px' }}>
+                  <StatusBadge status={modalData?.challan?.derived_status || modal.derived_status} />
+                </div>
               </div>
-            ))}
+              <button
+                type="button"
+                onClick={() => { setModal(null); setModalData(null); }}
+                style={{ background: 'none', border: 'none', fontSize: '24px', color: '#888', cursor: 'pointer', padding: '0', width: '32px', height: '32px', lineHeight: 1, borderRadius: '6px' }}
+              >×</button>
+            </div>
 
-            {/* Orders sub-table from detail fetch */}
+            {/* ── 5×2 info grid ── */}
+            <div
+              className="modal-info-grid"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '0',
+                border: '1px solid #E8E8E8',
+                borderRadius: '10px',
+                overflow: 'hidden',
+                marginBottom: '20px',
+                fontSize: '11px',
+              }}
+            >
+              {[
+                ['Address',      modal.address || '—'],
+                ['Booking Name', (modal.booking_names || []).join(', ') || '—'],
+                ['Area',         modal.area || '—'],
+                ['Day',          modal.day || '—'],
+                ['Slot',         (modal.slots || []).join(', ') || modal.slot || '—'],
+                ['Rider',        modalRiderLabel(modal)],
+                ['Standard',     String(modal.standard_hissa_count || 0)],
+                ['Premium',      String(modal.premium_hissa_count || 0)],
+                ['Goat',         String(modal.goat_hissa_count || 0)],
+                ['Total Hissa',  String(modal.hissa_count || 0)],
+              ].map(([label, value], i) => {
+                const isUnassigned = value === 'Unassigned';
+                const isEven = i % 2 === 0;
+                return (
+                  <div
+                    key={label}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '6px',
+                      padding: '10px 14px',
+                      background: Math.floor(i / 2) % 2 === 0 ? '#FAFAFA' : '#FFF',
+                      borderRight: isEven ? '1px solid #EFEFEF' : 'none',
+                      borderBottom: i < 8 ? '1px solid #EFEFEF' : 'none',
+                    }}
+                  >
+                    <span style={{ fontWeight: '600', color: '#555', minWidth: '90px', flexShrink: 0 }}>{label}:</span>
+                    <span style={{ color: isUnassigned ? '#bbb' : '#222', fontStyle: isUnassigned ? 'italic' : 'normal', wordBreak: 'break-word' }}>{value}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ── Orders sub-table ── */}
             {modalLoading ? (
               <div style={{ padding: '20px', textAlign: 'center', color: '#999', fontSize: '11px' }}>Loading order details…</div>
             ) : modalData?.orders?.length > 0 && (
               <>
-                <div style={{ borderTop: '1px solid #f0f0f0', margin: '14px 0 10px' }} />
                 <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '600', color: '#333' }}>Orders on this challan</p>
-                <div style={{ maxHeight: '280px', overflow: 'auto', border: '1px solid #F0F0F0', borderRadius: '8px' }}>
+                <div style={{ maxHeight: '300px', overflow: 'auto', border: '1px solid #F0F0F0', borderRadius: '8px' }}>
                   <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse' }}>
                     <thead style={{ position: 'sticky', top: 0 }}>
                       <tr style={{ background: '#FAFAFA' }}>
-                        {['Order', 'Contact', 'Alt Contact', 'Type', 'Cow #', 'Hissa #', 'Slot', 'Description', 'Status'].map((h) => (
-                          <th key={h} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#555', borderBottom: '1px solid #E0E0E0', whiteSpace: 'nowrap' }}>{h}</th>
+                        {['Order', 'Shareholder', 'Contact', 'Alt Contact', 'Type', 'Cow #', 'Hissa #', 'Slot', 'Description', 'Status'].map((h) => (
+                          <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: '600', color: '#555', borderBottom: '1px solid #E0E0E0', whiteSpace: 'nowrap' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {modalData.orders.map((o, i) => (
                         <tr key={o.order_id} style={{ borderBottom: '1px solid #F0F0F0', background: i % 2 === 0 ? '#fff' : '#FAFAFA' }}>
-                          <td style={{ padding: '8px', color: '#777' }}>#{o.order_id}</td>
-                          <td style={{ padding: '8px', color: '#555' }}>{o.contact || '—'}</td>
-                          <td style={{ padding: '8px', color: '#555' }}>{o.alt_contact || '—'}</td>
-                          <td style={{ padding: '8px', color: '#555', whiteSpace: 'nowrap' }}>{o.order_type || '—'}</td>
-                          <td style={{ padding: '8px', color: '#555' }}>{o.cow_number ? `Cow ${o.cow_number}` : '—'}</td>
-                          <td style={{ padding: '8px', color: '#555' }}>{o.hissa_number ? `Hissa ${o.hissa_number}` : '—'}</td>
-                          <td style={{ padding: '8px', color: '#555', whiteSpace: 'nowrap' }}>{o.slot || '—'}</td>
-                          <td style={{ padding: '8px', color: '#555', maxWidth: '100px' }}>
+                          <td style={{ padding: '8px 10px', color: '#777' }}>#{o.order_id}</td>
+                          <td style={{ padding: '8px 10px', color: '#333', fontWeight: '500' }}>{o.shareholder_name || '—'}</td>
+                          <td style={{ padding: '8px 10px', color: '#555' }}>{o.contact || '—'}</td>
+                          <td style={{ padding: '8px 10px', color: '#555' }}>{o.alt_contact || '—'}</td>
+                          <td style={{ padding: '8px 10px', color: '#555', whiteSpace: 'nowrap' }}>{o.order_type || '—'}</td>
+                          <td style={{ padding: '8px 10px', color: '#555' }}>{o.cow_number ? `Cow ${o.cow_number}` : '—'}</td>
+                          <td style={{ padding: '8px 10px', color: '#555' }}>{o.hissa_number ? `Hissa ${o.hissa_number}` : '—'}</td>
+                          <td style={{ padding: '8px 10px', color: '#555', whiteSpace: 'nowrap' }}>{o.slot || '—'}</td>
+                          <td style={{ padding: '8px 10px', color: '#555', maxWidth: '110px' }}>
                             <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.description || ''}>{o.description || '—'}</div>
                           </td>
-                          <td style={{ padding: '8px' }}><StatusBadge status={o.delivery_status} /></td>
+                          <td style={{ padding: '8px 10px' }}><StatusBadge status={o.delivery_status} /></td>
                         </tr>
                       ))}
                     </tbody>
@@ -421,8 +547,11 @@ export default function OperationsCustomerSupport() {
             )}
 
             <div style={{ marginTop: '20px', textAlign: 'right' }}>
-              <button type="button" onClick={() => { setModal(null); setModalData(null); }}
-                style={{ padding: '9px 20px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
+              <button
+                type="button"
+                onClick={() => { setModal(null); setModalData(null); }}
+                style={{ padding: '9px 20px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+              >
                 Close
               </button>
             </div>
