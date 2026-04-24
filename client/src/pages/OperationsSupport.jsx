@@ -16,91 +16,77 @@ function StatusBadge({ status }) {
   const st = status || 'Pending';
   const { bg, fg } = STATUS_STYLES[st] || STATUS_STYLES.Pending;
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center',
-      padding: '3px 9px', borderRadius: '999px',
-      fontSize: '10px', fontWeight: '600',
-      background: bg, color: fg, whiteSpace: 'nowrap',
-    }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: '600', background: bg, color: fg, whiteSpace: 'nowrap' }}>
       {st}
     </span>
   );
 }
 
-const inputStyle = {
-  width: '100%', boxSizing: 'border-box',
-  padding: '6px 10px', borderRadius: '6px',
-  border: '1px solid #e0e0e0', fontSize: '11px', background: '#fff',
-};
-
+const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px', background: '#fff' };
 const DAY_OPTIONS = ['Day 1', 'Day 2', 'Day 3'];
-const EXCLUDED_ORDER_TYPES = new Set(['fancy cow', 'cow', 'goat']);
 const PAGE_SIZE = 50;
 
 export default function OperationsCustomerSupport() {
   const { authFetch } = useAuth();
 
-  const [allOrders, setAllOrders] = useState([]);
-  const [riders, setRiders]       = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [err, setErr]             = useState('');
+  const [groups,        setGroups]        = useState([]);
+  const [riders,        setRiders]        = useState([]);
+  const [batches,       setBatches]       = useState([]);
+  const [selectedBatch, setSelectedBatch] = useState(null);
+  const [loading,       setLoading]       = useState(true);
+  const [err,           setErr]           = useState('');
 
-  // filters
   const [search,       setSearch]       = useState('');
   const [dayFilter,    setDayFilter]    = useState('Day 1');
   const [statusFilter, setStatusFilter] = useState('');
   const [riderFilter,  setRiderFilter]  = useState('');
   const [areaFilter,   setAreaFilter]   = useState('');
-  const [typeFilter,   setTypeFilter]   = useState('');
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
 
-  // modal
-  const [modal, setModal] = useState(null);
+  const [modal,      setModal]      = useState(null);
+  const [modalData,  setModalData]  = useState(null);
+  const [modalLoading, setModalLoading] = useState(false);
+
+  const loadBatches = useCallback(async () => {
+    try {
+      const res = await authFetch(`${API_BASE}/operations/batches`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setBatches(data.batches || []);
+      if (data.batches?.length && selectedBatch === null) setSelectedBatch(data.batches[0].batch_id);
+    } catch { /* silent */ }
+  }, [authFetch, selectedBatch]);
 
   const load = useCallback(async () => {
+    if (selectedBatch === null) return;
     setErr(''); setLoading(true);
     try {
       const qs = new URLSearchParams();
+      qs.set('batch_id', selectedBatch);
       if (dayFilter) qs.set('day', dayFilter);
 
-      const [ordRes, ridRes] = await Promise.all([
-        authFetch(`${API_BASE}/operations/customer-support/orders${qs.toString() ? `?${qs}` : ''}`),
+      const [gRes, ridRes] = await Promise.all([
+        authFetch(`${API_BASE}/operations/deliveries/groups?${qs}`),
         authFetch(`${API_BASE}/operations/riders`),
       ]);
 
-      const ordData = await ordRes.json().catch(() => ({}));
+      const gData = await gRes.json().catch(() => ({}));
       const ridData = await ridRes.json().catch(() => ([]));
 
-      if (!ordRes.ok) throw new Error(ordData.message || 'Failed to load orders');
+      if (!gRes.ok) throw new Error(gData.message || 'Failed to load groups');
 
-      setAllOrders(ordData.orders || []);
+      setGroups(gData.groups || []);
       setRiders(Array.isArray(ridData) ? ridData : (ridData.riders || []));
     } catch (e) {
       setErr(e.message || 'Load failed');
     } finally {
       setLoading(false);
     }
-  }, [authFetch, dayFilter]);
+  }, [authFetch, selectedBatch, dayFilter]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const resetFilters = () => {
-    setSearch(''); setDayFilter('Day 1'); setStatusFilter('');
-    setRiderFilter(''); setAreaFilter(''); setTypeFilter('');
-  };
-
-  const areas = useMemo(
-    () => [...new Set(allOrders.map((o) => o.area).filter(Boolean))].sort(),
-    [allOrders]
-  );
-
-  const orderTypes = useMemo(
-    () => [...new Set(allOrders.map((o) => String(o.order_type || '').trim()).filter(Boolean))]
-      .filter((t) => !EXCLUDED_ORDER_TYPES.has(t.toLowerCase()))
-      .sort((a, b) => a.localeCompare(b)),
-    [allOrders]
-  );
+  useEffect(() => { loadBatches(); }, []);
+  useEffect(() => { if (selectedBatch !== null) load(); }, [load, selectedBatch]);
 
   const riderMap = useMemo(() => {
     const m = {};
@@ -108,33 +94,49 @@ export default function OperationsCustomerSupport() {
     return m;
   }, [riders]);
 
-  const filteredOrders = useMemo(() => {
-    let list = allOrders;
+  const areas = useMemo(
+    () => [...new Set(groups.map((g) => g.area).filter(Boolean))].sort(),
+    [groups]
+  );
+
+  const filteredGroups = useMemo(() => {
+    let list = groups;
     const q = search.trim().toLowerCase();
     if (q) {
-      list = list.filter((o) => {
+      list = list.filter((g) => {
         const hay = [
-          o.booking_name, o.shareholder_name, o.contact, o.alt_contact,
-          o.address, o.area, o.cow_number && `cow ${o.cow_number}`,
-          o.order_id && String(o.order_id),
+          g.address, g.area,
+          ...(g.booking_names || []),
+          ...(g.shareholder_names || []),
+          ...(g.contacts || []),
+          ...(g.customer_ids || []).map(String),
         ].filter(Boolean).join(' ').toLowerCase();
         return hay.includes(q);
       });
     }
-    if (statusFilter) list = list.filter((o) => (o.delivery_status || 'Pending') === statusFilter);
-    if (riderFilter)  list = list.filter((o) => String(o.rider_id || '') === riderFilter);
-    if (areaFilter)   list = list.filter((o) => o.area === areaFilter);
-    if (typeFilter)   list = list.filter((o) => String(o.order_type || '').trim() === typeFilter);
+    if (statusFilter) list = list.filter((g) => (g.derived_status || 'Pending') === statusFilter);
+    if (riderFilter)  list = list.filter((g) => String(g.rider_id || '') === riderFilter);
+    if (areaFilter)   list = list.filter((g) => g.area === areaFilter);
     return list;
-  }, [allOrders, search, statusFilter, riderFilter, areaFilter, typeFilter]);
+  }, [groups, search, statusFilter, riderFilter, areaFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
-  const pagedOrders = useMemo(
-    () => filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [filteredOrders, page]
-  );
-  useEffect(() => { setPage(1); }, [search, dayFilter, statusFilter, riderFilter, areaFilter, typeFilter]);
+  const totalPages  = Math.max(1, Math.ceil(filteredGroups.length / PAGE_SIZE));
+  const pagedGroups = useMemo(() => filteredGroups.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filteredGroups, page]);
+  useEffect(() => { setPage(1); }, [search, dayFilter, statusFilter, riderFilter, areaFilter, selectedBatch]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+
+  const resetFilters = () => { setSearch(''); setDayFilter('Day 1'); setStatusFilter(''); setRiderFilter(''); setAreaFilter(''); };
+
+  const openModal = async (g) => {
+    if (!g.qr_token) { setModal(g); setModalData(null); return; }
+    setModal(g);
+    setModalLoading(true);
+    try {
+      const res = await authFetch(`${API_BASE}/operations/challans/by-token/${encodeURIComponent(g.qr_token)}`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setModalData(data);
+    } catch { /* silent */ } finally { setModalLoading(false); }
+  };
 
   return (
     <>
@@ -152,15 +154,29 @@ export default function OperationsCustomerSupport() {
       <div className="cs-root" style={{ padding: '19px', fontFamily: "'Poppins','Inter',sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
 
         {/* Header */}
-        <div className="cs-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
+        <div className="cs-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>Customer Support</h2>
             <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#888', fontWeight: '500', lineHeight: 1.45, maxWidth: '760px' }}>
-              Look up any order, check delivery status, and see which rider is assigned. Click a row to view full order details.
+              Look up any challan group, check delivery status, and see which rider is assigned. Click a row to view full details.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <button type="button" onClick={load} style={{ padding: '7px 13px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Refresh</button>
+            {batches.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <label style={{ fontSize: '11px', color: '#666', whiteSpace: 'nowrap' }}>Batch:</label>
+                <select
+                  value={selectedBatch ?? ''}
+                  onChange={(e) => setSelectedBatch(Number(e.target.value))}
+                  style={{ padding: '6px 10px', borderRadius: '7px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '11px', fontWeight: '600', color: '#333', cursor: 'pointer' }}
+                >
+                  {batches.map((b) => (
+                    <option key={b.batch_id} value={b.batch_id}>{b.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
 
@@ -178,15 +194,13 @@ export default function OperationsCustomerSupport() {
         {/* Desktop filters */}
         <div className="cs-filter-desktop" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', alignItems: 'flex-end', minWidth: 0, flexShrink: 0 }}>
           <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Search (name, phone, address, cow no., order ID)</label>
+            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Search (name, phone, address, customer ID)</label>
             <input type="text" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} style={inputStyle} />
           </div>
-
           {[
-            { label: 'Status',     value: statusFilter, set: setStatusFilter, opts: ALL_STATUSES.map((s) => ({ v: s, l: s })) },
-            { label: 'Rider',      value: riderFilter,  set: setRiderFilter,  opts: riders.map((r) => ({ v: String(r.rider_id), l: r.rider_name })) },
-            { label: 'Area',       value: areaFilter,   set: setAreaFilter,   opts: areas.map((a) => ({ v: a, l: a })) },
-            { label: 'Order type', value: typeFilter,   set: setTypeFilter,   opts: orderTypes.map((t) => ({ v: t, l: t })) },
+            { label: 'Status', value: statusFilter, set: setStatusFilter, opts: ALL_STATUSES.map((s) => ({ v: s, l: s })) },
+            { label: 'Rider',  value: riderFilter,  set: setRiderFilter,  opts: riders.map((r) => ({ v: String(r.rider_id), l: r.rider_name })) },
+            { label: 'Area',   value: areaFilter,   set: setAreaFilter,   opts: areas.map((a) => ({ v: a, l: a })) },
           ].map(({ label, value, set, opts }) => (
             <div key={label} style={{ width: 130 }}>
               <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>{label}</label>
@@ -196,7 +210,6 @@ export default function OperationsCustomerSupport() {
               </select>
             </div>
           ))}
-
           <button type="button" onClick={resetFilters} style={{ padding: '6px 13px', height: '29px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Reset</button>
         </div>
 
@@ -212,10 +225,9 @@ export default function OperationsCustomerSupport() {
           {mobileFiltersOpen && (
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {[
-                { label: 'Status',     value: statusFilter, set: setStatusFilter, opts: ALL_STATUSES.map((s) => ({ v: s, l: s })) },
-                { label: 'Rider',      value: riderFilter,  set: setRiderFilter,  opts: riders.map((r) => ({ v: String(r.rider_id), l: r.rider_name })) },
-                { label: 'Area',       value: areaFilter,   set: setAreaFilter,   opts: areas.map((a) => ({ v: a, l: a })) },
-                { label: 'Order type', value: typeFilter,   set: setTypeFilter,   opts: orderTypes.map((t) => ({ v: t, l: t })) },
+                { label: 'Status', value: statusFilter, set: setStatusFilter, opts: ALL_STATUSES.map((s) => ({ v: s, l: s })) },
+                { label: 'Rider',  value: riderFilter,  set: setRiderFilter,  opts: riders.map((r) => ({ v: String(r.rider_id), l: r.rider_name })) },
+                { label: 'Area',   value: areaFilter,   set: setAreaFilter,   opts: areas.map((a) => ({ v: a, l: a })) },
               ].map(({ label, value, set, opts }) => (
                 <div key={label}>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>{label}</label>
@@ -233,83 +245,68 @@ export default function OperationsCustomerSupport() {
           )}
         </div>
 
-        {err && (
-          <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', flexShrink: 0, fontSize: '10px', fontWeight: '600' }}>{err}</div>
-        )}
+        {err && <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', flexShrink: 0, fontSize: '10px', fontWeight: '600' }}>{err}</div>}
 
-        {/* Result count */}
         {!loading && (
           <div style={{ fontSize: '10px', color: '#999', marginBottom: '8px', flexShrink: 0 }}>
-            Showing {filteredOrders.length} of {allOrders.length} order{allOrders.length !== 1 ? 's' : ''}
+            Showing {filteredGroups.length} of {groups.length} group{groups.length !== 1 ? 's' : ''}
           </div>
         )}
 
-        {/* Table */}
+        {/* Table — same columns as Deliveries */}
         <div className="cs-table-wrap" style={{ flex: 1, minHeight: 0, overflow: 'auto', borderRadius: '10px', border: '1px solid #ececec' }}>
           {loading ? (
             <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading…</div>
-          ) : filteredOrders.length === 0 ? (
+          ) : filteredGroups.length === 0 ? (
             <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>
-              {allOrders.length === 0 ? 'No orders found.' : 'No orders match the current filters.'}
+              {groups.length === 0 ? 'No groups found.' : 'No groups match the current filters.'}
             </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                 <tr style={{ background: '#fafafa' }}>
-                  {[
-                    'Order ID', 'Customer', 'Shareholder', 'Phone', 'Alt Phone',
-                    'Address', 'Area', 'Day / Slot', 'Type', 'Cow #', 'Hissa #',
-                    'Standard', 'Premium', 'Goat (Hissa)', 'Rider', 'Status',
-                  ].map((h) => (
+                  {['Status', 'Rider', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa', 'Shareholders'].map((h) => (
                     <th key={h} style={{ textAlign: 'left', padding: '10px 10px', borderBottom: '1px solid #e0e0e0', color: '#555', fontWeight: '600', whiteSpace: 'nowrap', fontSize: '10px' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {pagedOrders.map((o, idx) => {
-                  const type = String(o.order_type || '').trim().toLowerCase();
-                  const isGoat     = type.includes('goat');
-                  const isPremium  = type.includes('premium');
-                  const isStandard = !isGoat && !isPremium;
-
+                {pagedGroups.map((g, idx) => {
+                  const st = g.derived_status || 'Pending';
+                  const names = (g.shareholder_names || []).join(', ') || '—';
                   return (
-                    <tr
-                      key={o.order_id}
+                    <tr key={g.group_key || g.challan_id}
                       style={{ borderBottom: '1px solid #f3f3f3', background: idx % 2 === 0 ? '#fff' : '#FAFAFA', cursor: 'pointer' }}
-                      onClick={() => setModal(o)}
+                      onClick={() => openModal(g)}
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#f5f9ff'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = idx % 2 === 0 ? '#fff' : '#FAFAFA'; }}
                     >
-                      <td style={{ padding: '9px 10px', color: '#777', fontWeight: '500' }}>#{o.order_id}</td>
-                      <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333' }}>{o.booking_name || '—'}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{o.shareholder_name || '—'}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{o.contact || '—'}</td>
+                      <td style={{ padding: '9px 10px' }}><StatusBadge status={st} /></td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>
-                        {o.alt_contact && o.alt_contact !== o.contact
-                          ? o.alt_contact
-                          : <span style={{ color: '#ccc' }}>—</span>}
-                      </td>
-                      <td style={{ padding: '9px 10px', color: '#555', maxWidth: '200px' }}>
-                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.address || '—'}</div>
-                      </td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{o.area || '—'}</td>
-                      <td style={{ padding: '9px 10px', color: '#555', whiteSpace: 'nowrap' }}>
-                        <div>{o.day || '—'}</div>
-                        {o.slot && <div style={{ fontSize: '9px', color: '#aaa' }}>{o.slot}</div>}
-                      </td>
-                      <td style={{ padding: '9px 10px', color: '#555', whiteSpace: 'nowrap' }}>{o.order_type || '—'}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{o.cow_number ? `Cow ${o.cow_number}` : <span style={{ color: '#ccc' }}>—</span>}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{o.hissa_number ? `Hissa ${o.hissa_number}` : <span style={{ color: '#ccc' }}>—</span>}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{isStandard ? 1 : 0}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{isPremium ? 1 : 0}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{isGoat ? 1 : 0}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>
-                        {o.rider_id
-                          ? (riderMap[o.rider_id] || `Rider #${o.rider_id}`)
+                        {g.rider_id
+                          ? (riderMap[g.rider_id] || `Rider #${g.rider_id}`)
                           : <span style={{ color: '#bbb', fontStyle: 'italic' }}>Unassigned</span>}
                       </td>
-                      <td style={{ padding: '9px 10px' }}>
-                        <StatusBadge status={o.delivery_status} />
+                      <td style={{ padding: '9px 10px', color: '#777', fontWeight: '500' }}>{(g.customer_ids || []).join(', ') || '—'}</td>
+                      <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333' }}>{(g.booking_names || []).join(', ') || '—'}</td>
+                      <td style={{ padding: '9px 10px', color: '#555', maxWidth: '200px' }}>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.address || '—'}</div>
+                      </td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}>{(g.contacts || []).join(', ') || '—'}</td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}>
+                        {(g.alt_contacts || []).filter(Boolean).join(', ') || <span style={{ color: '#ccc' }}>—</span>}
+                      </td>
+                      <td style={{ padding: '9px 10px', color: '#555', whiteSpace: 'nowrap' }}>
+                        <div>{g.day || '—'}</div>
+                        {(g.slots || []).length > 0 && <div style={{ fontSize: '9px', color: '#aaa' }}>{g.slots.join(', ')}</div>}
+                      </td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}>{g.area || '—'}</td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}>{g.standard_hissa_count || 0}</td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}>{g.premium_hissa_count || 0}</td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}>{g.goat_hissa_count || 0}</td>
+                      <td style={{ padding: '9px 10px', color: '#555', fontWeight: '600' }}>{g.hissa_count || 0}</td>
+                      <td style={{ padding: '9px 10px', color: '#666', maxWidth: '160px' }} title={names}>
+                        {names.length > 48 ? `${names.slice(0, 48)}…` : names}
                       </td>
                     </tr>
                   );
@@ -320,9 +317,9 @@ export default function OperationsCustomerSupport() {
         </div>
 
         {/* Pagination */}
-        {!loading && filteredOrders.length > 0 && (
+        {!loading && filteredGroups.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', paddingTop: '10px', flexShrink: 0 }}>
-            <span style={{ fontSize: '10px', color: '#999' }}>Showing {pagedOrders.length} of {filteredOrders.length} orders</span>
+            <span style={{ fontSize: '10px', color: '#999' }}>Showing {pagedGroups.length} of {filteredGroups.length} groups</span>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
               <span style={{ fontSize: '10px' }}>Page {page}/{totalPages}</span>
@@ -332,57 +329,88 @@ export default function OperationsCustomerSupport() {
         )}
       </div>
 
-      {/* Order detail modal — view only, no editing */}
+      {/* Challan detail modal — view only */}
       {modal && (
         <div
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
-          onClick={() => setModal(null)}
+          onClick={() => { setModal(null); setModalData(null); }}
           role="presentation"
         >
           <div
-            style={{ background: '#FFFFFF', borderRadius: '18px', border: '1.5px solid #F0F0F0', padding: '20px', maxWidth: '480px', width: '100%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.12)' }}
+            style={{ background: '#FFFFFF', borderRadius: '18px', border: '1.5px solid #F0F0F0', padding: '20px', maxWidth: '620px', width: '100%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.12)' }}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
-            aria-label={`Order #${modal.order_id} details`}
+            aria-label={`Challan #${modalData?.challan?.challan_id || modal.challan_id}`}
           >
-            {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#333' }}>Order #{modal.order_id}</h2>
-              <button type="button" onClick={() => setModal(null)} style={{ background: 'none', border: 'none', fontSize: '24px', color: '#888', cursor: 'pointer', padding: '0', width: '30px', height: '30px', lineHeight: 1 }}>×</button>
+              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#333' }}>
+                Challan #{modalData?.challan?.challan_id || modal.challan_id}
+              </h2>
+              <button type="button" onClick={() => { setModal(null); setModalData(null); }} style={{ background: 'none', border: 'none', fontSize: '24px', color: '#888', cursor: 'pointer', padding: '0', width: '30px', height: '30px', lineHeight: 1 }}>×</button>
             </div>
 
-            {/* Status badge */}
             <div style={{ marginBottom: '16px' }}>
-              <StatusBadge status={modal.delivery_status} />
+              <StatusBadge status={modalData?.challan?.derived_status || modal.derived_status} />
             </div>
 
-            {/* Info rows */}
             {[
-              ['Customer',    modal.booking_name || '—'],
-              ['Shareholder', modal.shareholder_name || '—'],
-              ['Phone',       modal.contact || '—'],
-              ['Alt Phone',   modal.alt_contact && modal.alt_contact !== modal.contact ? modal.alt_contact : null],
-              ['Address',     modal.address || '—'],
-              ['Area',        modal.area || '—'],
-              ['Day',         modal.day || '—'],
-              ['Slot',        modal.slot || null],
-              ['Order Type',  modal.order_type || '—'],
-              ['Cow #',       modal.cow_number ? `Cow ${modal.cow_number}` : null],
-              ['Hissa #',     modal.hissa_number ? `Hissa ${modal.hissa_number}` : null],
-              ['Rider',       modal.rider_id ? (riderMap[modal.rider_id] || `Rider #${modal.rider_id}`) : 'Unassigned'],
-            ]
-              .filter(([, v]) => v !== null)
-              .map(([label, value]) => (
-                <div key={label} style={{ display: 'flex', gap: '8px', marginBottom: '8px', fontSize: '11px' }}>
-                  <span style={{ fontWeight: '600', minWidth: '90px', flexShrink: 0, color: '#555' }}>{label}:</span>
-                  <span style={{ color: value === 'Unassigned' ? '#bbb' : '#333', fontStyle: value === 'Unassigned' ? 'italic' : 'normal' }}>{value}</span>
-                </div>
-              ))
-            }
+              ['Address',   modal.address || '—'],
+              ['Area',      modal.area || '—'],
+              ['Day',       modal.day || '—'],
+              ['Slot',      (modal.slots || []).join(', ') || modal.slot || '—'],
+              ['Rider',     modal.rider_id ? (riderMap[modal.rider_id] || `Rider #${modal.rider_id}`) : 'Unassigned'],
+              ['Standard',  String(modal.standard_hissa_count || 0)],
+              ['Premium',   String(modal.premium_hissa_count || 0)],
+              ['Goat',      String(modal.goat_hissa_count || 0)],
+              ['Total Hissa', String(modal.hissa_count || 0)],
+            ].map(([label, value]) => (
+              <div key={label} style={{ display: 'flex', gap: '8px', marginBottom: '8px', fontSize: '11px' }}>
+                <span style={{ fontWeight: '600', minWidth: '90px', flexShrink: 0, color: '#555' }}>{label}:</span>
+                <span style={{ color: value === 'Unassigned' ? '#bbb' : '#333', fontStyle: value === 'Unassigned' ? 'italic' : 'normal' }}>{value}</span>
+              </div>
+            ))}
 
-            {/* Close */}
+            {/* Orders sub-table from detail fetch */}
+            {modalLoading ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: '#999', fontSize: '11px' }}>Loading order details…</div>
+            ) : modalData?.orders?.length > 0 && (
+              <>
+                <div style={{ borderTop: '1px solid #f0f0f0', margin: '14px 0 10px' }} />
+                <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '600', color: '#333' }}>Orders on this challan</p>
+                <div style={{ maxHeight: '280px', overflow: 'auto', border: '1px solid #F0F0F0', borderRadius: '8px' }}>
+                  <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse' }}>
+                    <thead style={{ position: 'sticky', top: 0 }}>
+                      <tr style={{ background: '#FAFAFA' }}>
+                        {['Order', 'Contact', 'Alt Contact', 'Shareholder', 'Type', 'Cow #', 'Hissa #', 'Slot', 'Description', 'Status'].map((h) => (
+                          <th key={h} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#555', borderBottom: '1px solid #E0E0E0', whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modalData.orders.map((o, i) => (
+                        <tr key={o.order_id} style={{ borderBottom: '1px solid #F0F0F0', background: i % 2 === 0 ? '#fff' : '#FAFAFA' }}>
+                          <td style={{ padding: '8px', color: '#777' }}>#{o.order_id}</td>
+                          <td style={{ padding: '8px', color: '#555' }}>{o.contact || '—'}</td>
+                          <td style={{ padding: '8px', color: '#555' }}>{o.alt_contact || '—'}</td>
+                          <td style={{ padding: '8px', color: '#333', fontWeight: '500' }}>{o.shareholder_name || '—'}</td>
+                          <td style={{ padding: '8px', color: '#555', whiteSpace: 'nowrap' }}>{o.order_type || '—'}</td>
+                          <td style={{ padding: '8px', color: '#555' }}>{o.cow_number ? `Cow ${o.cow_number}` : '—'}</td>
+                          <td style={{ padding: '8px', color: '#555' }}>{o.hissa_number ? `Hissa ${o.hissa_number}` : '—'}</td>
+                          <td style={{ padding: '8px', color: '#555', whiteSpace: 'nowrap' }}>{o.slot || '—'}</td>
+                          <td style={{ padding: '8px', color: '#555', maxWidth: '100px' }}>
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.description || ''}>{o.description || '—'}</div>
+                          </td>
+                          <td style={{ padding: '8px' }}><StatusBadge status={o.delivery_status} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
             <div style={{ marginTop: '20px', textAlign: 'right' }}>
-              <button type="button" onClick={() => setModal(null)}
+              <button type="button" onClick={() => { setModal(null); setModalData(null); }}
                 style={{ padding: '9px 20px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
                 Close
               </button>
