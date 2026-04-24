@@ -146,7 +146,7 @@ export default function OperationsDeliveries() {
   const [saving,        setSaving]        = useState(false);
 
   const [search,          setSearch]          = useState('');
-  const [filterDay,       setFilterDay]       = useState('');
+  const [filterDay, setFilterDay] = useState('Day 1');
   const [filterSlots,     setFilterSlots]     = useState([]);
   const [filterStatus,    setFilterStatus]    = useState('');
   const [filterRider,     setFilterRider]     = useState('');
