@@ -221,15 +221,23 @@ doc.text('Total Hissa:', rightX, boxY + 86);
 
 doc.setFont('helvetica', 'bold');
 doc.setFontSize(10);
-doc.setTextColor(255, 87, 34);
-doc.text(String(totalHissa), rightX + 72, boxY + 86);
+doc.setFont('helvetica', 'bold');
+doc.setFontSize(9.5);
+doc.setTextColor(25, 25, 25);
 
+const label = 'Total Hissa:';
+doc.text(label, rightX, boxY + 86);
+
+const labelW = doc.getTextWidth(label + ' ');
+
+// SINGLE clean line — no color, no weird spacing
 doc.setFont('helvetica', 'normal');
-doc.setFontSize(8.5);
-doc.setTextColor(75, 75, 75);
+doc.setFontSize(9.5);
+doc.setTextColor(35, 35, 35);
+
 doc.text(
-  `(${premium} Premium, ${standard} Standard, ${goat} Goat)`,
-  rightX + 95,
+  `${totalHissa} (${premium} Premium, ${standard} Standard, ${goat} Goat)`,
+  rightX + labelW + 4,
   boxY + 86
 );
 
