@@ -63,9 +63,55 @@ function uniqueRiderIdsFromOrders(orders = []) {
 async function resolveSingleRiderFromOrders(db, orders = []) {
   const riderIds = uniqueRiderIdsFromOrders(orders);
   if (riderIds.length !== 1) return { rider: null, rider_id: null, rider_count: riderIds.length };
-  const [rs] = await db.execute(`SELECT rider_id, rider_name, contact FROM riders WHERE rider_id = ?`, [riderIds[0]]);
+  const [rs] = await db.execute(`SELECT rider_id, rider_name, contact, vehicle, number_plate FROM riders WHERE rider_id = ?`, [riderIds[0]]);
   return { rider: rs[0] || null, rider_id: riderIds[0], rider_count: 1 };
 }
+
+function formatRiderAuditValue(riderId, rider) {
+  if (riderId === null || riderId === undefined || riderId === "") return "—";
+  if (!rider) return String(riderId);
+  return [
+    `ID ${riderId}`,
+    rider.rider_name,
+    rider.contact,
+    rider.vehicle,
+    rider.number_plate,
+  ].filter((v) => v !== null && v !== undefined && String(v).trim() !== "").join(" | ");
+}
+
+async function fetchRiderById(db, riderId) {
+  if (riderId === null || riderId === undefined || riderId === "") return null;
+  const [rows] = await db.execute(
+    `SELECT rider_id, rider_name, contact, vehicle, number_plate FROM riders WHERE rider_id = ?`,
+    [Number(riderId)]
+  );
+  return rows[0] || null;
+}
+
+async function resolveChallanRiderAuditState(db, challanId) {
+  const [rows] = await db.execute(
+    `SELECT DISTINCT o.rider_id, r.rider_name, r.contact, r.vehicle, r.number_plate
+     FROM orders o
+     INNER JOIN challan_orders co ON co.order_id = o.order_id
+     LEFT JOIN riders r ON r.rider_id = o.rider_id
+     WHERE co.challan_id = ? AND o.rider_id IS NOT NULL AND ${nonWaqfOrder('o')}
+     ORDER BY o.rider_id`,
+    [challanId]
+  );
+
+  if (rows.length === 0) return { rider_id: null, rider_label: "—" };
+
+  if (rows.length === 1) {
+    const r = rows[0];
+    return { rider_id: Number(r.rider_id), rider_label: formatRiderAuditValue(r.rider_id, r) };
+  }
+
+  return {
+    rider_id: rows.map((r) => Number(r.rider_id)).join(", "),
+    rider_label: rows.map((r) => formatRiderAuditValue(r.rider_id, r)).join("; "),
+  };
+}
+
 
 async function fetchRoleOpsFlags(db, userId) {
   const [rows] = await db.execute(
@@ -133,7 +179,7 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       );
       if (!flags) return;
       const [riders] = await db.execute(
-        `SELECT rider_id, rider_name, contact, vehicle, availability, status FROM riders WHERE status = 'active' OR status IS NULL ORDER BY rider_name`
+        `SELECT rider_id, rider_name, contact, vehicle, number_plate, availability, status FROM riders WHERE status = 'active' OR status IS NULL ORDER BY rider_name`
       );
       res.json(riders);
     } catch (error) {
@@ -160,6 +206,25 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
         [rider_name.trim(), contact || null, vehicle || null, cnic || null, number_plate || null, amount]
       );
       log("OPERATIONS", "Rider created", { rider_id: result.insertId });
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "RIDER_CREATE",
+        entity_type: "rider",
+        entity_id: String(result.insertId),
+        new_values: {
+          rider_name: rider_name.trim(),
+          contact: contact || null,
+          vehicle: vehicle || null,
+          cnic: cnic || null,
+          number_plate: number_plate || null,
+          amount_per_delivery: amount,
+          total_paid: 0,
+          availability: "Available",
+          status: "active",
+        },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
       emitOperationsChanged(io, "riders:changed", { action: "created", rider_id: result.insertId });
       res.status(201).json({ rider_id: result.insertId });
     } catch (error) {
@@ -365,11 +430,14 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       const [ex] = await db.execute(`SELECT challan_id FROM challan WHERE challan_id = ?`, [id]);
       if (ex.length === 0) return res.status(404).json({ message: "Challan not found" });
 
+      const oldRiderState = await resolveChallanRiderAuditState(db, id);
+
       const nextRiderId = riderId === null || riderId === "" || riderId === undefined ? null : Number(riderId);
+      let nextRider = null;
       if (nextRiderId !== null) {
         if (!Number.isFinite(nextRiderId) || nextRiderId <= 0) return res.status(400).json({ message: "Invalid rider id" });
-        const [rv] = await db.execute(`SELECT rider_id FROM riders WHERE rider_id = ?`, [nextRiderId]);
-        if (rv.length === 0) return res.status(400).json({ message: "Rider not found" });
+        nextRider = await fetchRiderById(db, nextRiderId);
+        if (!nextRider) return res.status(400).json({ message: "Rider not found" });
       }
 
       await db.execute(
@@ -390,13 +458,23 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
         );
       }
 
+      const newRiderLabel = formatRiderAuditValue(nextRiderId, nextRider);
+
       await writeAuditLog(db, {
         user_id: req.userId, action: "CHALLAN_RIDER_UPDATE",
         entity_type: "challan", entity_id: String(id),
-        new_values: { rider_id: nextRiderId },
+        old_values: { rider_id: oldRiderState.rider_label },
+        new_values: { rider_id: newRiderLabel },
         ip_address: req.ip, user_agent: req.get("user-agent")
       });
-      emitOperationsChanged(io, "challans:changed", { action: "rider", challan_id: Number(id), rider_id: nextRiderId });
+      emitOperationsChanged(io, "challans:changed", {
+        action: "rider",
+        challan_id: Number(id),
+        old_rider_id: oldRiderState.rider_id,
+        old_rider_label: oldRiderState.rider_label,
+        rider_id: nextRiderId,
+        rider_label: newRiderLabel,
+      });
       res.json({ message: "Rider updated" });
     } catch (error) {
       logError("OPERATIONS", "Challan rider error", error);
@@ -859,7 +937,9 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       const riderId = Number(req.params.id);
       if (!Number.isFinite(riderId) || riderId <= 0) return res.status(400).json({ message: "Invalid rider id" });
       const [existing] = await db.execute(
-        `SELECT rider_id FROM riders WHERE rider_id = ? AND (status = 'active' OR status IS NULL)`, [riderId]
+        `SELECT rider_id, rider_name, contact, vehicle, cnic, number_plate, availability, amount_per_delivery, total_paid, status
+         FROM riders WHERE rider_id = ? AND (status = 'active' OR status IS NULL)`,
+        [riderId]
       );
       if (existing.length === 0) return res.status(404).json({ message: "Rider not found" });
       const updates = [], values = [];
@@ -887,13 +967,78 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       values.push(riderId);
       await db.execute(`UPDATE riders SET ${updates.join(", ")} WHERE rider_id = ?`, values);
       await writeAuditLog(db, {
-        user_id: req.userId, action: "RIDER_UPDATE", entity_type: "rider", entity_id: String(riderId),
-        new_values: req.body || {}, ip_address: req.ip, user_agent: req.get("user-agent")
+        user_id: req.userId,
+        action: "RIDER_UPDATE",
+        entity_type: "rider",
+        entity_id: String(riderId),
+        old_values: existing[0],
+        new_values: req.body || {},
+        ip_address: req.ip,
+        user_agent: req.get("user-agent")
       });
       emitOperationsChanged(io, "riders:changed", { action: "updated", rider_id: riderId });
       res.json({ message: "Rider updated" });
     } catch (error) {
       logError("OPERATIONS", "Rider update error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+
+  app.delete("/api/operations/riders/:id", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_rider_management);
+      if (!flags) return;
+
+      const riderId = Number(req.params.id);
+      if (!Number.isFinite(riderId) || riderId <= 0) return res.status(400).json({ message: "Invalid rider id" });
+
+      const [existing] = await db.execute(
+        `SELECT rider_id, rider_name, contact, vehicle, cnic, number_plate, availability, amount_per_delivery, total_paid, status
+         FROM riders WHERE rider_id = ? AND (status = 'active' OR status IS NULL)`,
+        [riderId]
+      );
+      if (existing.length === 0) return res.status(404).json({ message: "Rider not found" });
+
+      const conn = await db.getConnection();
+      try {
+        await conn.beginTransaction();
+
+        await conn.execute(
+          `UPDATE riders SET status = 'deleted', availability = 'Suspended' WHERE rider_id = ?`,
+          [riderId]
+        );
+
+        await conn.execute(
+          `UPDATE orders
+           SET rider_id = NULL, delivery_status = 'Pending'
+           WHERE rider_id = ? AND delivery_status IN ('Pending', 'Rider Assigned')`,
+          [riderId]
+        );
+
+        await conn.commit();
+      } catch (e) {
+        await conn.rollback();
+        throw e;
+      } finally {
+        conn.release();
+      }
+
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "RIDER_DELETE",
+        entity_type: "rider",
+        entity_id: String(riderId),
+        old_values: existing[0],
+        new_values: { status: "deleted", availability: "Suspended" },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+
+      emitOperationsChanged(io, "riders:changed", { action: "deleted", rider_id: riderId });
+      res.json({ message: "Rider deleted" });
+    } catch (error) {
+      logError("OPERATIONS", "Rider delete error", error);
       res.status(500).json({ message: "Server error" });
     }
   });

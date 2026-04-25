@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE } from '../config/api';
 import { getOperationsSocket } from '../utils/operationsSocket';
 import { useAuth } from '../context/AuthContext';
+import SharedChallanModal from '../components/SharedChallanModal';
 
 const ALL_STATUSES = ['Pending', 'Rider Assigned', 'Dispatched', 'Delivered', 'Returned to Farm'];
 
@@ -22,6 +23,58 @@ function StatusBadge({ status }) {
     </span>
   );
 }
+
+
+function getRiderDetails(rider, fallbackName = 'Unassigned') {
+  return {
+    name: rider?.rider_name || fallbackName,
+    vehicle: rider?.vehicle || '—',
+    number: rider?.number_plate || rider?.contact || '—',
+  };
+}
+
+function getUniqueValues(values) {
+  return [...new Set((values || []).map((v) => String(v || '').trim()).filter(Boolean))];
+}
+
+function getUniqueDescriptionValues(values) {
+  return [...new Set((values || []).map((v) => String(v || '').trim()).filter(Boolean))];
+}
+
+function getDescriptionText(source) {
+  if (!source) return '';
+  const direct = getUniqueDescriptionValues([
+    source.description,
+    source.descriptions,
+    source.description_csv,
+    source.descriptions_csv,
+    source.special_request,
+    source.specialRequest,
+    source.request,
+    source.remarks,
+    source.notes,
+    source.note,
+  ]);
+  const orderDescriptions = getUniqueDescriptionValues((source.orders || []).map((o) => o.description));
+  return [...direct, ...orderDescriptions].filter(Boolean).join(' | ');
+}
+
+function hasDescription(source) {
+  return getDescriptionText(source).length > 0;
+}
+
+function RedDot() {
+  return <span title="Special request" style={{ display:'inline-block', width:'8px', height:'8px', borderRadius:'999px', background:'#D32F2F', flexShrink:0 }} />;
+}
+
+function SpecialRequestPatch() {
+  return (
+    <span style={{ display:'inline-flex', alignItems:'center', gap:'6px', padding:'4px 9px', borderRadius:'999px', background:'#FFEBEE', color:'#C62828', border:'1px solid #FFCDD2', fontSize:'10px', fontWeight:'700', whiteSpace:'nowrap', textTransform:'uppercase', letterSpacing:'0.2px' }}>
+      <RedDot /> Special Request
+    </span>
+  );
+}
+
 
 const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px', background: '#fff' };
 const DAY_OPTIONS = ['Day 1', 'Day 2', 'Day 3'];
@@ -108,6 +161,29 @@ export default function OperationsCustomerSupport() {
     return m;
   }, [riders]);
 
+  const riderDetailMap = useMemo(() => {
+    const m = {};
+    riders.forEach((r) => { m[r.rider_id] = r; });
+    return m;
+  }, [riders]);
+
+  const modalCustomerIds = useMemo(() => {
+    const fromOrders = getUniqueValues((modalData?.orders || []).map((o) => o.customer_id));
+    const fromGroup = getUniqueValues(modal?.customer_ids || []);
+    return fromOrders.length ? fromOrders : fromGroup;
+  }, [modal, modalData]);
+
+  const modalRiderDetails = useMemo(() => {
+    if (!modal) return getRiderDetails(null);
+    const rider = modalData?.rider || riderDetailMap[modal.rider_id];
+    return getRiderDetails(
+      rider,
+      modal.rider_count > 1 ? 'Multiple Riders' : 'Unassigned'
+    );
+  }, [modal, modalData, riderDetailMap]);
+
+  const modalDescription = useMemo(() => getDescriptionText({ ...(modalData?.challan || {}), ...(modal || {}), orders: modalData?.orders || [] }), [modal, modalData]);
+
   const areas = useMemo(
     () => [...new Set(groups.map((g) => g.area).filter(Boolean))].sort(),
     [groups]
@@ -152,12 +228,6 @@ export default function OperationsCustomerSupport() {
     } catch { /* silent */ } finally { setModalLoading(false); }
   };
 
-  /* ── helpers for modal info grid ── */
-  const modalRiderLabel = (g) => {
-    if (!g) return '—';
-    if (g.rider_count > 1) return 'Multiple Riders';
-    return g.rider_id ? (riderMap[g.rider_id] || `Rider #${g.rider_id}`) : 'Unassigned';
-  };
 
   return (
     <>
@@ -284,10 +354,26 @@ export default function OperationsCustomerSupport() {
               {groups.length === 0 ? 'No groups found.' : 'No groups match the current filters.'}
             </div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+            <table className="ops-data-table" style={{ width: '100%', minWidth: '2850px', borderCollapse: 'collapse', fontSize: '11px', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width:'160px' }} />
+                <col style={{ width:'300px' }} />
+                <col style={{ width:'360px' }} />
+                <col style={{ width:'140px' }} />
+                <col style={{ width:'280px' }} />
+                <col style={{ width:'360px' }} />
+                <col style={{ width:'150px' }} />
+                <col style={{ width:'150px' }} />
+                <col style={{ width:'130px' }} />
+                <col style={{ width:'220px' }} />
+                <col style={{ width:'95px' }} />
+                <col style={{ width:'95px' }} />
+                <col style={{ width:'110px' }} />
+                <col style={{ width:'110px' }} />
+              </colgroup>
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                 <tr style={{ background: '#fafafa' }}>
-                  {['Status', 'Rider', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa'].map((h) => (
+                  {['Status', 'Rider', 'Description', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa'].map((h) => (
                     <th key={h} style={{ textAlign: 'left', padding: '10px 10px', borderBottom: '1px solid #e0e0e0', color: '#555', fontWeight: '600', whiteSpace: 'nowrap', fontSize: '10px' }}>{h}</th>
                   ))}
                 </tr>
@@ -295,12 +381,14 @@ export default function OperationsCustomerSupport() {
               <tbody>
                 {pagedGroups.map((g, idx) => {
                   const st = g.derived_status || 'Pending';
+                  const descriptionText = getDescriptionText(g);
+                  const rowHasDescription = Boolean(descriptionText);
                   return (
                     <tr key={g.group_key || g.challan_id}
-                      style={{ borderBottom: '1px solid #f3f3f3', background: idx % 2 === 0 ? '#fff' : '#FAFAFA', cursor: 'pointer' }}
+                      style={{ borderBottom: '1px solid #f3f3f3', background: rowHasDescription ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'), borderLeft: rowHasDescription ? '3px solid #D32F2F' : '3px solid transparent', cursor: 'pointer' }}
                       onClick={() => openModal(g)}
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#f5f9ff'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = idx % 2 === 0 ? '#fff' : '#FAFAFA'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = rowHasDescription ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'); }}
                     >
                       <td style={{ padding: '9px 10px' }}><StatusBadge status={st} /></td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>
@@ -310,10 +398,15 @@ export default function OperationsCustomerSupport() {
                             ? (riderMap[g.rider_id] || `Rider #${g.rider_id}`)
                             : <span style={{ color: '#bbb', fontStyle: 'italic' }}>Unassigned</span>)}
                       </td>
+                      <td style={{ padding: '9px 10px', color: '#555', verticalAlign:'top' }}>
+                        {rowHasDescription ? (
+                          <div style={{ whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45, color:'#333', fontWeight:500 }}>{descriptionText}</div>
+                        ) : <span style={{ color: '#ccc' }}>—</span>}
+                      </td>
                       <td style={{ padding: '9px 10px', color: '#777', fontWeight: '500' }}>{(g.customer_ids || []).join(', ') || '—'}</td>
-                      <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333' }}>{(g.booking_names || []).join(', ') || '—'}</td>
-                      <td style={{ padding: '9px 10px', color: '#555', maxWidth: '200px' }}>
-                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.address || '—'}</div>
+                      <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{(g.booking_names || []).join(', ') || '—'}</td>
+                      <td style={{ padding: '9px 10px', color: '#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>
+                        <div>{g.address || '—'}</div>
                       </td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{(g.contacts || []).join(', ') || '—'}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>
@@ -323,7 +416,7 @@ export default function OperationsCustomerSupport() {
                         <div>{g.day || '—'}</div>
                         {(g.slots || []).length > 0 && <div style={{ fontSize: '9px', color: '#aaa' }}>{g.slots.join(', ')}</div>}
                       </td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{g.area || '—'}</td>
+                      <td style={{ padding: '9px 10px', color: '#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{g.area || '—'}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{g.standard_hissa_count || 0}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{g.premium_hissa_count || 0}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{g.goat_hissa_count || 0}</td>
@@ -432,131 +525,30 @@ export default function OperationsCustomerSupport() {
 
       {/* ── Challan detail modal ── */}
       {modal && (
-        <div
-          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
-          onClick={() => { setModal(null); setModalData(null); }}
-          role="presentation"
-        >
-          <div
-            style={{ background: '#FFFFFF', borderRadius: '18px', border: '1.5px solid #F0F0F0', padding: '24px', maxWidth: '700px', width: '100%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.12)' }}
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-label={`Challan #${modalData?.challan?.challan_id || modal.challan_id}`}
-          >
-            {/* Modal header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: '#222' }}>
-                  Challan #{modalData?.challan?.challan_id || modal.challan_id || '—'}
-                </h2>
-                <div style={{ marginTop: '6px' }}>
-                  <StatusBadge status={modalData?.challan?.derived_status || modal.derived_status} />
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setModal(null); setModalData(null); }}
-                style={{ background: 'none', border: 'none', fontSize: '24px', color: '#888', cursor: 'pointer', padding: '0', width: '32px', height: '32px', lineHeight: 1, borderRadius: '6px' }}
-              >×</button>
-            </div>
-
-            {/* ── 5×2 info grid ── */}
-            <div
-              className="modal-info-grid"
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '0',
-                border: '1px solid #E8E8E8',
-                borderRadius: '10px',
-                overflow: 'hidden',
-                marginBottom: '20px',
-                fontSize: '11px',
-              }}
-            >
-              {[
-                ['Address',      modal.address || '—'],
-                ['Booking Name', (modal.booking_names || []).join(', ') || '—'],
-                ['Area',         modal.area || '—'],
-                ['Day',          modal.day || '—'],
-                ['Slot',         (modal.slots || []).join(', ') || modal.slot || '—'],
-                ['Rider',        modalRiderLabel(modal)],
-                ['Standard',     String(modal.standard_hissa_count || 0)],
-                ['Premium',      String(modal.premium_hissa_count || 0)],
-                ['Goat',         String(modal.goat_hissa_count || 0)],
-                ['Total Hissa',  String(modal.hissa_count || 0)],
-              ].map(([label, value], i) => {
-                const isUnassigned = value === 'Unassigned';
-                const isEven = i % 2 === 0;
-                return (
-                  <div
-                    key={label}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '6px',
-                      padding: '10px 14px',
-                      background: Math.floor(i / 2) % 2 === 0 ? '#FAFAFA' : '#FFF',
-                      borderRight: isEven ? '1px solid #EFEFEF' : 'none',
-                      borderBottom: i < 8 ? '1px solid #EFEFEF' : 'none',
-                    }}
-                  >
-                    <span style={{ fontWeight: '600', color: '#555', minWidth: '90px', flexShrink: 0 }}>{label}:</span>
-                    <span style={{ color: isUnassigned ? '#bbb' : '#222', fontStyle: isUnassigned ? 'italic' : 'normal', wordBreak: 'break-word' }}>{value}</span>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* ── Orders sub-table ── */}
-            {modalLoading ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: '#999', fontSize: '11px' }}>Loading order details…</div>
-            ) : modalData?.orders?.length > 0 && (
-              <>
-                <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '600', color: '#333' }}>Orders on this challan</p>
-                <div style={{ maxHeight: '300px', overflow: 'auto', border: '1px solid #F0F0F0', borderRadius: '8px' }}>
-                  <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse' }}>
-                    <thead style={{ position: 'sticky', top: 0 }}>
-                      <tr style={{ background: '#FAFAFA' }}>
-                        {['Order', 'Shareholder', 'Contact', 'Alt Contact', 'Type', 'Cow #', 'Hissa #', 'Slot', 'Description', 'Status'].map((h) => (
-                          <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: '600', color: '#555', borderBottom: '1px solid #E0E0E0', whiteSpace: 'nowrap' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {modalData.orders.map((o, i) => (
-                        <tr key={o.order_id} style={{ borderBottom: '1px solid #F0F0F0', background: i % 2 === 0 ? '#fff' : '#FAFAFA' }}>
-                          <td style={{ padding: '8px 10px', color: '#777' }}>#{o.order_id}</td>
-                          <td style={{ padding: '8px 10px', color: '#333', fontWeight: '500' }}>{o.shareholder_name || '—'}</td>
-                          <td style={{ padding: '8px 10px', color: '#555' }}>{o.contact || '—'}</td>
-                          <td style={{ padding: '8px 10px', color: '#555' }}>{o.alt_contact || '—'}</td>
-                          <td style={{ padding: '8px 10px', color: '#555', whiteSpace: 'nowrap' }}>{o.order_type || '—'}</td>
-                          <td style={{ padding: '8px 10px', color: '#555' }}>{o.cow_number ? `Cow ${o.cow_number}` : '—'}</td>
-                          <td style={{ padding: '8px 10px', color: '#555' }}>{o.hissa_number ? `Hissa ${o.hissa_number}` : '—'}</td>
-                          <td style={{ padding: '8px 10px', color: '#555', whiteSpace: 'nowrap' }}>{o.slot || '—'}</td>
-                          <td style={{ padding: '8px 10px', color: '#555', maxWidth: '110px' }}>
-                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.description || ''}>{o.description || '—'}</div>
-                          </td>
-                          <td style={{ padding: '8px 10px' }}><StatusBadge status={o.delivery_status} /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-
-            <div style={{ marginTop: '20px', textAlign: 'right' }}>
-              <button
-                type="button"
-                onClick={() => { setModal(null); setModalData(null); }}
-                style={{ padding: '9px 20px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <SharedChallanModal
+          challanId={modalData?.challan?.challan_id || modal.challan_id}
+          customerId={(modal.customer_ids || []).join(', ') || modalData?.challan?.customer_ids_csv || '—'}
+          description={modalDescription}
+          statusBadge={<StatusBadge status={modalData?.challan?.derived_status || modal.derived_status} />}
+          onClose={() => { setModal(null); setModalData(null); }}
+          maxWidth="1240px"
+          infoRows={[
+            ['Address', modal.address || '—'],
+            ['Booking Name', (modal.booking_names || []).join(', ') || '—'],
+            ['Area', modal.area || '—'],
+            ['Day', modal.day || '—'],
+            ['Slot', (modal.slots || []).join(', ') || modal.slot || '—'],
+            ['Rider', modalRiderDetails.name],
+            ['Vehicle', modalRiderDetails.vehicle],
+            ['Rider Number', modalRiderDetails.number],
+            ['Standard', String(modal.standard_hissa_count || 0)],
+            ['Premium', String(modal.premium_hissa_count || 0)],
+            ['Goat', String(modal.goat_hissa_count || 0)],
+            ['Total Hissa', String(modal.hissa_count || 0)],
+          ]}
+          orders={modalData?.orders || []}
+          renderOrderStatus={(o) => <StatusBadge status={o.delivery_status} />}
+        />
       )}
     </>
   );

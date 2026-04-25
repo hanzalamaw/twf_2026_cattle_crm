@@ -76,6 +76,18 @@ export default function OperationsRiders() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editRider, setEditRider] = useState(null);
+  const [editForm, setEditForm] = useState({
+    rider_name: '',
+    contact: '',
+    vehicle: '',
+    cnic: '',
+    number_plate: '',
+    availability: 'Available',
+    amount_per_delivery: '',
+    total_paid: '',
+  });
   const [ordersModal, setOrdersModal] = useState(null);
   const [ordersLoading, setOrdersLoading] = useState(false);
 
@@ -171,6 +183,77 @@ export default function OperationsRiders() {
       await load();
     } catch (e) {
       setErr(e.message || 'Update failed');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const openEditRider = (rider) => {
+    setEditRider(rider);
+    setEditForm({
+      rider_name: rider.rider_name || '',
+      contact: rider.contact || '',
+      vehicle: rider.vehicle || '',
+      cnic: rider.cnic || '',
+      number_plate: rider.number_plate || '',
+      availability: rider.availability || 'Available',
+      amount_per_delivery: rider.amount_per_delivery ?? '',
+      total_paid: rider.total_paid ?? '',
+    });
+    setEditOpen(true);
+  };
+
+  const closeEditRider = () => {
+    setEditOpen(false);
+    setEditRider(null);
+  };
+
+  const submitEditRider = async (e) => {
+    e.preventDefault();
+    if (!editRider?.rider_id) return;
+    setSavingId(editRider.rider_id);
+    setErr('');
+    try {
+      const payload = {
+        rider_name: editForm.rider_name,
+        contact: editForm.contact || null,
+        vehicle: editForm.vehicle || null,
+        cnic: editForm.cnic || null,
+        number_plate: editForm.number_plate || null,
+        availability: editForm.availability || 'Available',
+        amount_per_delivery: editForm.amount_per_delivery === '' ? 0 : Number(editForm.amount_per_delivery),
+        total_paid: editForm.total_paid === '' ? 0 : Number(editForm.total_paid),
+      };
+      const res = await authFetch(`${API_BASE}/operations/riders/${editRider.rider_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Update failed');
+      closeEditRider();
+      await load();
+    } catch (e2) {
+      setErr(e2.message || 'Update failed');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const deleteRider = async () => {
+    if (!editRider?.rider_id) return;
+    const ok = window.confirm(`Delete rider "${editRider.rider_name || 'this rider'}"? This will remove the rider from active operations.`);
+    if (!ok) return;
+    setSavingId(editRider.rider_id);
+    setErr('');
+    try {
+      const res = await authFetch(`${API_BASE}/operations/riders/${editRider.rider_id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Delete failed');
+      closeEditRider();
+      await load();
+    } catch (e2) {
+      setErr(e2.message || 'Delete failed');
     } finally {
       setSavingId(null);
     }
@@ -511,6 +594,8 @@ export default function OperationsRiders() {
               {filteredRiders.map((r) => (
                 <div
                   key={r.rider_id}
+                  onClick={() => openEditRider(r)}
+                  title="Click to edit rider"
                   style={{
                     background: '#fff',
                     border: '1px solid #e8e8e8',
@@ -520,6 +605,7 @@ export default function OperationsRiders() {
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '12px',
+                    cursor: 'pointer',
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
@@ -572,7 +658,7 @@ export default function OperationsRiders() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div onClick={(e) => e.stopPropagation()} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '4px' }}>
                         Change status
@@ -793,6 +879,154 @@ export default function OperationsRiders() {
                 >
                   Save rider
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editOpen && editRider && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1050,
+            padding: '16px',
+          }}
+          onClick={closeEditRider}
+          role="presentation"
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '16px',
+              border: '1px solid #eee',
+              padding: '18px',
+              width: '100%',
+              maxWidth: '620px',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.15)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Edit rider"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', gap: '10px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#333' }}>Edit rider</h3>
+                <p style={{ margin: '5px 0 0', fontSize: '11px', color: '#777' }}>Update rider profile, status, payment rate, or delete rider.</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeEditRider}
+                style={{ background: 'none', border: 'none', fontSize: '22px', color: '#888', cursor: 'pointer', lineHeight: 1 }}
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={submitEditRider}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Rider name</label>
+                  <input type="text" required value={editForm.rider_name} onChange={(e) => setEditForm((p) => ({ ...p, rider_name: e.target.value }))} style={inputStyle} />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Phone</label>
+                  <input type="text" value={editForm.contact} onChange={(e) => setEditForm((p) => ({ ...p, contact: e.target.value }))} style={inputStyle} />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Vehicle</label>
+                  <input type="text" value={editForm.vehicle} onChange={(e) => setEditForm((p) => ({ ...p, vehicle: e.target.value }))} style={inputStyle} />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>CNIC</label>
+                  <input type="text" value={editForm.cnic} onChange={(e) => setEditForm((p) => ({ ...p, cnic: e.target.value }))} style={inputStyle} />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Vehicle number</label>
+                  <input type="text" value={editForm.number_plate} onChange={(e) => setEditForm((p) => ({ ...p, number_plate: e.target.value }))} style={inputStyle} />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Availability</label>
+                  <select value={editForm.availability} onChange={(e) => setEditForm((p) => ({ ...p, availability: e.target.value }))} style={inputStyle}>
+                    {RIDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Amount per delivery</label>
+                  <input type="number" min="0" step="0.01" value={editForm.amount_per_delivery} onChange={(e) => setEditForm((p) => ({ ...p, amount_per_delivery: e.target.value }))} style={inputStyle} />
+                </div>
+
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Total paid</label>
+                  <input type="number" min="0" step="0.01" value={editForm.total_paid} onChange={(e) => setEditForm((p) => ({ ...p, total_paid: e.target.value }))} style={inputStyle} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={deleteRider}
+                  disabled={savingId === editRider.rider_id}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid #ffcdd2',
+                    background: '#fff5f5',
+                    color: '#C62828',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: savingId === editRider.rider_id ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Delete rider
+                </button>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={closeEditRider}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid #e0e0e0',
+                      background: '#fff',
+                      color: '#555',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingId === editRider.rider_id}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: savingId === editRider.rider_id ? '#ffab91' : '#FF5722',
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      cursor: savingId === editRider.rider_id ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Save changes
+                  </button>
+                </div>
               </div>
             </form>
           </div>

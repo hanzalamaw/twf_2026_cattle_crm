@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useAuth } from '../context/AuthContext';
+import SharedChallanModal from '../components/SharedChallanModal';
 import { API_BASE } from '../config/api';
 import { getOperationsSocket } from '../utils/operationsSocket';
 
@@ -25,6 +26,58 @@ function StatusBadge({ status }) {
   );
 }
 
+
+function getRiderDetails(rider, fallbackName = 'Unassigned') {
+  return {
+    name: rider?.rider_name || fallbackName,
+    vehicle: rider?.vehicle || '—',
+    number: rider?.number_plate || rider?.contact || '—',
+  };
+}
+
+
+function getUniqueDescriptionValues(values) {
+  return [...new Set((values || []).map((v) => String(v || '').trim()).filter(Boolean))];
+}
+
+function getDescriptionText(source) {
+  if (!source) return '';
+  const direct = getUniqueDescriptionValues([
+    source.description,
+    source.descriptions,
+    source.description_csv,
+    source.descriptions_csv,
+    source.special_request,
+    source.specialRequest,
+    source.request,
+    source.remarks,
+    source.notes,
+    source.note,
+  ]);
+  const orderDescriptions = getUniqueDescriptionValues((source.orders || []).map((o) => o.description));
+  return [...direct, ...orderDescriptions].filter(Boolean).join(' | ');
+}
+
+function hasDescription(source) {
+  return getDescriptionText(source).length > 0;
+}
+
+function RedDot() {
+  return <span title="Special request" style={{ display:'inline-block', width:'8px', height:'8px', borderRadius:'999px', background:'#D32F2F', flexShrink:0 }} />;
+}
+
+function SpecialRequestPatch() {
+  return (
+    <span style={{ display:'inline-flex', alignItems:'center', gap:'6px', padding:'4px 9px', borderRadius:'999px', background:'#FFEBEE', color:'#C62828', border:'1px solid #FFCDD2', fontSize:'10px', fontWeight:'700', whiteSpace:'nowrap', textTransform:'uppercase', letterSpacing:'0.2px' }}>
+      <RedDot /> Special Request
+    </span>
+  );
+}
+
+function sumOrders(orders, field) {
+  return (orders || []).reduce((total, order) => total + Number(order?.[field] || 0), 0);
+}
+
 function extractChallanToken(text) {
   const t = String(text || '').trim();
   if (!t) return '';
@@ -43,7 +96,7 @@ function SearchableRiderSelect({ value, disabled, onChange, riders, title, menuP
   const [menuStyle, setMenuStyle] = useState(null);
   const containerRef = useRef(null);
   const selected = riders.find((r) => String(r.rider_id) === String(value));
-  const label = selected ? `${selected.rider_name} (${selected.contact || 'N/A'})` : (fallbackLabel || '— Unassigned');
+  const label = selected ? `${selected.rider_name} (${selected.contact || 'N/A'})${selected.vehicle ? ` • ${selected.vehicle}` : ''}${selected.number_plate ? ` • ${selected.number_plate}` : ''}` : (fallbackLabel || '— Unassigned');
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
@@ -301,6 +354,8 @@ export default function OperationsDeliveries() {
   const [scanMatchToken,  setScanMatchToken]  = useState('');
   const [scanOpen,        setScanOpen]        = useState(false);
   const [scanErr,         setScanErr]         = useState('');
+  const [scanStatus,      setScanStatus]      = useState('Starting camera…');
+  const [scanSuccess,     setScanSuccess]     = useState(false);
   const [mobileFiltersOpen,  setMobileFiltersOpen]  = useState(false);
   const [slotDropdownOpen,   setSlotDropdownOpen]   = useState(false);
 
@@ -463,6 +518,35 @@ export default function OperationsDeliveries() {
   useEffect(() => { if (challanParam) openChallanModal(challanParam); }, [challanParam, openChallanModal]);
   const closeModal = () => { setModal(null); const next = new URLSearchParams(searchParams); next.delete('challan'); setSearchParams(next, { replace: true }); };
 
+  const modalCustomerIds = useMemo(() => {
+    if (!modal) return [];
+    const ids = (modal.orders || [])
+      .map((o) => o.customer_id)
+      .filter((v) => v !== null && v !== undefined && String(v).trim() !== '')
+      .map((v) => String(v).trim());
+    return [...new Set(ids)];
+  }, [modal]);
+
+  const modalRiderDetails = useMemo(() => {
+    if (!modal) return getRiderDetails(null);
+    return getRiderDetails(
+      modal.rider,
+      modal.challan?.rider_count > 1 ? 'Multiple Riders' : 'Unassigned'
+    );
+  }, [modal]);
+
+  const modalDescription = useMemo(() => getDescriptionText({ ...(modal?.challan || {}), orders: modal?.orders || [] }), [modal]);
+
+  const modalTotals = useMemo(() => {
+    const c = modal?.challan || {};
+    const orders = modal?.orders || [];
+    const standard = Number(c.total_standard_hissa ?? c.standard_hissa_count ?? sumOrders(orders, 'standard_hissa_count') ?? 0);
+    const premium = Number(c.total_premium_hissa ?? c.premium_hissa_count ?? sumOrders(orders, 'premium_hissa_count') ?? 0);
+    const goat = Number(c.total_goat_hissa ?? c.goat_hissa_count ?? sumOrders(orders, 'goat_hissa_count') ?? 0);
+    const total = Number(c.total_hissa ?? c.hissa_count ?? c.order_count ?? (standard + premium + goat) ?? 0);
+    return { standard, premium, goat, total };
+  }, [modal]);
+
   const stopScanner = useCallback(async () => {
     const inst = scannerRef.current; scannerRef.current = null;
     if (!inst) return;
@@ -473,6 +557,8 @@ export default function OperationsDeliveries() {
   useEffect(() => {
     if (!scanOpen) return undefined;
     setScanErr('');
+    setScanSuccess(false);
+    setScanStatus('Starting camera…');
     const regionId = 'qr-reader-deliveries';
     let cancelled = false;
     (async () => {
@@ -482,24 +568,38 @@ export default function OperationsDeliveries() {
       try {
         const html5 = new Html5Qrcode(regionId);
         scannerRef.current = html5;
+        setScanStatus('Camera ready. Keep the challan QR inside the box.');
         await html5.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 260, height: 260 } },
           (decodedText) => {
             const token = extractChallanToken(decodedText);
-            if (!token) return;
-
-            const found = groupsRef.current.some((g) => g.qr_token === token);
-            if (!found) {
-              setScanErr('No delivery row matches this challan QR.');
+            if (!token) {
+              setScanSuccess(false);
+              setScanStatus('QR detected, but challan token was not found. Try again.');
               return;
             }
 
+            setScanSuccess(true);
+            setScanStatus('Valid challan QR detected. Opening challan…');
             setScanOpen(false);
             setScanMatchToken('');
             stopScanner();
+
+            // Backend is the source of truth. Do not block valid QR codes
+            // just because the current filtered page has not loaded that row.
             openChallanModal(token);
-          }, () => {}
+          },
+          () => {
+            setScanSuccess(false);
+            setScanStatus('Scanning… keep the QR code steady inside the box.');
+          }
         );
-      } catch (e) { if (!cancelled) setScanErr(e.message || 'Could not start camera'); }
+      } catch (e) {
+        if (!cancelled) {
+          setScanErr(e.message || 'Could not start camera');
+          setScanSuccess(false);
+          setScanStatus('Camera could not start. Check camera permission and try again.');
+        }
+      }
     })();
     return () => { cancelled = true; stopScanner(); };
   }, [scanOpen, stopScanner, openChallanModal]);
@@ -742,10 +842,26 @@ export default function OperationsDeliveries() {
           ) : displayGroups.length === 0 ? (
             <div style={{ padding:'40px', textAlign:'center', color:'#666', fontSize:'11px' }}>{groups.length===0 ? 'No challans for this batch.' : 'No rows match the current filters.'}</div>
           ) : (
-            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'11px' }}>
+            <table className="ops-data-table" style={{ width:'100%', minWidth:'2850px', borderCollapse:'collapse', fontSize:'11px', tableLayout:'fixed' }}>
+              <colgroup>
+                <col style={{ width:'160px' }} />
+                <col style={{ width:'300px' }} />
+                <col style={{ width:'360px' }} />
+                <col style={{ width:'140px' }} />
+                <col style={{ width:'280px' }} />
+                <col style={{ width:'360px' }} />
+                <col style={{ width:'150px' }} />
+                <col style={{ width:'150px' }} />
+                <col style={{ width:'130px' }} />
+                <col style={{ width:'220px' }} />
+                <col style={{ width:'95px' }} />
+                <col style={{ width:'95px' }} />
+                <col style={{ width:'110px' }} />
+                <col style={{ width:'110px' }} />
+              </colgroup>
               <thead style={{ position:'sticky', top:0, zIndex:1 }}>
                 <tr style={{ background:'#fafafa' }}>
-                  {['Status', 'Rider', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa'].map((h) => (
+                  {['Status', 'Rider', 'Description', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa'].map((h) => (
                     <th key={h} style={{ textAlign:'left', padding:'10px 10px', borderBottom:'1px solid #e0e0e0', color:'#555', fontWeight:'600', whiteSpace:'nowrap', fontSize:'10px' }}>{h}</th>
                   ))}
                 </tr>
@@ -753,16 +869,18 @@ export default function OperationsDeliveries() {
               <tbody>
                 {pagedGroups.map((g, idx) => {
                   const st = g.derived_status || 'Pending';
+                  const descriptionText = getDescriptionText(g);
+                  const rowHasDescription = Boolean(descriptionText);
 
                   const isScanHit = scanMatchToken && g.qr_token === scanMatchToken;
                   return (
                     <tr
                       key={g.group_key || g.challan_id}
                       id={rowDomId(g)}
-                      style={{ borderBottom:'1px solid #f3f3f3', background: isScanHit ? '#FFF8E1' : (idx%2===0 ? '#fff' : '#FAFAFA'), cursor:'pointer' }}
+                      style={{ borderBottom:'1px solid #f3f3f3', background: isScanHit ? '#FFF8E1' : (rowHasDescription ? '#FFF7F7' : (idx%2===0 ? '#fff' : '#FAFAFA')), borderLeft: rowHasDescription ? '3px solid #D32F2F' : '3px solid transparent', cursor:'pointer' }}
                       onClick={() => g.qr_token && openChallanModal(g.qr_token)}
                       onMouseEnter={(e)=>{ if(!isScanHit) e.currentTarget.style.background='#f5f9ff'; }}
-                      onMouseLeave={(e)=>{ e.currentTarget.style.background = isScanHit ? '#FFF8E1' : (idx%2===0 ? '#fff' : '#FAFAFA'); }}
+                      onMouseLeave={(e)=>{ e.currentTarget.style.background = isScanHit ? '#FFF8E1' : (rowHasDescription ? '#FFF7F7' : (idx%2===0 ? '#fff' : '#FAFAFA')); }}
                     >
                       <td style={{ padding:'9px 10px' }} onClick={(e)=>e.stopPropagation()}>
                         <select value={st} onChange={(e)=>patchGroupStatus(g.challan_id, e.target.value)} style={selectStyle}>
@@ -772,10 +890,15 @@ export default function OperationsDeliveries() {
                       <td style={{ padding:'9px 10px' }} onClick={(e)=>e.stopPropagation()}>
                         <SearchableRiderSelect value={g.rider_id??''} riders={riders} fallbackLabel={g.rider_count > 1 ? 'Multiple Riders' : undefined} onChange={(rid)=>patchGroupRider(g.challan_id, rid)} />
                       </td>
+                      <td style={{ padding:'9px 10px', color:'#555', verticalAlign:'top' }}>
+                        {rowHasDescription ? (
+                          <div style={{ whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45, color:'#333', fontWeight:'500' }}>{descriptionText}</div>
+                        ) : <span style={{ color:'#ccc' }}>—</span>}
+                      </td>
                       <td style={{ padding:'9px 10px', color:'#777', fontWeight:'500' }}>{(g.customer_ids||[]).join(', ')||'—'}</td>
-                      <td style={{ padding:'9px 10px', fontWeight:'500', color:'#333' }}>{(g.booking_names||[]).join(', ')||'—'}</td>
-                      <td style={{ padding:'9px 10px', color:'#555', maxWidth:'200px' }}>
-                        <div style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{g.address||'—'}</div>
+                      <td style={{ padding:'9px 10px', fontWeight:'500', color:'#333', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{(g.booking_names||[]).join(', ')||'—'}</td>
+                      <td style={{ padding:'9px 10px', color:'#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>
+                        <div>{g.address||'—'}</div>
                       </td>
                       <td style={{ padding:'9px 10px', color:'#555' }}>{(g.contacts||[]).join(', ')||'—'}</td>
                       <td style={{ padding:'9px 10px', color:'#555' }}>{(g.alt_contacts||[]).filter(Boolean).join(', ')||<span style={{color:'#ccc'}}>—</span>}</td>
@@ -783,7 +906,7 @@ export default function OperationsDeliveries() {
                         <div>{g.day||'—'}</div>
                         {getGroupSlots(g).length > 0 && <div style={{ fontSize:'9px', color:'#aaa' }}>{getGroupSlots(g).join(', ')}</div>}
                       </td>
-                      <td style={{ padding:'9px 10px', color:'#555' }}>{g.area||'—'}</td>
+                      <td style={{ padding:'9px 10px', color:'#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{g.area||'—'}</td>
                       <td style={{ padding:'9px 10px', color:'#555' }}>{g.standard_hissa_count||0}</td>
                       <td style={{ padding:'9px 10px', color:'#555' }}>{g.premium_hissa_count||0}</td>
                       <td style={{ padding:'9px 10px', color:'#555' }}>{g.goat_hissa_count||0}</td>
@@ -905,6 +1028,7 @@ export default function OperationsDeliveries() {
             </div>
             <p style={{ margin:'0 0 12px', fontSize:'11px', color:'#666', lineHeight:1.5 }}>Point the camera at the challan QR code.</p>
             <div id="qr-reader-deliveries" style={{ borderRadius:'10px', overflow:'hidden', minHeight:'240px', background:'#111' }} />
+            <div style={{ marginTop:'10px', padding:'8px 10px', background: scanSuccess ? '#E8F5E9' : '#FFF8E1', color: scanSuccess ? '#2E7D32' : '#F57C00', borderRadius:'6px', fontSize:'10px', fontWeight:'600' }}>{scanStatus}</div>
             {scanErr && <div style={{ marginTop:'10px', padding:'8px 10px', background:'#FFF5F2', color:'#C62828', borderRadius:'6px', fontSize:'10px', fontWeight:'600' }}>{scanErr}</div>}
           </div>
         </div>
@@ -912,84 +1036,54 @@ export default function OperationsDeliveries() {
 
       {/* Challan detail modal */}
       {modal && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:'16px' }} onClick={closeModal} role="presentation">
-          <div style={{ background:'#FFFFFF', borderRadius:'18px', border:'1.5px solid #F0F0F0', padding:'20px', maxWidth:'620px', width:'100%', maxHeight:'90vh', overflow:'auto', boxShadow:'0 10px 40px rgba(0,0,0,0.12)' }} onClick={(e)=>e.stopPropagation()} role="dialog">
-
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'12px' }}>
-              <h2 style={{ margin:0, fontSize:'16px', fontWeight:'600', color:'#333' }}>Challan #{modal.challan?.challan_id}</h2>
-              <button type="button" onClick={closeModal} style={{ background:'none', border:'none', fontSize:'24px', color:'#888', cursor:'pointer', lineHeight:1, width:'30px', height:'30px' }}>×</button>
-            </div>
-
-            <div style={{ marginBottom:'14px' }}><StatusBadge status={modal.challan?.derived_status} /></div>
-
-            {[['Address', modal.challan?.address||'—'], ['Area', modal.challan?.area||'—'], ['Day', modal.challan?.day||'—'], ['Slot', modal.challan?.slot||'—'], ['Rider', modal.rider?.rider_name||'Unassigned']].map(([label, value]) => (
-              <div key={label} style={{ display:'flex', gap:'8px', marginBottom:'8px', fontSize:'11px' }}>
-                <span style={{ fontWeight:'600', minWidth:'70px', flexShrink:0, color:'#555' }}>{label}:</span>
-                <span style={{ color: value==='Unassigned' ? '#bbb' : '#333', fontStyle: value==='Unassigned' ? 'italic' : 'normal' }}>{value}</span>
-              </div>
-            ))}
-
-            <div style={{ borderTop:'1px solid #f0f0f0', margin:'14px 0' }} />
-
-            <label style={{ display:'block', fontSize:'11px', fontWeight:'600', marginBottom:'4px', color:'#333' }}>Update Status (all orders)</label>
-            <div style={{ width:'100%', marginBottom:'12px' }}>
-              <SearchableStatusSelect
-                value={modal.challan?.derived_status || 'Pending'}
-                disabled={saving}
-                onChange={(val)=>updateModalStatus(val)}
-                menuPlacement="below"
-                fullWidth
-              />
-            </div>
-
-            <label style={{ display:'block', fontSize:'11px', fontWeight:'600', marginBottom:'4px', color:'#333' }}>Assign Rider</label>
-            <div style={{ width:'100%', marginBottom:'14px' }}>
-              <SearchableRiderSelect
-                value={modal.challan?.rider_id??''}
-                disabled={saving}
-                riders={riders}
-                fallbackLabel={modal.challan?.rider_count > 1 ? 'Multiple Riders' : undefined}
-                onChange={(rid)=>updateModalRider(rid)}
-                menuPlacement="below"
-                fullWidth
-              />
-            </div>
-
-            <div style={{ borderTop:'1px solid #f0f0f0', marginBottom:'10px' }} />
-            <p style={{ margin:'0 0 8px', fontSize:'11px', fontWeight:'600', color:'#333' }}>Orders on this challan</p>
-            <div style={{ maxHeight:'260px', overflow:'auto', border:'1px solid #F0F0F0', borderRadius:'8px' }}>
-              <table style={{ width:'100%', fontSize:'10px', borderCollapse:'collapse' }}>
-                <thead style={{ position:'sticky', top:0 }}>
-                  <tr style={{ background:'#FAFAFA' }}>
-                    {['Order', 'Contact', 'Alt Contact', 'Shareholder', 'Type', 'Cow #', 'Hissa #', 'Slot', 'Description', 'Status'].map((h)=>(
-                      <th key={h} style={{ textAlign:'left', padding:'8px', fontWeight:'600', color:'#555', borderBottom:'1px solid #E0E0E0', whiteSpace:'nowrap' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(modal.orders||[]).map((o,i)=>(
-                    <tr key={o.order_id} style={{ borderBottom:'1px solid #F0F0F0', background: i%2===0 ? '#fff' : '#FAFAFA' }}>
-                      <td style={{ padding:'8px', color:'#777' }}>#{o.order_id}</td>
-                      <td style={{ padding:'8px', color:'#555' }}>{o.contact||'—'}</td>
-                      <td style={{ padding:'8px', color:'#555' }}>{o.alt_contact||'—'}</td>
-                      <td style={{ padding:'8px', color:'#333', fontWeight:'500' }}>{o.shareholder_name||'—'}</td>
-                      <td style={{ padding:'8px', color:'#555', whiteSpace:'nowrap' }}>{o.order_type||'—'}</td>
-                      <td style={{ padding:'8px', color:'#555' }}>{o.cow_number ? `Cow ${o.cow_number}` : '—'}</td>
-                      <td style={{ padding:'8px', color:'#555' }}>{o.hissa_number ? `Hissa ${o.hissa_number}` : '—'}</td>
-                      <td style={{ padding:'8px', color:'#555', whiteSpace:'nowrap' }}>{o.slot||'—'}</td>
-                      <td style={{ padding:'8px', color:'#555', maxWidth:'100px' }}><div style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={o.description||''}>{o.description||'—'}</div></td>
-                      <td style={{ padding:'8px' }}><StatusBadge status={o.delivery_status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div style={{ marginTop:'20px', textAlign:'right' }}>
-              <button type="button" onClick={closeModal} style={{ padding:'9px 20px', background:'#FF5722', color:'#fff', border:'none', borderRadius:'8px', fontSize:'12px', fontWeight:'600', cursor:'pointer' }}>Close</button>
-            </div>
+        <SharedChallanModal
+          challanId={modal.challan?.challan_id}
+          customerId={modalCustomerIds.length ? modalCustomerIds.join(', ') : '—'}
+          description={modalDescription}
+          statusBadge={<StatusBadge status={modal.challan?.derived_status} />}
+          onClose={closeModal}
+          maxWidth="1240px"
+          infoRows={[
+            ['Address', modal.challan?.address || '—'],
+            ['Booking Name', modal.challan?.booking_name || [...new Set((modal.orders || []).map((o) => o.booking_name).filter(Boolean))].join(', ') || '—'],
+            ['Area', modal.challan?.area || '—'],
+            ['Day', modal.challan?.day || '—'],
+            ['Slot', modal.challan?.slot || '—'],
+            ['Rider', modalRiderDetails.name],
+            ['Vehicle', modalRiderDetails.vehicle],
+            ['Rider Number', modalRiderDetails.number],
+            ['Standard', String(modalTotals.standard || 0)],
+            ['Premium', String(modalTotals.premium || 0)],
+            ['Goat', String(modalTotals.goat || 0)],
+            ['Total Hissa', String(modalTotals.total || 0)],
+          ]}
+          orders={modal.orders || []}
+          renderOrderStatus={(o) => <StatusBadge status={o.delivery_status} />}
+        >
+          <label style={{ display:'block', fontSize:'12px', fontWeight:'600', marginBottom:'4px', color:'#333' }}>Update Status (all orders)</label>
+          <div style={{ width:'100%', marginBottom:'12px' }}>
+            <SearchableStatusSelect
+              value={modal.challan?.derived_status || 'Pending'}
+              disabled={saving}
+              onChange={(val)=>updateModalStatus(val)}
+              menuPlacement="below"
+              fullWidth
+            />
           </div>
-        </div>
+
+          <label style={{ display:'block', fontSize:'12px', fontWeight:'600', marginBottom:'4px', color:'#333' }}>Assign Rider</label>
+          <div style={{ width:'100%', marginBottom:'14px' }}>
+            <SearchableRiderSelect
+              value={modal.challan?.rider_id??''}
+              disabled={saving}
+              riders={riders}
+              fallbackLabel={modal.challan?.rider_count > 1 ? 'Multiple Riders' : undefined}
+              onChange={(rid)=>updateModalRider(rid)}
+              menuPlacement="below"
+              fullWidth
+            />
+          </div>
+        </SharedChallanModal>
       )}
     </>
   );

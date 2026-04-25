@@ -139,24 +139,24 @@ export default function OperationsDashboard() {
         </div>
 
         {/* ── Secondary filters ── */}
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexShrink: 0, flexWrap: 'wrap' }}>
-          <div style={{ width: 150 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px', flexShrink: 0, width: '100%', maxWidth: '520px', alignItems: 'end' }}>
+          <div style={{ minWidth: 0, width: '100%' }}>
             <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Area / Zone</label>
             <input
               list="operations-general-areas"
               value={areaFilter}
               onChange={e => setAreaFilter(e.target.value)}
               placeholder="All areas"
-              style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '11px' }}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '11px', background: '#fff' }}
             />
             <datalist id="operations-general-areas">
               {allAreas.map(a => <option key={a} value={a}>{a}</option>)}
             </datalist>
           </div>
-          <div style={{ width: 150 }}>
+          <div style={{ minWidth: 0, width: '100%' }}>
             <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Order type</label>
             <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
-              style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '11px' }}>
+              style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '11px', background: '#fff' }}>
               <option value="">All types</option>
               {orderTypes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
