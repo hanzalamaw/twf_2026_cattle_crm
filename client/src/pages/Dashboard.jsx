@@ -541,7 +541,7 @@ const AreaWiseChart = ({ areas }) => {
 
       {!collapsed && (
         <div className="chartScrollX">
-  <div style={{ minWidth: Math.max(data.length * 85, 900), height: 360 }}>
+  <div style={{ minWidth: Math.max(data.length * 85, 900), height: 260 }}>
     <ResponsiveContainer width="100%" height={360}>
       <BarChart
         data={data}
@@ -870,19 +870,7 @@ const Dashboard = () => {
   padding-bottom: 8px;
 }
 
-.chartScrollX::-webkit-scrollbar {
-  height: 8px;
-}
 
-.chartScrollX::-webkit-scrollbar-track {
-  background: #f3f4f6;
-  border-radius: 999px;
-}
-
-.chartScrollX::-webkit-scrollbar-thumb {
-  background: #ff5722;
-  border-radius: 999px;
-}
 
         /* card shell */
         .card { background:#fff; border-radius:10px; padding:12px; border:1px solid #f1f1f1; box-shadow:0 2px 8px rgba(0,0,0,0.04); transition:box-shadow .2s; }
