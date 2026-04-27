@@ -497,4 +497,49 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
       res.status(500).json({ message: "Server error" });
     }
   });
+
+// -----------------------
+// GET: /api/dashboard/area-wise?year=...
+// Bar chart: order count per area (Booking only — 4 types)
+// -----------------------
+app.get("/api/dashboard/area-wise", verifyToken, async (req, res) => {
+  try {
+    const { year = "all" } = req.query;
+
+    const params = [];
+    const conditions = buildYearWhere(year, params);
+    conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
+    conditions.push("(o.area IS NOT NULL AND o.area != '')");
+
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const [rows] = await db.execute(
+      `
+      SELECT
+        o.area AS area,
+        COUNT(*) AS total,
+        SUM(CASE WHEN COALESCE(o.pending_amount, 0) <= 0 THEN 1 ELSE 0 END) AS cleared,
+        SUM(CASE WHEN COALESCE(o.pending_amount, 0) > 0  THEN 1 ELSE 0 END) AS pending
+      FROM orders o
+      ${where}
+      GROUP BY o.area
+      ORDER BY total DESC
+      `,
+      params
+    );
+
+    const areas = (rows || []).map((r) => ({
+      area:    r.area    || "—",
+      total:   Number(r.total   || 0),
+      cleared: Number(r.cleared || 0),
+      pending: Number(r.pending || 0),
+    }));
+
+    res.json({ areas });
+  } catch (e) {
+    logError("DASHBOARD", "Area-wise error", e);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 };

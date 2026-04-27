@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { API_BASE } from "../config/api";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, BarChart, Bar, Cell,
+  ResponsiveContainer, BarChart, Bar, Cell, LabelList,
 } from "recharts";
 
 const fmt = (n) => Number(n || 0).toLocaleString("en-PK");
@@ -500,6 +500,138 @@ const SalesOverviewChart = ({ series, reveal }) => {
   );
 };
 
+/* ── Area Wise Bar Chart ── */
+const AreaWiseChart = ({ areas }) => {
+  const [collapsed, setCollapsed] = useState(false);
+  const [metric, setMetric] = useState("total");
+  const [activeArea, setActiveArea] = useState(null);
+
+  const data = useMemo(
+    () => (areas || []).slice(0, 20).map((a) => ({ ...a, name: a.area })),
+    [areas]
+  );
+
+  const metricOptions = [
+    { key: "total",   label: "All Orders",  color: "#FF5722" },
+    { key: "cleared", label: "Cleared",     color: "#4CAF50" },
+    { key: "pending", label: "Pending",     color: "#f59e0b" },
+  ];
+  const active = metricOptions.find((m) => m.key === metric) || metricOptions[0];
+
+  const CustomTooltip = ({ active: a, payload, label }) => {
+    if (!a || !payload?.length || !label) return null;
+    const p = payload[0]?.payload || {};
+    return (
+      <div className="chartTooltip">
+        <div className="chartTooltipTitle">{label}</div>
+        <div className="chartTooltipRow">
+          <span>Total:</span><span>{fmt(Number(p.total || 0))}</span>
+        </div>
+        <div className="chartTooltipRow" style={{ color: "#166534" }}>
+          <span>Cleared:</span><span>{fmt(Number(p.cleared || 0))}</span>
+        </div>
+        <div className="chartTooltipRow" style={{ color: "#b45309" }}>
+          <span>Pending:</span><span>{fmt(Number(p.pending || 0))}</span>
+        </div>
+      </div>
+    );
+  };
+
+  if (!data.length) return (
+    <div className="card animCard">
+      <div className="cardTitleBig">AREA WISE ORDERS</div>
+      <div className="chartPlaceholder">No area data for selected year</div>
+    </div>
+  );
+
+  return (
+    <div className="card animCard">
+      <div className="salesOverviewHeader" style={{ marginBottom: collapsed ? 0 : 10 }}>
+        <div
+          className="cardTitle cardTitleClickable salesOverviewTitle"
+          onClick={() => setCollapsed((v) => !v)}
+        >
+          AREA WISE ORDERS <span className="collapseChevron">{collapsed ? "▶" : "▼"}</span>
+        </div>
+        {!collapsed && (
+          <div className="salesOverviewHeaderRight">
+            <div className="viewToggle">
+              {metricOptions.map((m) => (
+                <button
+                  key={m.key}
+                  className={`viewToggleBtn ${metric === m.key ? "viewToggleActive" : ""}`}
+                  style={metric === m.key ? { background: m.color } : {}}
+                  onClick={() => setMetric(m.key)}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {!collapsed && (
+        <div className="chartWrap" style={{ minHeight: 320 }}>
+          <ResponsiveContainer width="100%" height={Math.max(320, data.length * 36)}>
+            <BarChart
+              data={data}
+              layout="vertical"
+              margin={{ top: 4, right: 48, left: 8, bottom: 4 }}
+              onMouseLeave={() => setActiveArea(null)}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#eee" horizontal={false} />
+              <XAxis
+                type="number"
+                tick={{ fontSize: 11, fontFamily: "'Poppins','Inter',sans-serif" }}
+                stroke="#6b7280"
+                tickFormatter={(v) => fmt(v)}
+                allowDecimals={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={110}
+                tick={{ fontSize: 11, fontFamily: "'Poppins','Inter',sans-serif", fill: "#374151" }}
+                stroke="#6b7280"
+              />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,87,34,0.06)" }} />
+              <Bar
+                dataKey={metric}
+                radius={[0, 6, 6, 0]}
+                maxBarSize={22}
+                onMouseEnter={(d) => setActiveArea(d.area)}
+              >
+                {data.map((entry) => (
+                  <Cell
+                    key={entry.area}
+                    fill={
+                      activeArea === null || activeArea === entry.area
+                        ? active.color
+                        : `${active.color}55`
+                    }
+                  />
+                ))}
+                <LabelList
+                  dataKey={metric}
+                  position="right"
+                  style={{
+                    fontSize: 11,
+                    fontFamily: "'Poppins','Inter',sans-serif",
+                    fill: "#374151",
+                    fontWeight: 600,
+                  }}
+                  formatter={(v) => fmt(v)}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ════════════════════════════════════════
    Dashboard
 ════════════════════════════════════════ */
@@ -518,6 +650,7 @@ const Dashboard = () => {
   const [salesOverview, setSalesOverview] = useState([]);
   const [kpiValuesVisible, setKpiValuesVisible] = useState(false);
   const token = useMemo(() => localStorage.getItem("token"), []);
+  const [areas, setAreas] = useState([]);
 
   const fetchAll = useCallback(async (opts = {}) => {
     const silent = opts.silent === true;
@@ -530,25 +663,24 @@ const Dashboard = () => {
         ? Promise.resolve({ json: async () => ({ days: [] }) })
         : fetch(`${base}/day-wise?year=${y}`, { headers });
 
-      const [k, t, d, src, r, sales] = await Promise.all([
-        fetch(`${base}/kpis?year=${y}`, { headers }),
-        fetch(`${base}/target-achievement?year=${y}`, { headers }),
-        dayPromise,
-        fetch(`${base}/source-wise?year=${y}`, { headers }),
-        fetch(`${base}/reference-wise?year=${y}`, { headers }),
-        fetch(`${base}/sales-overview?year=${y}`, { headers }),
-      ]);
-      const [kj, tj, dj, srcj, rj, salesj] = await Promise.all([
-        k.json(),
-        t.json(),
-        d.json(),
-        src.json(),
-        r.json(),
-        sales.json(),
-      ]);
-      setKpis(kj.kpis || null); setTargetData(tj || null);
-      setDays(dj.days || []); setSources(srcj.sources || []);
-      setReferences(rj.references || []); setSalesOverview(salesj.series || []);
+        const [k, t, d, src, r, sales, a] = await Promise.all([
+          fetch(`${base}/kpis?year=${y}`, { headers }),
+          fetch(`${base}/target-achievement?year=${y}`, { headers }),
+          dayPromise,
+          fetch(`${base}/source-wise?year=${y}`, { headers }),
+          fetch(`${base}/reference-wise?year=${y}`, { headers }),
+          fetch(`${base}/sales-overview?year=${y}`, { headers }),
+          isFarm || isAccounting
+            ? Promise.resolve({ json: async () => ({ areas: [] }) })
+            : fetch(`${base}/area-wise?year=${y}`, { headers }),
+        ]);
+        const [kj, tj, dj, srcj, rj, salesj, aj] = await Promise.all([
+          k.json(), t.json(), d.json(), src.json(), r.json(), sales.json(), a.json(),
+        ]);
+        setKpis(kj.kpis || null); setTargetData(tj || null);
+        setDays(dj.days || []); setSources(srcj.sources || []);
+        setReferences(rj.references || []); setSalesOverview(salesj.series || []);
+        setAreas(aj.areas || []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -919,6 +1051,7 @@ const Dashboard = () => {
         <SourceWiseSummary sources={sources} />
         <ReferenceWiseSummary references={references} />
         <SalesOverviewChart series={salesOverview} reveal={kpiValuesVisible} />
+        {!isFarm && !isAccounting && <AreaWiseChart areas={areas} />}
       </>)}
     </div>
   );
