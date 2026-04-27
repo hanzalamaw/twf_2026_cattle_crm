@@ -425,6 +425,182 @@ const SourceWiseSummary = ({ sources }) => {
   );
 };
 
+/* ── Area Wise Bar Chart ── */
+const AreaWiseChart = ({ areas }) => {
+  const [collapsed, setCollapsed] = useState(false);
+  const [metric, setMetric] = useState("total");
+  const [activeArea, setActiveArea] = useState(null);
+  const wrapText = (text, maxChars = 10) => {
+    const value = String(text || "");
+    const words = value.split(" ");
+  
+    const lines = [];
+    let line = "";
+  
+    words.forEach((word) => {
+      if ((line + " " + word).trim().length <= maxChars) {
+        line = (line + " " + word).trim();
+      } else {
+        if (line) lines.push(line);
+        line = word;
+      }
+    });
+  
+    if (line) lines.push(line);
+  
+    return lines.length ? lines : [value];
+  };
+  
+  const CustomXAxisTick = ({ x, y, payload }) => {
+    const lines = wrapText(payload.value, 12).slice(0, 3);
+  
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text
+          x={0}
+          y={0}
+          textAnchor="middle"
+          fill="#374151"
+          fontSize={10}
+          fontFamily="'Poppins','Inter',sans-serif"
+        >
+          {lines.map((line, index) => (
+            <tspan key={index} x={0} dy={index === 0 ? 12 : 12}>
+              {line}
+            </tspan>
+          ))}
+        </text>
+      </g>
+    );
+  };
+
+  const data = useMemo(
+    () => (areas || []).slice(0, 20).map((a) => ({ ...a, name: a.area })),
+    [areas]
+  );
+
+  const metricOptions = [
+    { key: "total",   label: "All Orders",  color: "#FF5722" },
+    { key: "cleared", label: "Cleared",     color: "#4CAF50" },
+    { key: "pending", label: "Pending",     color: "#f59e0b" },
+  ];
+  const active = metricOptions.find((m) => m.key === metric) || metricOptions[0];
+
+  const CustomTooltip = ({ active: a, payload, label }) => {
+    if (!a || !payload?.length || !label) return null;
+    const p = payload[0]?.payload || {};
+    return (
+      <div className="chartTooltip">
+        <div className="chartTooltipTitle">{label}</div>
+        <div className="chartTooltipRow">
+          <span>Total:</span><span>{fmt(Number(p.total || 0))}</span>
+        </div>
+        <div className="chartTooltipRow" style={{ color: "#166534" }}>
+          <span>Cleared:</span><span>{fmt(Number(p.cleared || 0))}</span>
+        </div>
+        <div className="chartTooltipRow" style={{ color: "#b45309" }}>
+          <span>Pending:</span><span>{fmt(Number(p.pending || 0))}</span>
+        </div>
+      </div>
+    );
+  };
+
+  if (!data.length) return (
+    <div className="card animCard">
+      <div className="cardTitleBig">AREA WISE ORDERS</div>
+      <div className="chartPlaceholder">No area data for selected year</div>
+    </div>
+  );
+
+  return (
+    <div className="card animCard">
+      <div className="salesOverviewHeader" style={{ marginBottom: collapsed ? 0 : 10 }}>
+        <div
+          className="cardTitle cardTitleClickable salesOverviewTitle"
+          onClick={() => setCollapsed((v) => !v)}
+        >
+          AREA WISE ORDERS <span className="collapseChevron">{collapsed ? "▶" : "▼"}</span>
+        </div>
+        {!collapsed && (
+          <div className="salesOverviewHeaderRight">
+            <div className="viewToggle">
+              {metricOptions.map((m) => (
+                <button
+                  key={m.key}
+                  className={`viewToggleBtn ${metric === m.key ? "viewToggleActive" : ""}`}
+                  style={metric === m.key ? { background: m.color } : {}}
+                  onClick={() => setMetric(m.key)}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {!collapsed && (
+        <div className="chartScrollX">
+  <div style={{ minWidth: Math.max(data.length * 85, 900), height: 360 }}>
+    <ResponsiveContainer width="100%" height={360}>
+      <BarChart
+        data={data}
+        margin={{ top: 8, right: 8, left: 0, bottom: 80 }}
+        onMouseLeave={() => setActiveArea(null)}
+      >
+        <CartesianGrid strokeDasharray="3 3" stroke="#eee" vertical={false} />
+        <XAxis
+  dataKey="name"
+  tick={<CustomXAxisTick />}
+  stroke="#6b7280"
+  interval={0}
+  height={95}
+/>
+        <YAxis
+          tick={{ fontSize: 11, fontFamily: "'Poppins','Inter',sans-serif" }}
+          stroke="#6b7280"
+          tickFormatter={(v) => fmt(v)}
+          allowDecimals={false}
+        />
+        <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,87,34,0.06)" }} />
+        <Bar
+          dataKey={metric}
+          radius={[4, 4, 0, 0]}
+          maxBarSize={36}
+          onMouseEnter={(d) => setActiveArea(d.area)}
+        >
+          {data.map((entry) => (
+            <Cell
+              key={entry.area}
+              fill={
+                activeArea === null || activeArea === entry.area
+                  ? active.color
+                  : `${active.color}55`
+              }
+            />
+          ))}
+          <LabelList
+            dataKey={metric}
+            position="top"
+            style={{
+              fontSize: 10,
+              fontFamily: "'Poppins','Inter',sans-serif",
+              fill: "#374151",
+              fontWeight: 600,
+            }}
+            formatter={(v) => fmt(v)}
+          />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+    </div>  
+  </div>
+)}
+    </div>
+  );
+};
+
+
 /* ── Sales Overview ── */
 const SalesOverviewChart = ({ series, reveal }) => {
   const [chartType, setChartType] = useState("line");
@@ -496,138 +672,6 @@ const SalesOverviewChart = ({ series, reveal }) => {
           </ResponsiveContainer>
         </div>
       </>)}
-    </div>
-  );
-};
-
-/* ── Area Wise Bar Chart ── */
-const AreaWiseChart = ({ areas }) => {
-  const [collapsed, setCollapsed] = useState(false);
-  const [metric, setMetric] = useState("total");
-  const [activeArea, setActiveArea] = useState(null);
-
-  const data = useMemo(
-    () => (areas || []).slice(0, 20).map((a) => ({ ...a, name: a.area })),
-    [areas]
-  );
-
-  const metricOptions = [
-    { key: "total",   label: "All Orders",  color: "#FF5722" },
-    { key: "cleared", label: "Cleared",     color: "#4CAF50" },
-    { key: "pending", label: "Pending",     color: "#f59e0b" },
-  ];
-  const active = metricOptions.find((m) => m.key === metric) || metricOptions[0];
-
-  const CustomTooltip = ({ active: a, payload, label }) => {
-    if (!a || !payload?.length || !label) return null;
-    const p = payload[0]?.payload || {};
-    return (
-      <div className="chartTooltip">
-        <div className="chartTooltipTitle">{label}</div>
-        <div className="chartTooltipRow">
-          <span>Total:</span><span>{fmt(Number(p.total || 0))}</span>
-        </div>
-        <div className="chartTooltipRow" style={{ color: "#166534" }}>
-          <span>Cleared:</span><span>{fmt(Number(p.cleared || 0))}</span>
-        </div>
-        <div className="chartTooltipRow" style={{ color: "#b45309" }}>
-          <span>Pending:</span><span>{fmt(Number(p.pending || 0))}</span>
-        </div>
-      </div>
-    );
-  };
-
-  if (!data.length) return (
-    <div className="card animCard">
-      <div className="cardTitleBig">AREA WISE ORDERS</div>
-      <div className="chartPlaceholder">No area data for selected year</div>
-    </div>
-  );
-
-  return (
-    <div className="card animCard">
-      <div className="salesOverviewHeader" style={{ marginBottom: collapsed ? 0 : 10 }}>
-        <div
-          className="cardTitle cardTitleClickable salesOverviewTitle"
-          onClick={() => setCollapsed((v) => !v)}
-        >
-          AREA WISE ORDERS <span className="collapseChevron">{collapsed ? "▶" : "▼"}</span>
-        </div>
-        {!collapsed && (
-          <div className="salesOverviewHeaderRight">
-            <div className="viewToggle">
-              {metricOptions.map((m) => (
-                <button
-                  key={m.key}
-                  className={`viewToggleBtn ${metric === m.key ? "viewToggleActive" : ""}`}
-                  style={metric === m.key ? { background: m.color } : {}}
-                  onClick={() => setMetric(m.key)}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {!collapsed && (
-        <div className="chartWrap" style={{ minHeight: 320 }}>
-          <ResponsiveContainer width="100%" height={Math.max(320, data.length * 36)}>
-            <BarChart
-              data={data}
-              layout="vertical"
-              margin={{ top: 4, right: 48, left: 8, bottom: 4 }}
-              onMouseLeave={() => setActiveArea(null)}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" horizontal={false} />
-              <XAxis
-                type="number"
-                tick={{ fontSize: 11, fontFamily: "'Poppins','Inter',sans-serif" }}
-                stroke="#6b7280"
-                tickFormatter={(v) => fmt(v)}
-                allowDecimals={false}
-              />
-              <YAxis
-                type="category"
-                dataKey="name"
-                width={110}
-                tick={{ fontSize: 11, fontFamily: "'Poppins','Inter',sans-serif", fill: "#374151" }}
-                stroke="#6b7280"
-              />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,87,34,0.06)" }} />
-              <Bar
-                dataKey={metric}
-                radius={[0, 6, 6, 0]}
-                maxBarSize={22}
-                onMouseEnter={(d) => setActiveArea(d.area)}
-              >
-                {data.map((entry) => (
-                  <Cell
-                    key={entry.area}
-                    fill={
-                      activeArea === null || activeArea === entry.area
-                        ? active.color
-                        : `${active.color}55`
-                    }
-                  />
-                ))}
-                <LabelList
-                  dataKey={metric}
-                  position="right"
-                  style={{
-                    fontSize: 11,
-                    fontFamily: "'Poppins','Inter',sans-serif",
-                    fill: "#374151",
-                    fontWeight: 600,
-                  }}
-                  formatter={(v) => fmt(v)}
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
     </div>
   );
 };
@@ -817,6 +861,28 @@ const Dashboard = () => {
         .kpiTrend { font-size:11px; margin-top:2px; font-weight:500; }
         .kpiTrendUp { color:#16a34a; } .kpiTrendDown { color:#dc2626; }
         .kpiBlurField { filter:blur(6px); opacity:.35; user-select:none; pointer-events:none; background:rgba(0,0,0,0.03); border-radius:10px; padding:6px 10px; display:inline-block; min-width:140px; }
+
+
+        .chartScrollX {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+}
+
+.chartScrollX::-webkit-scrollbar {
+  height: 8px;
+}
+
+.chartScrollX::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 999px;
+}
+
+.chartScrollX::-webkit-scrollbar-thumb {
+  background: #ff5722;
+  border-radius: 999px;
+}
 
         /* card shell */
         .card { background:#fff; border-radius:10px; padding:12px; border:1px solid #f1f1f1; box-shadow:0 2px 8px rgba(0,0,0,0.04); transition:box-shadow .2s; }
@@ -1050,8 +1116,10 @@ const Dashboard = () => {
         {(isAccounting || !isFarm) && <DayWiseSummary days={days} />}
         <SourceWiseSummary sources={sources} />
         <ReferenceWiseSummary references={references} />
-        <SalesOverviewChart series={salesOverview} reveal={kpiValuesVisible} />
-        {!isFarm && !isAccounting && <AreaWiseChart areas={areas} />}
+
+{!isFarm && !isAccounting && <AreaWiseChart areas={areas} />}
+
+<SalesOverviewChart series={salesOverview} reveal={kpiValuesVisible} />
       </>)}
     </div>
   );
