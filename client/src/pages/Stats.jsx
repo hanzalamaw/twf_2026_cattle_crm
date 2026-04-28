@@ -53,26 +53,6 @@ function computeStatus(totalHissa, maxHissa = 7) {
   return t >= m ? 'Closed' : 'Available';
 }
 
-function normalizeDay(value) {
-  const s = String(value ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
-  const compact = s.replace(/\s+/g, '');
-  if (compact === 'DAY1' || compact === '1') return 'DAY 1';
-  if (compact === 'DAY2' || compact === '2') return 'DAY 2';
-  if (compact === 'DAY3' || compact === '3') return 'DAY 3';
-  return s;
-}
-
-function normalizeSlot(value) {
-  const s = String(value ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
-  return SLOT_ORDER.includes(s) ? s : null;
-}
-
-function isGoatHissaOrder(row) {
-  const type = String(row?.order_type ?? row?.orderType ?? '').trim().toLowerCase().replace(/[\s\-()]/g, '');
-  const cow = String(row?.cow ?? '').trim().toUpperCase();
-  return type === 'goathissa' || cow.startsWith('G');
-}
-
 export default function Stats() {
   const { authFetch } = useAuth();
   const token = localStorage.getItem('token');
@@ -82,8 +62,7 @@ export default function Stats() {
   const [error, setError] = useState('');
   const [raw, setRaw] = useState(null);
   const [year, setYear] = useState(() => new Date().getFullYear());
-  const [ordersRaw, setOrdersRaw] = useState([]);
-
+  
   const yearOptions = useMemo(() => statsYearOptions(), []);
 
   const hdrs = useCallback(() => ({ Authorization: `Bearer ${token}` }), [token]);
@@ -93,61 +72,30 @@ export default function Stats() {
       const res = await authFetch(`${API}/booking/hissa-sheet?year=${encodeURIComponent(year)}`, {
         headers: hdrs(),
       });
+  
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || 'Failed to load stats sheet');
+      if (!res.ok) throw new Error(data?.message || "Failed to load stats sheet");
+  
       setRaw(data);
     } catch (e) {
       setRaw(null);
       throw e;
     }
   }, [authFetch, hdrs, year]);
-
-  const fetchOrders = useCallback(async () => {
-    try {
-      const allRows = [];
-      const limit = 1000;
-      let pageNum = 1;
-
-      while (true) {
-        const params = new URLSearchParams();
-        params.set('year', String(year));
-        params.set('page', String(pageNum));
-        params.set('limit', String(limit));
-        params.set('order_type', 'Goat (Hissa)');
-
-        const res = await authFetch(`${API}/booking/orders?${params.toString()}`, {
-          headers: hdrs(),
-        });
-
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.message || 'Failed to load goat orders');
-
-        const rows = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
-        allRows.push(...rows);
-
-        const total = Number(data?.total || 0);
-        if (!rows.length || rows.length < limit || (total > 0 && allRows.length >= total)) break;
-        pageNum += 1;
-      }
-
-      setOrdersRaw(allRows);
-    } catch (e) {
-      setOrdersRaw([]);
-      throw e;
-    }
-  }, [authFetch, hdrs, year]);
-
+  
+  // ✅ NOW useEffect comes AFTER
   useEffect(() => {
     let alive = true;
   
     (async () => {
       setLoading(true);
-      setError('');
+      setError("");
+  
       try {
-        await Promise.all([fetchSheet(), fetchOrders()]);
+        await fetchSheet();
       } catch (e) {
         if (!alive) return;
-        setError(e?.message || 'Failed to load stats sheet');
+        setError(e?.message || "Failed to load stats sheet");
       } finally {
         if (alive) setLoading(false);
       }
@@ -156,12 +104,14 @@ export default function Stats() {
     return () => {
       alive = false;
     };
-  }, [fetchSheet, fetchOrders]);
+  }, [fetchSheet]);
+
+
 
 
 
   const sheet = useMemo(() => {
-    const types = raw?.types && typeof raw.types === 'object' ? raw.types : {};
+    const types = raw?.types && typeof raw.types === "object" ? raw.types : {};
     const out = {};
   
     for (const t of TYPES) {
@@ -171,74 +121,37 @@ export default function Stats() {
       }
     }
   
-    // existing standard / premium / waqf from hissa-sheet
-    for (const t of TYPES.filter((x) => x.key !== 'goat_hissa')) {
+    for (const t of TYPES) {
       for (const day of DAYS) {
         const cowsObj = types?.[t.orderType]?.[day] || {};
         const cowIds = Object.keys(cowsObj);
   
         cowIds.sort((a, b) => {
-          const na = parseInt(String(a).replace(/^\D+/, ''), 10) || 0;
-          const nb = parseInt(String(b).replace(/^\D+/, ''), 10) || 0;
+          const na = parseInt(String(a).replace(/^\D+/, ""), 10) || 0;
+          const nb = parseInt(String(b).replace(/^\D+/, ""), 10) || 0;
           return na - nb;
         });
   
         out[t.key][day] = cowIds.map((cow) => {
           const cell = cowsObj[cow] || {};
-          const total = clampInt(cell.total_hissa);
+          const total = t.key === "goat_hissa" ? "-" : clampInt(cell.total_hissa);
           const slot = chooseSlot(cell.slot_counts);
-          const status = computeStatus(total, 7);
   
           return {
             cow,
             totalHissa: total,
             slot,
-            status,
+            status:
+              t.key === "goat_hissa"
+                ? "Closed"
+                : computeStatus(total, 7),
           };
         });
       }
     }
   
-    // goat (hissa) from orders table
-    // Fetching is paginated, and day/slot values are normalized so DAY1/day 1/1 all map correctly.
-    const goatOrders = (Array.isArray(ordersRaw) ? ordersRaw : []).filter((row) => {
-      const day = normalizeDay(row?.day);
-      return isGoatHissaOrder(row) && DAYS.includes(day);
-    });
-
-    const groupedGoats = {
-      'DAY 1': [],
-      'DAY 2': [],
-      'DAY 3': [],
-    };
-
-    for (const row of goatOrders) {
-      const cow = String(row?.cow ?? '').trim().toUpperCase();
-      const day = normalizeDay(row?.day);
-      const slot = normalizeSlot(row?.slot);
-
-      if (!cow || !DAYS.includes(day)) continue;
-
-      groupedGoats[day].push({
-        cow,
-        totalHissa: '-',
-        slot,
-        status: 'Closed',
-      });
-    }
-
-    for (const day of DAYS) {
-      groupedGoats[day].sort((a, b) => {
-        const na = parseInt(String(a.cow).replace(/^\D+/, ''), 10) || 0;
-        const nb = parseInt(String(b.cow).replace(/^\D+/, ''), 10) || 0;
-        return na - nb;
-      });
-  
-      out.goat_hissa[day] = groupedGoats[day];
-    }
-  
     return out;
-  }, [raw, ordersRaw]);
+  }, [raw]);
 
   const exportCsv = useCallback(() => {
     if (!sheet) return;
