@@ -53,6 +53,42 @@ const DAY_KEY_SQL = `
   END
 `;
 
+/**
+ * Booking dashboard top toggle filter.
+ * hissa = Standard + Premium + Waqf only
+ * goat  = Goat (Hissa) only
+ *
+ * IMPORTANT:
+ * Target Achievement and Day Wise Summary intentionally do NOT use this filter.
+ */
+function applyBookingDashboardTypeFilter(orderType, conditions) {
+  const selected = String(orderType || "hissa").toLowerCase();
+
+  if (selected === "goat") {
+    conditions.push(`${TYPE_KEY_SQL} = 'goat'`);
+    return;
+  }
+
+  conditions.push(`${TYPE_KEY_SQL} IN ('standard', 'premium', 'waqf')`);
+}
+
+/**
+ * Area-wise exception:
+ * - Hissa view must NOT include Waqf in any situation.
+ * - Goat view only includes Goat (Hissa).
+ */
+function applyBookingAreaTypeFilter(orderType, conditions) {
+  const selected = String(orderType || "hissa").toLowerCase();
+
+  if (selected === "goat") {
+    conditions.push(`${TYPE_KEY_SQL} = 'goat'`);
+    return;
+  }
+
+  conditions.push(`${TYPE_KEY_SQL} IN ('standard', 'premium')`);
+}
+
+
 export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
   // GET: /api/dashboard/kpis?year=2026|2025|2024|all
@@ -64,11 +100,11 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
   app.get("/api/dashboard/kpis", verifyToken, async (req, res) => {
     try {
-      const { year = "all" } = req.query;
+      const { year = "all", orderType = "hissa" } = req.query;
 
       const params = [];
       const conditions = buildYearWhere(year, params);
-      conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
+      applyBookingDashboardTypeFilter(orderType, conditions);
       const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
       const [rows] = await db.execute(
@@ -324,11 +360,11 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
   app.get("/api/dashboard/reference-wise", verifyToken, async (req, res) => {
     try {
-      const { year = "all" } = req.query;
+      const { year = "all", orderType = "hissa" } = req.query;
 
       const paramsO = [];
       const conditionsO = buildYearWhere(year, paramsO);
-      conditionsO.push(`${TYPE_KEY_SQL} IS NOT NULL`);
+      applyBookingDashboardTypeFilter(orderType, conditionsO);
       conditionsO.push("o.closed_by IS NOT NULL AND o.closed_by != ''");
       const whereO = conditionsO.length ? `WHERE ${conditionsO.join(" AND ")}` : "";
 
@@ -413,11 +449,11 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
   app.get("/api/dashboard/source-wise", verifyToken, async (req, res) => {
     try {
-      const { year = "all" } = req.query;
+      const { year = "all", orderType = "hissa" } = req.query;
 
       const params = [];
       const conditions = buildYearWhere(year, params);
-      conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
+      applyBookingDashboardTypeFilter(orderType, conditions);
       conditions.push("(o.order_source IS NOT NULL AND o.order_source != '')");
 
       const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -453,11 +489,11 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
   app.get("/api/dashboard/sales-overview", verifyToken, async (req, res) => {
     try {
-      const { year = "2026" } = req.query;
+      const { year = "2026", orderType = "hissa" } = req.query;
 
       const params = [];
       const conditions = buildYearWhere(year, params);
-      conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
+      applyBookingDashboardTypeFilter(orderType, conditions);
       conditions.push("o.booking_date IS NOT NULL");
       const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
@@ -504,11 +540,11 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 // -----------------------
 app.get("/api/dashboard/area-wise", verifyToken, async (req, res) => {
   try {
-    const { year = "all" } = req.query;
+    const { year = "all", orderType = "hissa" } = req.query;
 
     const params = [];
     const conditions = buildYearWhere(year, params);
-    conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
+    applyBookingAreaTypeFilter(orderType, conditions);
     conditions.push("(o.area IS NOT NULL AND o.area != '')");
 
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";

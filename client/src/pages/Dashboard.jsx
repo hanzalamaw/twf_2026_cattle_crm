@@ -259,20 +259,27 @@ const TargetAchievement = ({ achieved, target, breakdown }) => {
   );
 };
 
-/* ── Day Wise — desktop table, mobile stacked cards ── */
+/* ── Day Wise ── */
+/* 
+  Column order change: Standard | Premium | Waqf | Total (std+prem+waqf) | Goat
+  Total = Standard + Premium + Waqf only (not goat)
+  The toggle has NO effect here.
+*/
 const DayWiseSummary = ({ days }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [highlightRow, setHighlightRow] = useState(null);
   const dayList = days || [];
-  const firstDay = dayList[0];
-  const typeKeys = firstDay?.columnKeys?.length ? firstDay.columnKeys : ["premium", "standard", "waqf", "goat"];
-  const colLabels = firstDay?.columns?.length ? firstDay.columns : ["Premium", "Standard", "Waqf", "Goat", "Total"];
+
+  // We always render: standard, premium, waqf, total, goat
+  const hissaKeys = ["standard", "premium", "waqf"];
+  const hissaLabels = ["Standard", "Premium", "Waqf"];
+  const colLabels = [...hissaLabels, "Total", "Goat"];
+
   const rowLabels = ["Total Orders", "Payment Cleared", "Pending (Completely)", "Pending (Partially)"];
   const renderCell = (val) => {
     const num = Number(val);
     return Number.isFinite(num) ? <AnimatedNumber value={num} duration={600} format={(n) => fmt(Math.round(n))} /> : (val ?? "—");
   };
-  const rowColors = { "Total Orders": "#FF5722", "Payment Cleared": "#4CAF50", "Pending (Completely)": "#f59e0b", "Pending (Partially)": "#2196F3" };
 
   return (
     <div className="card animCard">
@@ -280,61 +287,66 @@ const DayWiseSummary = ({ days }) => {
         DAY WISE SUMMARY <span className="collapseChevron">{collapsed ? "▶" : "▼"}</span>
       </div>
       {!collapsed && (
-        <>
-          {/* Desktop table */}
-          <div className="dayWiseTableWrap">
-            <table className="tblDayWise">
-              <thead>
-                <tr>
-                  <th className="dayWiseCorner" rowSpan={2}>Category</th>
-                  {dayList.map((d, di) => (
-                    <th key={d.key} colSpan={colLabels.length} className={`dayWiseDayHeader${di > 0 ? " dayWiseDayHeaderSep" : ""}`}>{d.title}</th>
-                  ))}
-                </tr>
-                <tr>
-                  {dayList.map((d, di) =>
-                    colLabels.map((col, ci) => (
-                      <th key={`${d.key}-${col}-${ci}`} className={`dayWiseColHeader${di > 0 && ci === 0 ? " dayWiseColGroupStart" : ""}`}>{col}</th>
-                    ))
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {rowLabels.map((label) => (
-                  <tr key={label} className={highlightRow === label ? "dayWiseRowHighlight" : ""}
-                    onMouseEnter={() => setHighlightRow(label)} onMouseLeave={() => setHighlightRow(null)}>
-                    <td className="dayWiseRowLabel">{label}</td>
-                    {dayList.map((d, di) => {
-                      const row = (d.data || []).find((r) => r.label === label);
-                      if (!row) return colLabels.map((col, ci) => (
-                        <td key={`${d.key}-${label}-${col}-${ci}`} className={`dayWiseCell${di > 0 && ci === 0 ? " dayWiseCellGroupStart" : ""}`}>—</td>
-                      ));
-                      return (
-                        <React.Fragment key={d.key}>
-                          {typeKeys.map((tk, ti) => (
-                            <td
-                              key={tk}
-                              className={`dayWiseCell${di > 0 && ti === 0 ? " dayWiseCellGroupStart" : ""}`}
-                            >
-                              {renderCell(row[tk])}
-                            </td>
-                          ))}
-                          <td className="dayWiseCell dayWiseCellTotal">{renderCell(row.total)}</td>
-                        </React.Fragment>
-                      );
-                    })}
-                  </tr>
+        <div className="dayWiseTableWrap">
+          <table className="tblDayWise">
+            <thead>
+              <tr>
+                <th className="dayWiseCorner" rowSpan={2}>Category</th>
+                {dayList.map((d, di) => (
+                  <th key={d.key} colSpan={colLabels.length} className={`dayWiseDayHeader${di > 0 ? " dayWiseDayHeaderSep" : ""}`}>{d.title}</th>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+              </tr>
+              <tr>
+                {dayList.map((d, di) =>
+                  colLabels.map((col, ci) => (
+                    <th key={`${d.key}-${col}-${ci}`} className={`dayWiseColHeader${di > 0 && ci === 0 ? " dayWiseColGroupStart" : ""}${col === "Total" ? " dayWiseTotalCol" : ""}${col === "Goat" ? " dayWiseGoatCol" : ""}`}>{col}</th>
+                  ))
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {rowLabels.map((label) => (
+                <tr key={label} className={highlightRow === label ? "dayWiseRowHighlight" : ""}
+                  onMouseEnter={() => setHighlightRow(label)} onMouseLeave={() => setHighlightRow(null)}>
+                  <td className="dayWiseRowLabel">{label}</td>
+                  {dayList.map((d, di) => {
+                    const row = (d.data || []).find((r) => r.label === label);
+                    if (!row) return colLabels.map((col, ci) => (
+                      <td key={`${d.key}-${label}-${col}-${ci}`} className={`dayWiseCell${di > 0 && ci === 0 ? " dayWiseCellGroupStart" : ""}${col === "Total" ? " dayWiseCellTotal dayWiseTotalCol" : ""}${col === "Goat" ? " dayWiseGoatCol" : ""}`}>—</td>
+                    ));
+
+                    // Compute hissa total (std+prem+waqf only)
+                    const hissaTotal = hissaKeys.reduce((sum, k) => sum + (Number(row[k]) || 0), 0);
+
+                    return (
+                      <React.Fragment key={d.key}>
+                        {hissaKeys.map((tk, ti) => (
+                          <td key={tk} className={`dayWiseCell${di > 0 && ti === 0 ? " dayWiseCellGroupStart" : ""}`}>
+                            {renderCell(row[tk])}
+                          </td>
+                        ))}
+                        {/* Total column = std+prem+waqf */}
+                        <td className="dayWiseCell dayWiseCellTotal dayWiseTotalCol">
+                          {renderCell(hissaTotal)}
+                        </td>
+                        {/* Goat column last */}
+                        <td className="dayWiseCell dayWiseGoatCol">
+                          {renderCell(row["goat"])}
+                        </td>
+                      </React.Fragment>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
 };
 
-/* ── Reference Wise — desktop table, mobile stacked cards ── */
+/* ── Reference Wise ── */
 const ReferenceWiseSummary = ({ references }) => {
   const [sortKey, setSortKey] = useState("leadsGenerated");
   const [sortDir, setSortDir] = useState("desc");
@@ -364,36 +376,33 @@ const ReferenceWiseSummary = ({ references }) => {
         REFERENCE WISE SUMMARY <span className="collapseChevron">{collapsed ? "▶" : "▼"}</span>
       </div>
       {!collapsed && (
-        <>
-          {/* Desktop table */}
-          <div className="tableWrapRef">
-            <table className="tblRefOld">
-              <thead>
-                <tr>
-                  {cols.map(c => (
-                    <th key={c.key} className={`${c.numeric ? "sortableCol" : ""} ${sortKey === c.key ? "activeSortCol" : ""}`}
-                      onClick={c.numeric ? () => handleSort(c.key) : undefined}
-                      style={c.numeric ? { cursor: "pointer", userSelect: "none" } : {}}>
-                      {c.label}{c.numeric && <span className="sortIcon">{sortKey === c.key ? (sortDir === "asc" ? " ↑" : " ↓") : " ↕"}</span>}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map((r) => (
-                  <tr key={r.name} className="animRow refRow">
-                    <td>{r.name}</td>
-                    <td><AnimatedNumber value={Number(r.leadsGenerated || 0)} duration={650} format={(n) => fmt(Math.round(n))} /></td>
-                    <td><AnimatedNumber value={Number(r.leadsConverted || 0)} duration={650} format={(n) => fmt(Math.round(n))} /></td>
-                    <td>Rs. <AnimatedNumber value={Number(r.totalRevenueGenerated || 0)} duration={650} format={(n) => fmt(Math.round(n))} /></td>
-                    <td><AnimatedNumber value={Number(r.conversionRate || 0)} duration={600} format={(n) => `${Math.round(n)}%`} /></td>
-                  </tr>
+        <div className="tableWrapRef">
+          <table className="tblRefOld">
+            <thead>
+              <tr>
+                {cols.map(c => (
+                  <th key={c.key} className={`${c.numeric ? "sortableCol" : ""} ${sortKey === c.key ? "activeSortCol" : ""}`}
+                    onClick={c.numeric ? () => handleSort(c.key) : undefined}
+                    style={c.numeric ? { cursor: "pointer", userSelect: "none" } : {}}>
+                    {c.label}{c.numeric && <span className="sortIcon">{sortKey === c.key ? (sortDir === "asc" ? " ↑" : " ↓") : " ↕"}</span>}
+                  </th>
                 ))}
-                {sorted.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "#9ca3af", padding: "16px" }}>No results found</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((r) => (
+                <tr key={r.name} className="animRow refRow">
+                  <td>{r.name}</td>
+                  <td><AnimatedNumber value={Number(r.leadsGenerated || 0)} duration={650} format={(n) => fmt(Math.round(n))} /></td>
+                  <td><AnimatedNumber value={Number(r.leadsConverted || 0)} duration={650} format={(n) => fmt(Math.round(n))} /></td>
+                  <td>Rs. <AnimatedNumber value={Number(r.totalRevenueGenerated || 0)} duration={650} format={(n) => fmt(Math.round(n))} /></td>
+                  <td><AnimatedNumber value={Number(r.conversionRate || 0)} duration={600} format={(n) => `${Math.round(n)}%`} /></td>
+                </tr>
+              ))}
+              {sorted.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "#9ca3af", padding: "16px" }}>No results found</td></tr>}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -433,10 +442,8 @@ const AreaWiseChart = ({ areas }) => {
   const wrapText = (text, maxChars = 10) => {
     const value = String(text || "");
     const words = value.split(" ");
-  
     const lines = [];
     let line = "";
-  
     words.forEach((word) => {
       if ((line + " " + word).trim().length <= maxChars) {
         line = (line + " " + word).trim();
@@ -445,29 +452,17 @@ const AreaWiseChart = ({ areas }) => {
         line = word;
       }
     });
-  
     if (line) lines.push(line);
-  
     return lines.length ? lines : [value];
   };
   
   const CustomXAxisTick = ({ x, y, payload }) => {
     const lines = wrapText(payload.value, 12).slice(0, 3);
-  
     return (
       <g transform={`translate(${x},${y})`}>
-        <text
-          x={0}
-          y={0}
-          textAnchor="middle"
-          fill="#374151"
-          fontSize={10}
-          fontFamily="'Poppins','Inter',sans-serif"
-        >
+        <text x={0} y={0} textAnchor="middle" fill="#374151" fontSize={10} fontFamily="'Poppins','Inter',sans-serif">
           {lines.map((line, index) => (
-            <tspan key={index} x={0} dy={index === 0 ? 12 : 12}>
-              {line}
-            </tspan>
+            <tspan key={index} x={0} dy={index === 0 ? 12 : 12}>{line}</tspan>
           ))}
         </text>
       </g>
@@ -492,15 +487,9 @@ const AreaWiseChart = ({ areas }) => {
     return (
       <div className="chartTooltip">
         <div className="chartTooltipTitle">{label}</div>
-        <div className="chartTooltipRow">
-          <span>Total:</span><span>{fmt(Number(p.total || 0))}</span>
-        </div>
-        <div className="chartTooltipRow" style={{ color: "#166534" }}>
-          <span>Cleared:</span><span>{fmt(Number(p.cleared || 0))}</span>
-        </div>
-        <div className="chartTooltipRow" style={{ color: "#b45309" }}>
-          <span>Pending:</span><span>{fmt(Number(p.pending || 0))}</span>
-        </div>
+        <div className="chartTooltipRow"><span>Total:</span><span>{fmt(Number(p.total || 0))}</span></div>
+        <div className="chartTooltipRow" style={{ color: "#166534" }}><span>Cleared:</span><span>{fmt(Number(p.cleared || 0))}</span></div>
+        <div className="chartTooltipRow" style={{ color: "#b45309" }}><span>Pending:</span><span>{fmt(Number(p.pending || 0))}</span></div>
       </div>
     );
   };
@@ -515,22 +504,15 @@ const AreaWiseChart = ({ areas }) => {
   return (
     <div className="card animCard">
       <div className="salesOverviewHeader" style={{ marginBottom: collapsed ? 0 : 10 }}>
-        <div
-          className="cardTitle cardTitleClickable salesOverviewTitle"
-          onClick={() => setCollapsed((v) => !v)}
-        >
+        <div className="cardTitle cardTitleClickable salesOverviewTitle" onClick={() => setCollapsed((v) => !v)}>
           AREA WISE ORDERS <span className="collapseChevron">{collapsed ? "▶" : "▼"}</span>
         </div>
         {!collapsed && (
           <div className="salesOverviewHeaderRight">
             <div className="viewToggle">
               {metricOptions.map((m) => (
-                <button
-                  key={m.key}
-                  className={`viewToggleBtn ${metric === m.key ? "viewToggleActive" : ""}`}
-                  style={metric === m.key ? { background: m.color } : {}}
-                  onClick={() => setMetric(m.key)}
-                >
+                <button key={m.key} className={`viewToggleBtn ${metric === m.key ? "viewToggleActive" : ""}`}
+                  style={metric === m.key ? { background: m.color } : {}} onClick={() => setMetric(m.key)}>
                   {m.label}
                 </button>
               ))}
@@ -541,61 +523,24 @@ const AreaWiseChart = ({ areas }) => {
 
       {!collapsed && (
         <div className="chartScrollX">
-  <div style={{ minWidth: Math.max(data.length * 85, 900), height: 260 }}>
-    <ResponsiveContainer width="100%" height={360}>
-      <BarChart
-        data={data}
-        margin={{ top: 8, right: 8, left: 0, bottom: 80 }}
-        onMouseLeave={() => setActiveArea(null)}
-      >
-        <CartesianGrid strokeDasharray="3 3" stroke="#eee" vertical={false} />
-        <XAxis
-  dataKey="name"
-  tick={<CustomXAxisTick />}
-  stroke="#6b7280"
-  interval={0}
-  height={95}
-/>
-        <YAxis
-          tick={{ fontSize: 11, fontFamily: "'Poppins','Inter',sans-serif" }}
-          stroke="#6b7280"
-          tickFormatter={(v) => fmt(v)}
-          allowDecimals={false}
-        />
-        <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,87,34,0.06)" }} />
-        <Bar
-          dataKey={metric}
-          radius={[4, 4, 0, 0]}
-          maxBarSize={36}
-          onMouseEnter={(d) => setActiveArea(d.area)}
-        >
-          {data.map((entry) => (
-            <Cell
-              key={entry.area}
-              fill={
-                activeArea === null || activeArea === entry.area
-                  ? active.color
-                  : `${active.color}55`
-              }
-            />
-          ))}
-          <LabelList
-            dataKey={metric}
-            position="top"
-            style={{
-              fontSize: 10,
-              fontFamily: "'Poppins','Inter',sans-serif",
-              fill: "#374151",
-              fontWeight: 600,
-            }}
-            formatter={(v) => fmt(v)}
-          />
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
-    </div>  
-  </div>
-)}
+          <div style={{ minWidth: Math.max(data.length * 85, 900), height: 260 }}>
+            <ResponsiveContainer width="100%" height={360}>
+              <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 80 }} onMouseLeave={() => setActiveArea(null)}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eee" vertical={false} />
+                <XAxis dataKey="name" tick={<CustomXAxisTick />} stroke="#6b7280" interval={0} height={95} />
+                <YAxis tick={{ fontSize: 11, fontFamily: "'Poppins','Inter',sans-serif" }} stroke="#6b7280" tickFormatter={(v) => fmt(v)} allowDecimals={false} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,87,34,0.06)" }} />
+                <Bar dataKey={metric} radius={[4, 4, 0, 0]} maxBarSize={36} onMouseEnter={(d) => setActiveArea(d.area)}>
+                  {data.map((entry) => (
+                    <Cell key={entry.area} fill={activeArea === null || activeArea === entry.area ? active.color : `${active.color}55`} />
+                  ))}
+                  <LabelList dataKey={metric} position="top" style={{ fontSize: 10, fontFamily: "'Poppins','Inter',sans-serif", fill: "#374151", fontWeight: 600 }} formatter={(v) => fmt(v)} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -684,7 +629,12 @@ const Dashboard = () => {
   const location = useLocation();
   const isFarm = location.pathname.startsWith("/farm");
   const isAccounting = location.pathname.startsWith("/accounting");
+  const isBooking = !isFarm && !isAccounting;
+
   const [year, setYear] = useState("2026");
+  // Hissa/Goat toggle — only relevant for booking
+  const [orderTypeFilter, setOrderTypeFilter] = useState("hissa"); // "hissa" | "goat"
+
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState(null);
   const [targetData, setTargetData] = useState(null);
@@ -702,21 +652,26 @@ const Dashboard = () => {
       if (!silent) setLoading(true);
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const y = encodeURIComponent(year);
+
+      // For booking, append orderType param so backend can filter
+      // If backend doesn't support it yet, we filter on the frontend below
+      const otParam = isBooking ? `&orderType=${encodeURIComponent(orderTypeFilter)}` : "";
+
       const base = isAccounting ? `${API_BASE}/accounting/dashboard` : isFarm ? `${API_BASE}/farm/dashboard` : `${API_BASE}/dashboard`;
       const dayPromise = isFarm && !isAccounting
         ? Promise.resolve({ json: async () => ({ days: [] }) })
         : fetch(`${base}/day-wise?year=${y}`, { headers });
 
         const [k, t, d, src, r, sales, a] = await Promise.all([
-          fetch(`${base}/kpis?year=${y}`, { headers }),
+          fetch(`${base}/kpis?year=${y}${otParam}`, { headers }),
           fetch(`${base}/target-achievement?year=${y}`, { headers }),
           dayPromise,
-          fetch(`${base}/source-wise?year=${y}`, { headers }),
-          fetch(`${base}/reference-wise?year=${y}`, { headers }),
-          fetch(`${base}/sales-overview?year=${y}`, { headers }),
+          fetch(`${base}/source-wise?year=${y}${otParam}`, { headers }),
+          fetch(`${base}/reference-wise?year=${y}${otParam}`, { headers }),
+          fetch(`${base}/sales-overview?year=${y}${otParam}`, { headers }),
           isFarm || isAccounting
             ? Promise.resolve({ json: async () => ({ areas: [] }) })
-            : fetch(`${base}/area-wise?year=${y}`, { headers }),
+            : fetch(`${base}/area-wise?year=${y}${otParam}`, { headers }),
         ]);
         const [kj, tj, dj, srcj, rj, salesj, aj] = await Promise.all([
           k.json(), t.json(), d.json(), src.json(), r.json(), sales.json(), a.json(),
@@ -730,7 +685,7 @@ const Dashboard = () => {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [year, token, isFarm, isAccounting]);
+  }, [year, token, isFarm, isAccounting, isBooking, orderTypeFilter]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -786,7 +741,6 @@ const Dashboard = () => {
         .page { font-family:'Poppins','Inter',sans-serif; padding:12px 16px; display:flex; flex-direction:column; gap:10px; }
         .page * { font-family:inherit; }
 
-
         /* animations */
         .animCard  { animation:cardIn  .35s ease-out both; }
         .animPop   { animation:popIn   .35s ease-out both; }
@@ -812,6 +766,33 @@ const Dashboard = () => {
         .hSub   { margin:4px 0 0; font-size:13px; color:#6b7280; }
         .headerRight { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
         .lastRefreshed { font-size:11px; color:#9ca3af; white-space:nowrap; }
+
+        /* ── Hissa/Goat toggle ── */
+        .orderTypeToggle {
+          display:flex;
+          border:1px solid #e5e7eb;
+          border-radius:10px;
+          overflow:hidden;
+          box-shadow:0 2px 6px rgba(0,0,0,0.04);
+        }
+        .orderTypeBtn {
+          padding:7px 14px;
+          border:none;
+          background:#fff;
+          font-size:13px;
+          font-weight:500;
+          color:#6b7280;
+          cursor:pointer;
+          transition:background .15s,color .15s;
+          font-family:inherit;
+          line-height:1;
+        }
+        .orderTypeBtn:hover { background:#f9f9f9; color:#374151; }
+        .orderTypeBtnActive {
+          background:#FF5722 !important;
+          color:#fff !important;
+          font-weight:600 !important;
+        }
 
         /* unified control buttons */
         .ctrlBtn {
@@ -862,15 +843,7 @@ const Dashboard = () => {
         .kpiTrendUp { color:#16a34a; } .kpiTrendDown { color:#dc2626; }
         .kpiBlurField { filter:blur(6px); opacity:.35; user-select:none; pointer-events:none; background:rgba(0,0,0,0.03); border-radius:10px; padding:6px 10px; display:inline-block; min-width:140px; }
 
-
-        .chartScrollX {
-  width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-bottom: 8px;
-}
-
-
+        .chartScrollX { width:100%; overflow-x:auto; overflow-y:hidden; padding-bottom:8px; }
 
         /* card shell */
         .card { background:#fff; border-radius:10px; padding:12px; border:1px solid #f1f1f1; box-shadow:0 2px 8px rgba(0,0,0,0.04); transition:box-shadow .2s; }
@@ -900,7 +873,7 @@ const Dashboard = () => {
         .progressTrack { height:7px; border-radius:999px; background:#e5e7eb; overflow:hidden; }
         .progressFill { height:100%; border-radius:999px; }
 
-        /* day wise desktop */
+        /* day wise */
         .dayWiseTableWrap { width:100%; overflow-x:auto; border-radius:12px; border:1px solid #e5e7eb; }
         .tblDayWise { width:100%; border-collapse:separate; border-spacing:0; background:#fff; min-width:640px; }
         .tblDayWise th,.tblDayWise td { padding:8px 10px; font-size:13px; font-weight:400; border-bottom:1px solid #e5e7eb; border-right:1px solid #e5e7eb; }
@@ -915,9 +888,13 @@ const Dashboard = () => {
         .dayWiseRowLabel { background:#f3f4f6; color:#374151; font-weight:500; font-size:13px; border-right:1px solid #e5e7eb; }
         .dayWiseCell { text-align:center; color:#111827; font-size:13px; font-weight:400; }
         .dayWiseCellTotal { font-weight:600; }
+        /* Total col: subtle orange tint to distinguish */
+        .dayWiseTotalCol { background:#fff8f5 !important; font-weight:700 !important; color:#c2410c !important; }
+        /* Goat col: subtle amber tint */
+        .dayWiseGoatCol { background:#fffbeb !important; color:#92400e !important; }
         .dayWiseRowHighlight td { background:#fff4f0 !important; }
 
-        /* reference desktop */
+        /* reference */
         .tableWrapRef { width:100%; overflow-x:auto; border-radius:12px; }
         .tblRefOld { width:100%; border-collapse:separate; border-spacing:0; background:#f7f7f7; border:1px solid #ededed; border-radius:10px; overflow:hidden; min-width:560px; table-layout:fixed; }
         .tblRefOld th,.tblRefOld td { padding:8px 10px; font-size:12px; font-weight:400; color:#374151; text-align:center; border-bottom:1px solid #ededed; border-right:1px solid #ededed; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -968,10 +945,8 @@ const Dashboard = () => {
           .deskOnly { display:none !important; }
           .mobOnly  { display:block !important; }
 
-          /* align page heading with fixed mobile menu button */
           .page { padding:16px 10px 28px; gap:8px; }
 
-          /* header */
           .header { flex-direction:column; align-items:flex-start; gap:8px; }
           .hTitle {
             min-height:55px; display:flex; align-items:center; box-sizing:border-box;
@@ -982,7 +957,9 @@ const Dashboard = () => {
           .headerRight { width:100%; gap:6px; }
           .lastRefreshed { width:100%; order:-1; font-size:10px; }
 
-          /* KPI — 2 col */
+          .orderTypeToggle { width:100%; }
+          .orderTypeBtn { flex:1; text-align:center; padding:8px 10px; font-size:12px; }
+
           .kpiGrid { grid-template-columns:1fr 1fr; gap:6px; }
           .kpiCard { padding:10px 8px; min-height:60px; gap:6px; }
           .kpiIcon { width:36px; height:36px; }
@@ -991,65 +968,36 @@ const Dashboard = () => {
           .kpiValue { font-size:13px; }
           .kpiBlurField { min-width:60px; padding:3px 5px; }
 
-          /* card titles */
           .cardTitleBig,.cardTitle { font-size:12px; white-space:normal; }
 
-          /* target — stack vertically */
           .targetGrid { grid-template-columns:1fr; min-height:unset; gap:12px; }
           .donutWrap { align-items:center; }
 
-          /* source — 2 col on mobile */
           .sourceGrid { grid-template-columns:1fr 1fr; gap:6px; overflow:hidden; }
           .sourceCard { padding:7px 8px; gap:6px; min-width:0; overflow:hidden; }
           .sourceName { font-size:10px; }
           .sourceCount { font-size:11px; }
 
-          /* sales chart — unstack header */
           .salesOverviewHeader { flex-direction:column; align-items:flex-start; gap:6px; }
           .salesOverviewTitle { position:static; transform:none; font-size:12px; }
           .salesOverviewHeaderRight { margin-left:0; }
           .chartWrap { min-height:200px; }
 
-          /* ── Mobile Day Wise stacked cards ── */
-          .mDayCard {
-            background:#fafafa; border:1px solid #e5e7eb; border-radius:12px;
-            padding:12px; margin-bottom:10px;
-          }
+          .mDayCard { background:#fafafa; border:1px solid #e5e7eb; border-radius:12px; padding:12px; margin-bottom:10px; }
           .mDayCard:last-child { margin-bottom:0; }
-          .mDayCardTitle {
-            font-size:12px; font-weight:700; color:#fff;
-            background:#FF5722; border-radius:8px; padding:5px 10px;
-            margin-bottom:10px; text-align:center; letter-spacing:.3px;
-          }
-          .mDayRow {
-            background:#fff; border-radius:8px; border:1px solid #f0f0f0;
-            padding:8px 10px; margin-bottom:6px;
-          }
+          .mDayCardTitle { font-size:12px; font-weight:700; color:#fff; background:#FF5722; border-radius:8px; padding:5px 10px; margin-bottom:10px; text-align:center; letter-spacing:.3px; }
+          .mDayRow { background:#fff; border-radius:8px; border:1px solid #f0f0f0; padding:8px 10px; margin-bottom:6px; }
           .mDayRow:last-child { margin-bottom:0; }
-          .mDayRowLabel {
-            font-size:11px; font-weight:600; color:#374151;
-            border-left:3px solid #FF5722; padding-left:8px;
-            margin-bottom:8px; line-height:1.3;
-          }
-          .mDayRowGrid {
-            display:grid; grid-template-columns:repeat(5,1fr); gap:4px;
-          }
+          .mDayRowLabel { font-size:11px; font-weight:600; color:#374151; border-left:3px solid #FF5722; padding-left:8px; margin-bottom:8px; line-height:1.3; }
+          .mDayRowGrid { display:grid; grid-template-columns:repeat(5,1fr); gap:4px; }
           .mDayCell { text-align:center; }
           .mDayCellKey { font-size:9px; font-weight:500; color:#9ca3af; text-transform:uppercase; letter-spacing:.3px; margin-bottom:2px; }
           .mDayCellVal { font-size:12px; font-weight:600; color:#111827; }
 
-          /* ── Mobile Reference stacked cards ── */
           .mRefList { display:flex; flex-direction:column; gap:8px; }
-          .mRefCard {
-            background:#fafafa; border:1px solid #e5e7eb; border-radius:12px; padding:12px;
-          }
-          .mRefName {
-            font-size:13px; font-weight:700; color:#111827; margin-bottom:10px;
-            padding-bottom:8px; border-bottom:1px solid #f0f0f0;
-          }
-          .mRefGrid {
-            display:grid; grid-template-columns:1fr 1fr; gap:8px;
-          }
+          .mRefCard { background:#fafafa; border:1px solid #e5e7eb; border-radius:12px; padding:12px; }
+          .mRefName { font-size:13px; font-weight:700; color:#111827; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #f0f0f0; }
+          .mRefGrid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
           .mRefCell { }
           .mRefCellWide { grid-column:span 2; }
           .mRefCellLabel { font-size:10px; font-weight:500; color:#9ca3af; text-transform:uppercase; letter-spacing:.3px; margin-bottom:2px; }
@@ -1072,6 +1020,26 @@ const Dashboard = () => {
           <p className="hSub">Welcome, {user?.username || "Manager"}</p>
         </div>
         <div className="headerRight">
+          {/* Hissa / Goat toggle — booking only */}
+          {isBooking && (
+            <div className="orderTypeToggle">
+              <button
+                type="button"
+                className={`orderTypeBtn ${orderTypeFilter === "hissa" ? "orderTypeBtnActive" : ""}`}
+                onClick={() => setOrderTypeFilter("hissa")}
+              >
+                Hissa
+              </button>
+              <button
+                type="button"
+                className={`orderTypeBtn ${orderTypeFilter === "goat" ? "orderTypeBtnActive" : ""}`}
+                onClick={() => setOrderTypeFilter("goat")}
+              >
+                Goat
+              </button>
+            </div>
+          )}
+
           <select className="ctrlSelect" value={year} onChange={(e) => setYear(e.target.value)}>
             <option value="all">All Year</option>
             <option value="2026">2026</option>
@@ -1104,10 +1072,8 @@ const Dashboard = () => {
         {(isAccounting || !isFarm) && <DayWiseSummary days={days} />}
         <SourceWiseSummary sources={sources} />
         <ReferenceWiseSummary references={references} />
-
-{!isFarm && !isAccounting && <AreaWiseChart areas={areas} />}
-
-<SalesOverviewChart series={salesOverview} reveal={kpiValuesVisible} />
+        {!isFarm && !isAccounting && <AreaWiseChart areas={areas} />}
+        <SalesOverviewChart series={salesOverview} reveal={kpiValuesVisible} />
       </>)}
     </div>
   );

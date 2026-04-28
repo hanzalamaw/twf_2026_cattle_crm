@@ -376,73 +376,190 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
     }
   });
 
-  // Hissa stats sheet (for /stats page)
-  // Returns totals per cow/day/type (distinct hissa_number) and slot distribution (for row coloring).
-  app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
-    try {
-      const yearParam = parseInt(req.query.year, 10);
-      const year = Number.isFinite(yearParam) ? yearParam : 2026;
-      const days = ["DAY 1", "DAY 2", "DAY 3"];
-      const orderTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf"];
+  // Hissa + Goat stats sheet (for /stats page)
+// Returns:
+// - Hissa Standard/Premium/Waqf: cow-wise total hissa + slot distribution
+// - Goat (Hissa): goat-wise rows by day + slot
+app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
+  try {
+    const yearParam = parseInt(req.query.year, 10);
+    const year = Number.isFinite(yearParam) ? yearParam : 2026;
 
-      const [rows] = await db.execute(
-        `
-        SELECT
-          o.order_type,
-          o.day,
-          o.cow_number,
-          o.slot,
-          COUNT(DISTINCT o.hissa_number) AS total_hissa
-        FROM orders o
-        WHERE o.order_type IN (${orderTypes.map(() => "?").join(",")})
-          AND o.day IN (${days.map(() => "?").join(",")})
-          AND o.cow_number IS NOT NULL AND o.cow_number <> ''
-          AND o.hissa_number IS NOT NULL AND o.hissa_number <> ''
-          AND YEAR(o.booking_date) = ?
-        GROUP BY o.order_type, o.day, o.cow_number, o.slot
-        `,
-        [...orderTypes, ...days, year]
-      );
+    const days = ["DAY 1", "DAY 2", "DAY 3"];
 
-      const out = { year, days, order_types: orderTypes, types: {} };
+    const orderTypes = [
+      "Hissa - Standard",
+      "Hissa - Premium",
+      "Hissa - Waqf",
+      "Goat (Hissa)",
+    ];
 
-      for (const ot of orderTypes) {
-        out.types[ot] = {};
-        for (const d of days) out.types[ot][d] = {};
+    const normalizeDay = (value) => {
+      const s = String(value || "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, "");
+
+      if (s === "DAY1" || s === "1") return "DAY 1";
+      if (s === "DAY2" || s === "2") return "DAY 2";
+      if (s === "DAY3" || s === "3") return "DAY 3";
+
+      return null;
+    };
+
+    const normalizeSlot = (value) => {
+      const s = String(value || "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, " ");
+
+      if (s === "SLOT 1" || s === "SLOT1" || s === "1") return "SLOT 1";
+      if (s === "SLOT 2" || s === "SLOT2" || s === "2") return "SLOT 2";
+      if (s === "SLOT 3" || s === "SLOT3" || s === "3") return "SLOT 3";
+
+      return null;
+    };
+
+    const normalizeCow = (value) =>
+      String(value || "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, "");
+
+    const slotCounts = () => ({
+      "SLOT 1": 0,
+      "SLOT 2": 0,
+      "SLOT 3": 0,
+    });
+
+    const out = {
+      year,
+      days,
+      order_types: orderTypes,
+      types: {},
+    };
+
+    for (const ot of orderTypes) {
+      out.types[ot] = {};
+      for (const d of days) {
+        out.types[ot][d] = {};
       }
-
-      const slotOrder = ["SLOT 1", "SLOT 2", "SLOT 3"];
-      const normalizeSlot = (slot) => {
-        const s = String(slot || "").trim();
-        if (slotOrder.includes(s)) return s;
-        return null;
-      };
-
-      for (const r of rows) {
-        const ot = String(r.order_type || "").trim();
-        const d = String(r.day || "").trim();
-        const cow = String(r.cow_number || "").trim();
-        const slot = normalizeSlot(r.slot);
-        const count = Math.max(0, Number(r.total_hissa) || 0);
-
-        if (!out.types[ot] || !out.types[ot][d] || !cow) continue;
-
-        if (!out.types[ot][d][cow]) {
-          out.types[ot][d][cow] = {
-            total_hissa: 0,
-            slot_counts: { "SLOT 1": 0, "SLOT 2": 0, "SLOT 3": 0 },
-          };
-        }
-        out.types[ot][d][cow].total_hissa += count;
-        if (slot) out.types[ot][d][cow].slot_counts[slot] += count;
-      }
-
-      res.json(out);
-    } catch (error) {
-      logError("BOOKING", "Hissa sheet stats error", error);
-      res.status(500).json({ message: "Server error" });
     }
-  });
+
+    /**
+     * 1) Hissa cow stats
+     * Standard/Premium/Waqf are calculated by distinct hissa_number.
+     */
+    const hissaTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf"];
+
+    const [hissaRows] = await db.execute(
+      `
+      SELECT
+        o.order_type,
+        o.day,
+        o.cow_number,
+        o.slot,
+        COUNT(DISTINCT o.hissa_number) AS total_hissa
+      FROM orders o
+      WHERE o.order_type IN (${hissaTypes.map(() => "?").join(",")})
+        AND o.cow_number IS NOT NULL
+        AND TRIM(o.cow_number) <> ''
+        AND o.hissa_number IS NOT NULL
+        AND TRIM(o.hissa_number) <> ''
+        AND (
+          YEAR(o.booking_date) = ?
+          OR o.booking_date IS NULL
+        )
+      GROUP BY
+        o.order_type,
+        o.day,
+        o.cow_number,
+        o.slot
+      `,
+      [...hissaTypes, year]
+    );
+
+    for (const r of hissaRows) {
+      const orderType = String(r.order_type || "").trim();
+      const day = normalizeDay(r.day);
+      const cow = normalizeCow(r.cow_number);
+      const slot = normalizeSlot(r.slot);
+      const count = Math.max(0, Number(r.total_hissa) || 0);
+
+      if (!out.types[orderType] || !day || !out.types[orderType][day] || !cow) {
+        continue;
+      }
+
+      if (!out.types[orderType][day][cow]) {
+        out.types[orderType][day][cow] = {
+          total_hissa: 0,
+          slot_counts: slotCounts(),
+        };
+      }
+
+      out.types[orderType][day][cow].total_hissa += count;
+
+      if (slot) {
+        out.types[orderType][day][cow].slot_counts[slot] += count;
+      }
+    }
+
+    /**
+     * 2) Goat (Hissa) stats
+     * Goat is one complete animal/order, so each goat cow_number is counted as 1 row.
+     * hissa_number is normally 0, so we do NOT rely on distinct hissa_number.
+     */
+    const [goatRows] = await db.execute(
+      `
+      SELECT
+        o.order_id,
+        o.order_type,
+        o.day,
+        o.cow_number,
+        o.slot
+      FROM orders o
+      WHERE o.order_type = ?
+        AND o.cow_number IS NOT NULL
+        AND TRIM(o.cow_number) <> ''
+        AND (
+          YEAR(o.booking_date) = ?
+          OR o.booking_date IS NULL
+        )
+      ORDER BY
+        o.day ASC,
+        CAST(REGEXP_REPLACE(UPPER(TRIM(o.cow_number)), '[^0-9]', '') AS UNSIGNED) ASC,
+        o.created_at ASC
+      `,
+      ["Goat (Hissa)", year]
+    );
+
+    for (const r of goatRows) {
+      const day = normalizeDay(r.day);
+      const goatNumber = normalizeCow(r.cow_number);
+      const slot = normalizeSlot(r.slot);
+
+      if (!day || !out.types["Goat (Hissa)"][day] || !goatNumber) {
+        continue;
+      }
+
+      if (!out.types["Goat (Hissa)"][day][goatNumber]) {
+        out.types["Goat (Hissa)"][day][goatNumber] = {
+          total_hissa: 1,
+          slot_counts: slotCounts(),
+        };
+      }
+
+      if (slot) {
+        out.types["Goat (Hissa)"][day][goatNumber].slot_counts[slot] += 1;
+      }
+    }
+
+    res.json(out);
+  } catch (error) {
+    logError("BOOKING", "Hissa/goat sheet stats error", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
   // Check if cow/hissa combination already exists
   app.post("/api/booking/check-cow-hissa", verifyToken, async (req, res) => {
@@ -1275,21 +1392,53 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
   });
 
   // List booking expenses (for Expenses page, paginated)
-  app.get("/api/booking/expenses", verifyToken, async (req, res) => {
+  app.get(["/api/booking/expenses", "/api/farm/expenses"], verifyToken, async (req, res) => {
     try {
+      const isFarm = req.path.startsWith("/api/farm");
+      const tableName = isFarm ? "farm_expenses" : "booking_expenses";
+      const logScope = isFarm ? "FARM" : "BOOKING";
+  
       const { page = 1, limit = 50 } = req.query;
+  
       const pageNum = Math.max(1, parseInt(page, 10) || 1);
       const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
       const offset = (pageNum - 1) * limitNum;
-      const [countRows] = await db.execute("SELECT COUNT(*) AS total FROM booking_expenses");
-      const total = Number(countRows[0]?.total ?? 0);
-      const [rows] = await db.execute(
-        `SELECT expense_id, bank, cash, total, done_at, description, done_by, created_by FROM booking_expenses ORDER BY done_at DESC ${limitOffsetClause(limitNum, offset, { maxLimit: 100, defaultLimit: 50 })}`
+  
+      const [countRows] = await db.execute(
+        `SELECT COUNT(*) AS total FROM ${tableName}`
       );
-      const expenses = rows.map((r) => ({ ...r, done_at: toDateOnly(r.done_at) ?? r.done_at }));
+  
+      const total = Number(countRows[0]?.total ?? 0);
+  
+      const [rows] = await db.execute(
+        `
+        SELECT
+          e.expense_id,
+          e.bank,
+          e.cash,
+          e.total,
+          e.done_at,
+          e.description,
+          e.done_by,
+          e.created_by AS created_by_id,
+          COALESCE(u.username, e.created_by) AS created_by,
+          COALESCE(u.username, e.created_by) AS created_by_name
+        FROM ${tableName} e
+        LEFT JOIN users u
+          ON u.user_id = e.created_by
+        ORDER BY e.done_at DESC
+        ${limitOffsetClause(limitNum, offset, { maxLimit: 100, defaultLimit: 50 })}
+        `
+      );
+  
+      const expenses = rows.map((r) => ({
+        ...r,
+        done_at: toDateOnly(r.done_at) ?? r.done_at,
+      }));
+  
       res.json({ data: expenses, total });
     } catch (error) {
-      logError("BOOKING", "Expenses list error", error);
+      logError("EXPENSES", "Expenses list error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
