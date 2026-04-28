@@ -384,15 +384,18 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
       const whereO = conditionsO.length ? `WHERE ${conditionsO.join(" AND ")}` : "";
 
       const paramsL = [];
-      const conditionsL = [];
-      if (year === "2026" || year === "2025") {
-        conditionsL.push("YEAR(l.created_at) = ?");
-        paramsL.push(year);
-      } else if (year === "2024") {
-        conditionsL.push("(l.created_at IS NULL OR YEAR(l.created_at) < 2025)");
-      }
-      applyLeadOrderTypeFilter(orderType, conditionsL);
-      conditionsL.push("l.reference IS NOT NULL AND l.reference != ''");
+const conditionsL = [];
+
+if (year === "2026" || year === "2025") {
+  conditionsL.push("YEAR(l.created_at) = ?");
+  paramsL.push(year);
+} else if (year === "2024") {
+  conditionsL.push("(l.created_at IS NULL OR YEAR(l.created_at) < 2025)");
+}
+
+// ✅ NO orderType filter here
+
+conditionsL.push("l.reference IS NOT NULL AND l.reference != ''");
       const whereL = conditionsL.length ? `WHERE ${conditionsL.join(" AND ")}` : "";
 
       const [orderRows] = await db.execute(
