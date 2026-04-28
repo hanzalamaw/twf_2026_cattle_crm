@@ -437,8 +437,9 @@ const SourceWiseSummary = ({ sources }) => {
 /* ── Area Wise Bar Chart ── */
 const AreaWiseChart = ({ areas }) => {
   const [collapsed, setCollapsed] = useState(false);
-  const [metric, setMetric] = useState("total");
+  const [dayFilter, setDayFilter] = useState("total");
   const [activeArea, setActiveArea] = useState(null);
+
   const wrapText = (text, maxChars = 10) => {
     const value = String(text || "");
     const words = value.split(" ");
@@ -455,7 +456,7 @@ const AreaWiseChart = ({ areas }) => {
     if (line) lines.push(line);
     return lines.length ? lines : [value];
   };
-  
+
   const CustomXAxisTick = ({ x, y, payload }) => {
     const lines = wrapText(payload.value, 12).slice(0, 3);
     return (
@@ -469,17 +470,32 @@ const AreaWiseChart = ({ areas }) => {
     );
   };
 
-  const data = useMemo(
-    () => (areas || []).slice(0, 20).map((a) => ({ ...a, name: a.area })),
-    [areas]
-  );
-
-  const metricOptions = [
-    { key: "total",   label: "All Orders",  color: "#FF5722" },
-    { key: "cleared", label: "Cleared",     color: "#4CAF50" },
-    { key: "pending", label: "Pending",     color: "#f59e0b" },
+  const dayOptions = [
+    { key: "total", label: "All Days" },
+    { key: "day1", label: "Day 1" },
+    { key: "day2", label: "Day 2" },
+    { key: "day3", label: "Day 3" },
   ];
-  const active = metricOptions.find((m) => m.key === metric) || metricOptions[0];
+
+  const data = useMemo(() => {
+    return (areas || [])
+      .map((a) => ({
+        ...a,
+        name: a.area,
+        total: Number(a.total || 0),
+        day1: Number(a.day1 || 0),
+        day2: Number(a.day2 || 0),
+        day3: Number(a.day3 || 0),
+      }))
+      .sort((a, b) => {
+        const diff = Number(b[dayFilter] || 0) - Number(a[dayFilter] || 0);
+        if (diff !== 0) return diff;
+        return Number(b.total || 0) - Number(a.total || 0);
+      })
+      .slice(0, 20);
+  }, [areas, dayFilter]);
+
+  const active = dayOptions.find((m) => m.key === dayFilter) || dayOptions[0];
 
   const CustomTooltip = ({ active: a, payload, label }) => {
     if (!a || !payload?.length || !label) return null;
@@ -487,9 +503,10 @@ const AreaWiseChart = ({ areas }) => {
     return (
       <div className="chartTooltip">
         <div className="chartTooltipTitle">{label}</div>
-        <div className="chartTooltipRow"><span>Total:</span><span>{fmt(Number(p.total || 0))}</span></div>
-        <div className="chartTooltipRow" style={{ color: "#166534" }}><span>Cleared:</span><span>{fmt(Number(p.cleared || 0))}</span></div>
-        <div className="chartTooltipRow" style={{ color: "#b45309" }}><span>Pending:</span><span>{fmt(Number(p.pending || 0))}</span></div>
+        <div className="chartTooltipRow"><span>All Days:</span><span>{fmt(Number(p.total || 0))}</span></div>
+        <div className="chartTooltipRow"><span>Day 1:</span><span>{fmt(Number(p.day1 || 0))}</span></div>
+        <div className="chartTooltipRow"><span>Day 2:</span><span>{fmt(Number(p.day2 || 0))}</span></div>
+        <div className="chartTooltipRow"><span>Day 3:</span><span>{fmt(Number(p.day3 || 0))}</span></div>
       </div>
     );
   };
@@ -510,9 +527,12 @@ const AreaWiseChart = ({ areas }) => {
         {!collapsed && (
           <div className="salesOverviewHeaderRight">
             <div className="viewToggle">
-              {metricOptions.map((m) => (
-                <button key={m.key} className={`viewToggleBtn ${metric === m.key ? "viewToggleActive" : ""}`}
-                  style={metric === m.key ? { background: m.color } : {}} onClick={() => setMetric(m.key)}>
+              {dayOptions.map((m) => (
+                <button
+                  key={m.key}
+                  className={`viewToggleBtn ${dayFilter === m.key ? "viewToggleActive" : ""}`}
+                  onClick={() => setDayFilter(m.key)}
+                >
                   {m.label}
                 </button>
               ))}
@@ -525,16 +545,16 @@ const AreaWiseChart = ({ areas }) => {
         <div className="chartScrollX">
           <div style={{ minWidth: Math.max(data.length * 85, 900), height: 260 }}>
             <ResponsiveContainer width="100%" height={360}>
-              <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 80 }} onMouseLeave={() => setActiveArea(null)}>
+            <BarChart data={data} margin={{ top: 32, right: 8, left: 0, bottom: 80 }} onMouseLeave={() => setActiveArea(null)}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#eee" vertical={false} />
                 <XAxis dataKey="name" tick={<CustomXAxisTick />} stroke="#6b7280" interval={0} height={95} />
                 <YAxis tick={{ fontSize: 11, fontFamily: "'Poppins','Inter',sans-serif" }} stroke="#6b7280" tickFormatter={(v) => fmt(v)} allowDecimals={false} />
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,87,34,0.06)" }} />
-                <Bar dataKey={metric} radius={[4, 4, 0, 0]} maxBarSize={36} onMouseEnter={(d) => setActiveArea(d.area)}>
+                <Bar dataKey={active.key} radius={[4, 4, 0, 0]} maxBarSize={36} onMouseEnter={(d) => setActiveArea(d.area)}>
                   {data.map((entry) => (
-                    <Cell key={entry.area} fill={activeArea === null || activeArea === entry.area ? active.color : `${active.color}55`} />
+                    <Cell key={entry.area} fill={activeArea === null || activeArea === entry.area ? "#FF5722" : "#FF572255"} />
                   ))}
-                  <LabelList dataKey={metric} position="top" style={{ fontSize: 10, fontFamily: "'Poppins','Inter',sans-serif", fill: "#374151", fontWeight: 600 }} formatter={(v) => fmt(v)} />
+                  <LabelList dataKey={active.key} position="top" style={{ fontSize: 10, fontFamily: "'Poppins','Inter',sans-serif", fill: "#374151", fontWeight: 600 }} formatter={(v) => fmt(v)} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -633,7 +653,10 @@ const Dashboard = () => {
 
   const [year, setYear] = useState("2026");
   // Hissa/Goat toggle — only relevant for booking
-  const [orderTypeFilter, setOrderTypeFilter] = useState("hissa"); // "hissa" | "goat"
+  const [orderTypeFilter, setOrderTypeFilter] = useState({
+    hissa: true,
+    goat: false,
+  });
 
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState(null);
@@ -646,6 +669,17 @@ const Dashboard = () => {
   const token = useMemo(() => localStorage.getItem("token"), []);
   const [areas, setAreas] = useState([]);
 
+  const toggleOrderTypeFilter = useCallback((key) => {
+    setOrderTypeFilter((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+
+      // Keep at least one filter selected. Default is Hissa only.
+      if (!next.hissa && !next.goat) return prev;
+
+      return next;
+    });
+  }, []);
+
   const fetchAll = useCallback(async (opts = {}) => {
     const silent = opts.silent === true;
     try {
@@ -653,9 +687,15 @@ const Dashboard = () => {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const y = encodeURIComponent(year);
 
-      // For booking, append orderType param so backend can filter
-      // If backend doesn't support it yet, we filter on the frontend below
-      const otParam = isBooking ? `&orderType=${encodeURIComponent(orderTypeFilter)}` : "";
+      // For booking, append every selected order type. Hissa is selected by default;
+      // Goat can be selected together with Hissa.
+      const selectedOrderTypes = [];
+      if (orderTypeFilter.hissa) selectedOrderTypes.push("hissa");
+      if (orderTypeFilter.goat) selectedOrderTypes.push("goat");
+
+      const otParam = isBooking
+        ? selectedOrderTypes.map((t) => `&orderType=${encodeURIComponent(t)}`).join("")
+        : "";
 
       const base = isAccounting ? `${API_BASE}/accounting/dashboard` : isFarm ? `${API_BASE}/farm/dashboard` : `${API_BASE}/dashboard`;
       const dayPromise = isFarm && !isAccounting
@@ -889,9 +929,9 @@ const Dashboard = () => {
         .dayWiseCell { text-align:center; color:#111827; font-size:13px; font-weight:400; }
         .dayWiseCellTotal { font-weight:600; }
         /* Total col: subtle orange tint to distinguish */
-        .dayWiseTotalCol { background:#fff8f5 !important; font-weight:700 !important; color:#c2410c !important; }
-        /* Goat col: subtle amber tint */
-        .dayWiseGoatCol { background:#fffbeb !important; color:#92400e !important; }
+        .dayWiseTotalCol { background:#fff8f5 !important; font-weight:700 !important; color:#111827 !important; }
+        /* Goat col: same visual treatment as Standard */
+        .dayWiseGoatCol { background:#fff !important; color:#111827 !important; }
         .dayWiseRowHighlight td { background:#fff4f0 !important; }
 
         /* reference */
@@ -1025,15 +1065,15 @@ const Dashboard = () => {
             <div className="orderTypeToggle">
               <button
                 type="button"
-                className={`orderTypeBtn ${orderTypeFilter === "hissa" ? "orderTypeBtnActive" : ""}`}
-                onClick={() => setOrderTypeFilter("hissa")}
+                className={`orderTypeBtn ${orderTypeFilter.hissa ? "orderTypeBtnActive" : ""}`}
+                onClick={() => toggleOrderTypeFilter("hissa")}
               >
                 Hissa
               </button>
               <button
                 type="button"
-                className={`orderTypeBtn ${orderTypeFilter === "goat" ? "orderTypeBtnActive" : ""}`}
-                onClick={() => setOrderTypeFilter("goat")}
+                className={`orderTypeBtn ${orderTypeFilter.goat ? "orderTypeBtnActive" : ""}`}
+                onClick={() => toggleOrderTypeFilter("goat")}
               >
                 Goat
               </button>

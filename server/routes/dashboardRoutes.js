@@ -53,41 +53,56 @@ const DAY_KEY_SQL = `
   END
 `;
 
-/**
- * Booking dashboard top toggle filter.
- * hissa = Standard + Premium + Waqf only
- * goat  = Goat (Hissa) only
- *
- * IMPORTANT:
- * Target Achievement and Day Wise Summary intentionally do NOT use this filter.
- */
-function applyBookingDashboardTypeFilter(orderType, conditions) {
-  const selected = String(orderType || "hissa").toLowerCase();
+const LEAD_TYPE_KEY_SQL = `
+  CASE
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('hissapremium') THEN 'premium'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('hissastandard') THEN 'standard'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('hissawaqf') THEN 'waqf'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('goathissa') THEN 'goat'
+    ELSE NULL
+  END
+`;
 
-  if (selected === "goat") {
-    conditions.push(`${TYPE_KEY_SQL} = 'goat'`);
-    return;
-  }
+function getOrderTypeFilterList(orderType) {
+  const list = Array.isArray(orderType)
+    ? orderType
+    : orderType
+      ? [orderType]
+      : ["hissa"];
 
-  conditions.push(`${TYPE_KEY_SQL} IN ('standard', 'premium', 'waqf')`);
+  return list.map((x) => String(x).trim().toLowerCase()).filter(Boolean);
 }
 
-/**
- * Area-wise exception:
- * - Hissa view must NOT include Waqf in any situation.
- * - Goat view only includes Goat (Hissa).
- */
-function applyBookingAreaTypeFilter(orderType, conditions) {
-  const selected = String(orderType || "hissa").toLowerCase();
+function applyDashboardOrderTypeFilter(orderType, conditions) {
+  const list = getOrderTypeFilterList(orderType);
+  const allowed = [];
 
-  if (selected === "goat") {
-    conditions.push(`${TYPE_KEY_SQL} = 'goat'`);
-    return;
-  }
+  if (list.includes("hissa")) allowed.push("'standard'", "'premium'", "'waqf'");
+  if (list.includes("goat")) allowed.push("'goat'");
 
-  conditions.push(`${TYPE_KEY_SQL} IN ('standard', 'premium')`);
+  conditions.push(`${TYPE_KEY_SQL} IN (${allowed.length ? allowed.join(",") : "'standard','premium','waqf'"})`);
 }
 
+function applyAreaOrderTypeFilter(orderType, conditions) {
+  const list = getOrderTypeFilterList(orderType);
+  const allowed = [];
+
+  // Area-wise exception: Waqf is never included in area calculation.
+  if (list.includes("hissa")) allowed.push("'standard'", "'premium'");
+  if (list.includes("goat")) allowed.push("'goat'");
+
+  conditions.push(`${TYPE_KEY_SQL} IN (${allowed.length ? allowed.join(",") : "'standard','premium'"})`);
+}
+
+function applyLeadOrderTypeFilter(orderType, conditions) {
+  const list = getOrderTypeFilterList(orderType);
+  const allowed = [];
+
+  if (list.includes("hissa")) allowed.push("'standard'", "'premium'", "'waqf'");
+  if (list.includes("goat")) allowed.push("'goat'");
+
+  conditions.push(`${LEAD_TYPE_KEY_SQL} IN (${allowed.length ? allowed.join(",") : "'standard','premium','waqf'"})`);
+}
 
 export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
@@ -100,11 +115,11 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
   app.get("/api/dashboard/kpis", verifyToken, async (req, res) => {
     try {
-      const { year = "all", orderType = "hissa" } = req.query;
+      const { year = "all", orderType } = req.query;
 
       const params = [];
       const conditions = buildYearWhere(year, params);
-      applyBookingDashboardTypeFilter(orderType, conditions);
+      applyDashboardOrderTypeFilter(orderType, conditions);
       const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
       const [rows] = await db.execute(
@@ -360,11 +375,11 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
   app.get("/api/dashboard/reference-wise", verifyToken, async (req, res) => {
     try {
-      const { year = "all", orderType = "hissa" } = req.query;
+      const { year = "all", orderType } = req.query;
 
       const paramsO = [];
       const conditionsO = buildYearWhere(year, paramsO);
-      applyBookingDashboardTypeFilter(orderType, conditionsO);
+      applyDashboardOrderTypeFilter(orderType, conditionsO);
       conditionsO.push("o.closed_by IS NOT NULL AND o.closed_by != ''");
       const whereO = conditionsO.length ? `WHERE ${conditionsO.join(" AND ")}` : "";
 
@@ -376,6 +391,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
       } else if (year === "2024") {
         conditionsL.push("(l.created_at IS NULL OR YEAR(l.created_at) < 2025)");
       }
+      applyLeadOrderTypeFilter(orderType, conditionsL);
       conditionsL.push("l.reference IS NOT NULL AND l.reference != ''");
       const whereL = conditionsL.length ? `WHERE ${conditionsL.join(" AND ")}` : "";
 
@@ -449,11 +465,11 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
   app.get("/api/dashboard/source-wise", verifyToken, async (req, res) => {
     try {
-      const { year = "all", orderType = "hissa" } = req.query;
+      const { year = "all", orderType } = req.query;
 
       const params = [];
       const conditions = buildYearWhere(year, params);
-      applyBookingDashboardTypeFilter(orderType, conditions);
+      applyDashboardOrderTypeFilter(orderType, conditions);
       conditions.push("(o.order_source IS NOT NULL AND o.order_source != '')");
 
       const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -489,11 +505,11 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
   app.get("/api/dashboard/sales-overview", verifyToken, async (req, res) => {
     try {
-      const { year = "2026", orderType = "hissa" } = req.query;
+      const { year = "2026", orderType } = req.query;
 
       const params = [];
       const conditions = buildYearWhere(year, params);
-      applyBookingDashboardTypeFilter(orderType, conditions);
+      applyDashboardOrderTypeFilter(orderType, conditions);
       conditions.push("o.booking_date IS NOT NULL");
       const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
@@ -536,39 +552,42 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
 // -----------------------
 // GET: /api/dashboard/area-wise?year=...
-// Bar chart: order count per area (Booking only — 4 types)
+// Bar chart: order count per area, with all-days and Day 1/2/3 breakdown.
+// Area exception: Hissa mode includes Standard/Premium only; Waqf is never included.
 // -----------------------
 app.get("/api/dashboard/area-wise", verifyToken, async (req, res) => {
   try {
-    const { year = "all", orderType = "hissa" } = req.query;
+    const { year = "all", orderType } = req.query;
 
     const params = [];
     const conditions = buildYearWhere(year, params);
-    applyBookingAreaTypeFilter(orderType, conditions);
-    conditions.push("(o.area IS NOT NULL AND o.area != '')");
+    applyAreaOrderTypeFilter(orderType, conditions);
+    conditions.push("(o.area IS NOT NULL AND TRIM(o.area) != '')");
 
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const [rows] = await db.execute(
       `
       SELECT
-        o.area AS area,
+        TRIM(o.area) AS area,
         COUNT(*) AS total,
-        SUM(CASE WHEN COALESCE(o.pending_amount, 0) <= 0 THEN 1 ELSE 0 END) AS cleared,
-        SUM(CASE WHEN COALESCE(o.pending_amount, 0) > 0  THEN 1 ELSE 0 END) AS pending
+        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day1' THEN 1 ELSE 0 END) AS day1,
+        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day2' THEN 1 ELSE 0 END) AS day2,
+        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day3' THEN 1 ELSE 0 END) AS day3
       FROM orders o
       ${where}
-      GROUP BY o.area
+      GROUP BY TRIM(o.area)
       ORDER BY total DESC
       `,
       params
     );
 
     const areas = (rows || []).map((r) => ({
-      area:    r.area    || "—",
-      total:   Number(r.total   || 0),
-      cleared: Number(r.cleared || 0),
-      pending: Number(r.pending || 0),
+      area: r.area || "—",
+      total: Number(r.total || 0),
+      day1: Number(r.day1 || 0),
+      day2: Number(r.day2 || 0),
+      day3: Number(r.day3 || 0),
     }));
 
     res.json({ areas });
@@ -577,5 +596,6 @@ app.get("/api/dashboard/area-wise", verifyToken, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 };
