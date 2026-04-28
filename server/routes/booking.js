@@ -466,10 +466,7 @@ app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
         AND TRIM(o.cow_number) <> ''
         AND o.hissa_number IS NOT NULL
         AND TRIM(o.hissa_number) <> ''
-        AND (
-          YEAR(o.booking_date) = ?
-          OR o.booking_date IS NULL
-        )
+        AND YEAR(o.booking_date) = ?
       GROUP BY
         o.order_type,
         o.day,
@@ -521,10 +518,7 @@ app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
       WHERE o.order_type = ?
         AND o.cow_number IS NOT NULL
         AND TRIM(o.cow_number) <> ''
-        AND (
-          YEAR(o.booking_date) = ?
-          OR o.booking_date IS NULL
-        )
+        AND YEAR(o.booking_date) = ?
       ORDER BY
         o.day ASC,
         CAST(REGEXP_REPLACE(UPPER(TRIM(o.cow_number)), '[^0-9]', '') AS UNSIGNED) ASC,
