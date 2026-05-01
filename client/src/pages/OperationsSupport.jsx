@@ -5,6 +5,36 @@ import { useAuth } from '../context/AuthContext';
 import SharedChallanModal from '../components/SharedChallanModal';
 
 const ALL_STATUSES = ['Pending', 'Rider Assigned', 'Dispatched', 'Delivered', 'Returned to Farm'];
+const ALLOWED_ORDER_TYPES = ['Hissa - Standard', 'Hissa Premium', 'Hissa - Waqf', 'Goat(Hissa)'];
+const ORDER_TYPE_FILTERS = [
+  { value: 'Hissa - Standard', label: 'Hissa Standard' },
+  { value: 'Hissa Premium', label: 'Hissa Premium' },
+  { value: 'Hissa - Waqf', label: 'Hissa Waqf' },
+  { value: 'Goat(Hissa)', label: 'Goat(Hissa)' },
+];
+function normalizeOrderType(value) {
+  const lower = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (lower === 'hissa - standard' || lower === 'hissa standard') return 'Hissa - Standard';
+  if (lower === 'hissa premium' || lower === 'hissa - premium') return 'Hissa Premium';
+  if (lower === 'hissa - waqf' || lower === 'hissa waqf') return 'Hissa - Waqf';
+  if (lower === 'goat(hissa)' || lower === 'goat (hissa)' || lower === 'goat hissa') return 'Goat(Hissa)';
+  return '';
+}
+function normalizeForCompare(value) { return String(value || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+function groupMatchesOrderType(g, filterOrderType) {
+  if (!filterOrderType) return true;
+  return (g.orders || []).some((o) => normalizeOrderType(o.order_type) === filterOrderType);
+}
+function formatTotalHissa(total, opts = {}) {
+  const premium = Number(opts.premium || 0), standard = Number(opts.standard || 0), waqf = Number(opts.waqf || 0), goat = Number(opts.goat || 0);
+  const cleanTotal = Number(total ?? (premium + standard + waqf + goat));
+  const parts = [];
+  if (premium > 0) parts.push(`${premium} Premium`);
+  if (standard > 0) parts.push(`${standard} Standard`);
+  if (waqf > 0) parts.push(`${waqf} Waqf`);
+  if (goat > 0) parts.push(`${goat} Goat`);
+  return parts.length ? `${cleanTotal} (${parts.join(', ')})` : String(cleanTotal || 0);
+}
 
 const STATUS_STYLES = {
   Pending:            { bg: '#F5F5F5', fg: '#666' },
@@ -95,6 +125,7 @@ export default function OperationsCustomerSupport() {
   const [statusFilter, setStatusFilter] = useState('');
   const [riderFilter,  setRiderFilter]  = useState('');
   const [areaFilter,   setAreaFilter]   = useState('');
+  const [orderTypeFilter, setOrderTypeFilter] = useState('');
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
 
@@ -118,7 +149,7 @@ export default function OperationsCustomerSupport() {
     try {
       const qs = new URLSearchParams();
       qs.set('batch_id', selectedBatch);
-      if (dayFilter) qs.set('day', dayFilter);
+      // Load full batch; day/order type filters are client-side like Deliveries.
 
       const [gRes, ridRes] = await Promise.all([
         authFetch(`${API_BASE}/operations/deliveries/groups?${qs}`),
@@ -137,7 +168,7 @@ export default function OperationsCustomerSupport() {
     } finally {
       setLoading(false);
     }
-  }, [authFetch, selectedBatch, dayFilter]);
+  }, [authFetch, selectedBatch]);
 
   useEffect(() => { loadBatches(); }, []);
   useEffect(() => { if (selectedBatch !== null) load(); }, [load, selectedBatch]);
@@ -204,18 +235,20 @@ export default function OperationsCustomerSupport() {
         return hay.includes(q);
       });
     }
+    if (dayFilter) list = list.filter((g) => normalizeForCompare(g.day) === normalizeForCompare(dayFilter));
+    if (orderTypeFilter) list = list.filter((g) => groupMatchesOrderType(g, orderTypeFilter));
     if (statusFilter) list = list.filter((g) => (g.derived_status || 'Pending') === statusFilter);
     if (riderFilter)  list = list.filter((g) => String(g.rider_id || '') === riderFilter);
     if (areaFilter)   list = list.filter((g) => g.area === areaFilter);
     return list;
-  }, [groups, search, statusFilter, riderFilter, areaFilter]);
+  }, [groups, search, dayFilter, orderTypeFilter, statusFilter, riderFilter, areaFilter]);
 
   const totalPages  = Math.max(1, Math.ceil(filteredGroups.length / PAGE_SIZE));
   const pagedGroups = useMemo(() => filteredGroups.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filteredGroups, page]);
-  useEffect(() => { setPage(1); }, [search, dayFilter, statusFilter, riderFilter, areaFilter, selectedBatch]);
+  useEffect(() => { setPage(1); }, [search, dayFilter, orderTypeFilter, statusFilter, riderFilter, areaFilter, selectedBatch]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
-  const resetFilters = () => { setSearch(''); setDayFilter('Day 1'); setStatusFilter(''); setRiderFilter(''); setAreaFilter(''); };
+  const resetFilters = () => { setSearch(''); setDayFilter('Day 1'); setOrderTypeFilter(''); setStatusFilter(''); setRiderFilter(''); setAreaFilter(''); };
 
   const openModal = async (g) => {
     if (!g.qr_token) { setModal(g); setModalData(null); return; }
@@ -232,6 +265,21 @@ export default function OperationsCustomerSupport() {
   return (
     <>
       <style>{`
+
+          .ops-data-table { width: max-content !important; min-width: 100% !important; table-layout: auto !important; }
+          .ops-data-table th,
+          .ops-data-table td {
+            max-width: 240px;
+            white-space: normal !important;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            vertical-align: top;
+          }
+          .ops-data-table th { white-space: nowrap !important; }
+          @media (max-width: 767px) {
+            .ops-data-table th,
+            .ops-data-table td { max-width: 180px; }
+          }
         @media (max-width: 767px) {
           .cs-root { padding: 16px 12px 24px !important; overflow: auto !important; }
           .cs-header { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; margin-bottom: 12px !important; }
@@ -276,8 +324,8 @@ export default function OperationsCustomerSupport() {
         <div style={{ borderTop: '1px solid #e6e6e6', marginBottom: '12px' }} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', width: '100%', gap: '8px', marginBottom: '12px' }}>
           {DAY_OPTIONS.map((d) => (
-            <button key={d} type="button" onClick={() => setDayFilter(d)}
-              style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', background: dayFilter === d ? '#FF5722' : '#fff', color: dayFilter === d ? '#fff' : '#333', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}>
+            <button key={d} type="button" onClick={() => setDayFilter((prev) => normalizeForCompare(prev) === normalizeForCompare(d) ? '' : d)}
+              style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', background: normalizeForCompare(dayFilter) === normalizeForCompare(d) ? '#FF5722' : '#fff', color: normalizeForCompare(dayFilter) === normalizeForCompare(d) ? '#fff' : '#333', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}>
               {d}
             </button>
           ))}
@@ -293,6 +341,7 @@ export default function OperationsCustomerSupport() {
             { label: 'Status', value: statusFilter, set: setStatusFilter, opts: ALL_STATUSES.map((s) => ({ v: s, l: s })) },
             { label: 'Rider',  value: riderFilter,  set: setRiderFilter,  opts: riders.map((r) => ({ v: String(r.rider_id), l: r.rider_name })) },
             { label: 'Area',   value: areaFilter,   set: setAreaFilter,   opts: areas.map((a) => ({ v: a, l: a })) },
+            { label: 'Order Type', value: orderTypeFilter, set: setOrderTypeFilter, opts: ORDER_TYPE_FILTERS.map((t) => ({ v: t.value, l: t.label })) },
           ].map(({ label, value, set, opts }) => (
             <div key={label} style={{ width: 130 }}>
               <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>{label}</label>
@@ -320,6 +369,7 @@ export default function OperationsCustomerSupport() {
                 { label: 'Status', value: statusFilter, set: setStatusFilter, opts: ALL_STATUSES.map((s) => ({ v: s, l: s })) },
                 { label: 'Rider',  value: riderFilter,  set: setRiderFilter,  opts: riders.map((r) => ({ v: String(r.rider_id), l: r.rider_name })) },
                 { label: 'Area',   value: areaFilter,   set: setAreaFilter,   opts: areas.map((a) => ({ v: a, l: a })) },
+            { label: 'Order Type', value: orderTypeFilter, set: setOrderTypeFilter, opts: ORDER_TYPE_FILTERS.map((t) => ({ v: t.value, l: t.label })) },
               ].map(({ label, value, set, opts }) => (
                 <div key={label}>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>{label}</label>
@@ -354,23 +404,8 @@ export default function OperationsCustomerSupport() {
               {groups.length === 0 ? 'No groups found.' : 'No groups match the current filters.'}
             </div>
           ) : (
-            <table className="ops-data-table" style={{ width: '100%', minWidth: '2850px', borderCollapse: 'collapse', fontSize: '11px', tableLayout: 'fixed' }}>
-              <colgroup>
-                <col style={{ width:'160px' }} />
-                <col style={{ width:'300px' }} />
-                <col style={{ width:'360px' }} />
-                <col style={{ width:'140px' }} />
-                <col style={{ width:'280px' }} />
-                <col style={{ width:'360px' }} />
-                <col style={{ width:'150px' }} />
-                <col style={{ width:'150px' }} />
-                <col style={{ width:'130px' }} />
-                <col style={{ width:'220px' }} />
-                <col style={{ width:'95px' }} />
-                <col style={{ width:'95px' }} />
-                <col style={{ width:'110px' }} />
-                <col style={{ width:'110px' }} />
-              </colgroup>
+            <table className="ops-data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', tableLayout: 'auto' }}>
+              
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                 <tr style={{ background: '#fafafa' }}>
                   {['Status', 'Rider', 'Description', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa'].map((h) => (
@@ -539,14 +574,9 @@ export default function OperationsCustomerSupport() {
             ['Day', modal.day || '—'],
             ['Slot', (modal.slots || []).join(', ') || modal.slot || '—'],
             ['Rider', modalRiderDetails.name],
-            ['Vehicle', modalRiderDetails.vehicle],
-            ['Rider Number', modalRiderDetails.number],
-            ['Standard', String(modal.standard_hissa_count || 0)],
-            ['Premium', String(modal.premium_hissa_count || 0)],
-            ['Goat', String(modal.goat_hissa_count || 0)],
-            ['Total Hissa', String(modal.hissa_count || 0)],
+            ['Total Hissa', formatTotalHissa(modal.hissa_count || 0, { premium: modal.premium_hissa_count, standard: modal.standard_hissa_count, waqf: modal.waqf_hissa_count, goat: modal.goat_hissa_count })],
           ]}
-          orders={modalData?.orders || []}
+          orders={(modalData?.orders || []).filter((o) => ALLOWED_ORDER_TYPES.includes(normalizeOrderType(o.order_type)))}
           renderOrderStatus={(o) => <StatusBadge status={o.delivery_status} />}
         />
       )}

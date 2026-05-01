@@ -5,7 +5,9 @@ import { writeAuditLog } from "../utils/auditLog.js";
 const ALLOWED_STATUSES = ["Pending", "Rider Assigned", "Dispatched", "Delivered", "Returned to Farm"];
 const REGENERATE_ALLOWED_EMAIL = "hanzalamawahab@gmail.com";
 const OPERATIONS_YEAR = 2026;
-const nonWaqfOrder = (alias = "o") => `LOWER(COALESCE(${alias}.order_type, '')) NOT LIKE '%waqf%'`;
+const ALLOWED_ORDER_TYPE_SQL = "'hissa - standard', 'hissa standard', 'hissa premium', 'hissa - premium', 'hissa - waqf', 'hissa waqf', 'goat(hissa)', 'goat (hissa)', 'goat hissa'";
+const allowedOrderType = (alias = "o") => `LOWER(TRIM(COALESCE(${alias}.order_type, ''))) IN (${ALLOWED_ORDER_TYPE_SQL})`;
+const nonWaqfOrder = allowedOrderType;
 
 function emitOperationsChanged(io, event, payload = {}) {
   if (!io) return;
@@ -40,11 +42,12 @@ function normalizeDay(d) {
 }
 
 function classifyHissa(orderType) {
-  const t = (orderType || "").toLowerCase();
-  if (t.includes("goat")) return "goat";
-  if (t.includes("waqf")) return "waqf";
-  if (t.includes("premium")) return "premium";
-  return "standard";
+  const t = String(orderType || "").trim().toLowerCase().replace(/\s+/g, " " );
+  if (t === "goat(hissa)" || t === "goat (hissa)") return "goat";
+  if (t === "hissa - waqf" || t === "hissa waqf") return "waqf";
+  if (t === "hissa premium" || t === "hissa - premium") return "premium";
+  if (t === "hissa - standard" || t === "hissa standard") return "standard";
+  return "ignore";
 }
 
 const GSEP = "\x1F";
@@ -263,6 +266,8 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
                  FROM challan_orders co4 INNER JOIN orders o ON o.order_id = co4.order_id WHERE co4.challan_id = c.challan_id AND NULLIF(TRIM(o.alt_contact), '') IS NOT NULL) AS alt_contacts_csv,
                 (SELECT GROUP_CONCAT(DISTINCT NULLIF(TRIM(o.customer_id), '') ORDER BY o.order_id SEPARATOR ', ')
                  FROM challan_orders co5 INNER JOIN orders o ON o.order_id = co5.order_id WHERE co5.challan_id = c.challan_id AND NULLIF(TRIM(o.customer_id), '') IS NOT NULL) AS customer_ids_csv,
+                (SELECT GROUP_CONCAT(DISTINCT NULLIF(TRIM(o.order_type), '') ORDER BY o.order_id SEPARATOR ', ')
+                 FROM challan_orders co8 INNER JOIN orders o ON o.order_id = co8.order_id WHERE co8.challan_id = c.challan_id AND ${nonWaqfOrder('o')}) AS order_types_csv,
                 -- Delivery progress from linked orders
                 (SELECT COUNT(*) FROM challan_orders co6
                  INNER JOIN orders o2 ON o2.order_id = co6.order_id
@@ -497,14 +502,14 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
         `SELECT order_id, order_type, booking_name, shareholder_name, cow_number, hissa_number, contact, alt_contact,
                 address, area, day, slot, description, customer_id
          FROM orders
-         WHERE booking_date IS NOT NULL AND YEAR(booking_date) = ? AND LOWER(COALESCE(order_type, '')) NOT LIKE '%waqf%'`,
+         WHERE booking_date IS NOT NULL AND YEAR(booking_date) = ? AND ${nonWaqfOrder('orders')}`,
         [OPERATIONS_YEAR]
       );
 
       const grouped = new Map();
       let skippedNoAddress = 0;
       for (const o of orders) {
-        if (classifyHissa(o.order_type) === "waqf") continue;
+        if (classifyHissa(o.order_type) === "ignore") continue;
         if (o.address == null || String(o.address).trim() === "") { skippedNoAddress++; continue; }
         const k = groupKeyForOrder(o);
         if (!grouped.has(k)) grouped.set(k, []);
@@ -541,7 +546,7 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
             else if (c === "waqf") tw++;
             else if (c === "goat") tg++;
           }
-          const totalHissa = tp + ts;
+          const totalHissa = tp + ts + tw + tg;
           const bookingNames = [...new Set(list.map((x) => x.booking_name).filter(Boolean))];
           const descParts = [...new Set(list.map((x) => x.description).filter(Boolean))];
           const allSlots = [...new Set(list.map((x) => String(x.slot || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -607,7 +612,7 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
 
       let challanSql = `SELECT c.challan_id, c.qr_token, c.booking_name, c.address, c.area,
                 c.description, c.slot, c.day, c.challan_date,
-                c.total_hissa, c.total_premium_hissa, c.total_standard_hissa, c.total_goat_hissa,
+                c.total_hissa, c.total_premium_hissa, c.total_standard_hissa, c.total_waqf_hissa, c.total_goat_hissa,
                 cb.label AS batch_label
          FROM challan c
          LEFT JOIN challan_batch cb ON cb.batch_id = c.batch_id
@@ -615,7 +620,7 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       const challanParams = [batchId];
 
       if (dayFilter) {
-        challanSql += ` AND TRIM(COALESCE(c.day, '')) = ?`;
+        challanSql += ` AND LOWER(TRIM(COALESCE(c.day, ''))) = LOWER(TRIM(?))`;
         challanParams.push(dayFilter);
       }
       challanSql += ` ORDER BY c.day, c.slot, c.address, c.challan_id`;
@@ -686,6 +691,7 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
           standard_hissa_count: Number(c.total_standard_hissa || 0),
           premium_hissa_count: Number(c.total_premium_hissa || 0),
           goat_hissa_count: Number(c.total_goat_hissa || 0),
+          waqf_hissa_count: Number(c.total_waqf_hissa || 0),
           customer_ids: customerIds,
           booking_names: bookingNames,
           contacts,
@@ -730,7 +736,7 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       const conditions = ["co.challan_id IS NOT NULL", "c.batch_id = ?", nonWaqfOrder("o")];
       const params = [batchId];
 
-      if (day) { conditions.push("TRIM(COALESCE(o.day, '')) = ?"); params.push(String(day).trim()); }
+      if (day) { conditions.push("LOWER(TRIM(COALESCE(o.day, ''))) = LOWER(TRIM(?))"); params.push(String(day).trim()); }
       if (status) { conditions.push("o.delivery_status = ?"); params.push(String(status).trim()); }
       if (rider_id) { conditions.push("o.rider_id = ?"); params.push(Number(rider_id)); }
       if (area) { conditions.push("TRIM(COALESCE(o.area, '')) = ?"); params.push(String(area).trim()); }
@@ -780,7 +786,7 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       conditions.push("YEAR(o.booking_date) = ?");
       params.push(OPERATIONS_YEAR);
       conditions.push(nonWaqfOrder("o"));
-      if (day) { conditions.push("TRIM(COALESCE(o.day, '')) = ?"); params.push(String(day).trim()); }
+      if (day) { conditions.push("LOWER(TRIM(COALESCE(o.day, ''))) = LOWER(TRIM(?))"); params.push(String(day).trim()); }
       if (area) { conditions.push("TRIM(COALESCE(o.area, '')) = ?"); params.push(String(area).trim()); }
       if (order_type) { conditions.push("o.order_type = ?"); params.push(String(order_type).trim()); }
       const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -824,7 +830,7 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       const activeCount = Number(riderCounts.active_riders || 0);
       const avg = activeCount > 0 ? Math.round((Number(summary.delivered || 0) / activeCount) * 10) / 10 : 0;
       const [typesRows] = await db.execute(
-        `SELECT DISTINCT order_type FROM orders WHERE order_type IS NOT NULL AND TRIM(order_type) != '' AND LOWER(COALESCE(order_type, '')) NOT LIKE '%waqf%' ORDER BY order_type`
+        `SELECT DISTINCT order_type FROM orders WHERE order_type IS NOT NULL AND TRIM(order_type) != '' AND LOWER(TRIM(COALESCE(order_type, ''))) IN ('hissa - standard', 'hissa standard', 'hissa premium', 'hissa - premium', 'hissa - waqf', 'hissa waqf', 'goat(hissa)', 'goat (hissa)', 'goat hissa') ORDER BY order_type`
       );
       res.json({
         total_hissas: Number(summary.total_hissas || 0),
@@ -860,7 +866,7 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       );
       const challanParams = [];
       let challanWhere = `WHERE o.rider_id IS NOT NULL AND o.booking_date IS NOT NULL AND YEAR(o.booking_date) = ${OPERATIONS_YEAR} AND ${nonWaqfOrder('o')}`;
-      if (day) { challanWhere += ` AND TRIM(COALESCE(c.day, '')) = ?`; challanParams.push(day); }
+      if (day) { challanWhere += ` AND LOWER(TRIM(COALESCE(c.day, ''))) = LOWER(TRIM(?))`; challanParams.push(day); }
       const [challanStats] = await db.execute(
         `SELECT o.rider_id,
                 COUNT(DISTINCT c.challan_id) AS challan_count,
@@ -920,7 +926,7 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
                  INNER JOIN challan_orders co ON co.challan_id = c.challan_id
                  INNER JOIN orders o ON o.order_id = co.order_id
                  WHERE o.rider_id = ? AND o.booking_date IS NOT NULL AND YEAR(o.booking_date) = ${OPERATIONS_YEAR} AND ${nonWaqfOrder('o')}`;
-      if (day) { sql += ` AND TRIM(COALESCE(c.day, '')) = ?`; params.push(day); }
+      if (day) { sql += ` AND LOWER(TRIM(COALESCE(c.day, ''))) = LOWER(TRIM(?))`; params.push(day); }
       sql += ` ORDER BY c.day, c.slot, c.challan_id, o.order_id`;
       const [rows] = await db.execute(sql, params);
       res.json({ rider: rv[0], orders: rows });

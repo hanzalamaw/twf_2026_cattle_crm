@@ -8,6 +8,48 @@ import QRCode from 'qrcode';
 
 const REGENERATE_EMAIL = 'hanzalamawahab@gmail.com';
 
+const ALLOWED_ORDER_TYPES = ['Hissa - Standard', 'Hissa Premium', 'Hissa - Waqf', 'Goat(Hissa)'];
+const ORDER_TYPE_FILTERS = [
+  { value: 'Hissa - Standard', label: 'Hissa Standard' },
+  { value: 'Hissa Premium', label: 'Hissa Premium' },
+  { value: 'Hissa - Waqf', label: 'Hissa Waqf' },
+  { value: 'Goat(Hissa)', label: 'Goat(Hissa)' },
+];
+function normalizeOrderType(value) {
+  const lower = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (lower === 'hissa - standard' || lower === 'hissa standard') return 'Hissa - Standard';
+  if (lower === 'hissa premium' || lower === 'hissa - premium') return 'Hissa Premium';
+  if (lower === 'hissa - waqf' || lower === 'hissa waqf') return 'Hissa - Waqf';
+  if (lower === 'goat(hissa)' || lower === 'goat (hissa)' || lower === 'goat hissa') return 'Goat(Hissa)';
+  return '';
+}
+function getChallanOrderTypes(row) {
+  const values = [row.order_type, row.order_types, row.order_types_csv, row.types_csv, row.type];
+  const direct = [...new Set(values.flatMap((value) => String(value || '').split(',')).map(normalizeOrderType).filter(Boolean))];
+  if (direct.length) return direct;
+  const inferred = [];
+  if (Number(row.total_standard_hissa || row.standard_hissa_count || 0) > 0) inferred.push('Hissa - Standard');
+  if (Number(row.total_premium_hissa || row.premium_hissa_count || 0) > 0) inferred.push('Hissa Premium');
+  if (Number(row.total_waqf_hissa || row.waqf_hissa_count || 0) > 0) inferred.push('Hissa - Waqf');
+  if (Number(row.total_goat_hissa || row.goat_hissa_count || 0) > 0) inferred.push('Goat(Hissa)');
+  return inferred;
+}
+
+function formatTotalHissa(total, opts = {}) {
+  const premium = Number(opts.premium || 0), standard = Number(opts.standard || 0), goat = Number(opts.goat || 0);
+  const cleanTotal = Number(total ?? (premium + standard + goat));
+  const parts = [];
+  if (premium > 0) parts.push(premium + ' Premium');
+  if (standard > 0) parts.push(standard + ' Standard');
+  if (goat > 0) parts.push(goat + ' Goat');
+  return parts.length ? cleanTotal + ' (' + parts.join(', ') + ')' : String(cleanTotal || 0);
+}
+function formatRiderCompact(rider, fallbackName = 'Unassigned') {
+  if (!rider) return fallbackName;
+  return String((rider.rider_name || fallbackName) + (rider.contact ? '(' + rider.contact + ')' : '') + (rider.vehicle ? ' ' + rider.vehicle : '')).trim();
+}
+
+
 const STATUS_STYLES = {
   Pending:            { bg: '#F5F5F5',  fg: '#666' },
   'Rider Assigned':   { bg: '#FFF8E1',  fg: '#F57C00' },
@@ -29,9 +71,7 @@ function StatusBadge({ status }) {
 
 function getRiderDetails(rider, fallbackName = 'Unassigned') {
   return {
-    name: rider?.rider_name || fallbackName,
-    vehicle: rider?.vehicle || '—',
-    number: rider?.number_plate || rider?.contact || '—',
+    name: formatRiderCompact(rider, fallbackName),
   };
 }
 
@@ -157,7 +197,8 @@ function short(v, n = 64) {
       const goat = Number(c.total_goat_hissa || 0);
       const totalHissa = Number(c.total_hissa || c.order_count || premium + standard + goat || 0);
   
-      const totalHissaText = `${totalHissa} (${premium} Premium, ${standard} Standard, ${goat} Goat)`;
+      const waqf = Number(c.total_waqf_hissa || 0);
+      const totalHissaText = formatTotalHissa(totalHissa, { premium, standard, goat, waqf });
   
       const uniqueJoin = (arr) =>
         [...new Set(arr.map((v) => String(v || '').trim()).filter(Boolean))].join(', ');
@@ -289,7 +330,7 @@ doc.setFontSize(9.5);
 doc.setTextColor(35, 35, 35);
 
 doc.text(
-  `${totalHissa} (${premium} Premium, ${standard} Standard, ${goat} Goat)`,
+  totalHissaText,
   rightX + labelW + 4,
   boxY + 86
 );
@@ -298,8 +339,8 @@ y = boxY + boxH + 32;
   
           y = boxY + boxH + 32;
   
-          drawLineValue('Rider Name', rider.rider_name || '', ML + 4, y, ML + 250);
-          drawLineValue('Vehicle', [rider.vehicle, rider.number_plate].filter(Boolean).join(' ') || '', midX + 18, y, MR);
+          drawLineValue('Rider Name', '', ML + 4, y, ML + 250);
+          drawLineValue('Vehicle', '', midX + 18, y, MR);
   
           y += 28;
         } else {
@@ -436,6 +477,7 @@ export default function OperationsChallan() {
   const [search,      setSearch]      = useState('');
   const [filterDay,   setFilterDay]   = useState('');
   const [filterSlot,  setFilterSlot]  = useState('');
+  const [filterOrderType, setFilterOrderType] = useState('');
   const [page,        setPage]        = useState(1);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [modal,       setModal]       = useState(null);
@@ -525,20 +567,21 @@ export default function OperationsChallan() {
   const displayRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return challans.filter((c) => {
-      if (filterDay && String(c.day || '').trim() !== filterDay) return false;
+      if (filterDay && String(c.day || '').trim().toLowerCase() !== String(filterDay).trim().toLowerCase()) return false;
       if (filterSlot) {
         const slots = String(c.slot || '').split(',').map((s) => s.trim()).filter(Boolean);
-        if (!slots.includes(filterSlot)) return false;
+        if (!slots.map((x) => x.toLowerCase()).includes(String(filterSlot).trim().toLowerCase())) return false;
       }
+      if (filterOrderType && !getChallanOrderTypes(c).includes(filterOrderType)) return false;
       if (!q) return true;
       const hay = [c.address, c.area, c.day, c.slot, c.booking_name, c.shareholders_csv].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
     });
-  }, [challans, search, filterDay, filterSlot]);
+  }, [challans, search, filterDay, filterSlot, filterOrderType]);
 
   const totalPages = Math.max(1, Math.ceil(displayRows.length / PAGE_SIZE));
   const pagedRows  = useMemo(() => displayRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [displayRows, page]);
-  useEffect(() => { setPage(1); }, [search, filterDay, filterSlot, selectedBatch]);
+  useEffect(() => { setPage(1); }, [search, filterDay, filterSlot, filterOrderType, selectedBatch]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
   const toggleOne = (id) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -606,6 +649,12 @@ export default function OperationsChallan() {
 
   return (
     <>
+      <style>{`
+        .ops-data-table { width: max-content !important; min-width: 100% !important; table-layout: auto !important; }
+        .ops-data-table th, .ops-data-table td { max-width: 240px; white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; vertical-align: top; }
+        .ops-data-table th { white-space: nowrap !important; }
+        @media (max-width: 767px) { .ops-data-table th, .ops-data-table td { max-width: 180px; } }
+      `}</style>
       <div style={{ padding: '19px', fontFamily: "'Poppins','Inter',sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
 
         {/* Header */}
@@ -657,6 +706,13 @@ export default function OperationsChallan() {
               {slotOptions.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
+          <div style={{ width: 150 }}>
+            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Order Type</label>
+            <select value={filterOrderType} onChange={(e) => setFilterOrderType(e.target.value)} style={inputStyle}>
+              <option value="">All</option>
+              {ORDER_TYPE_FILTERS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button type="button" disabled={busy} onClick={onPrintPdf}
               style={{ padding: '6px 13px', height: '29px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>
@@ -689,31 +745,14 @@ export default function OperationsChallan() {
           {loading ? (
             <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading…</div>
           ) : (
-            <table className="ops-data-table" style={{ width: '100%', minWidth: '3200px', borderCollapse: 'collapse', fontSize: '11px', tableLayout: 'fixed' }}>
-              <colgroup>
-                <col style={{ width:'48px' }} />
-                <col style={{ width:'150px' }} />
-                <col style={{ width:'300px' }} />
-                <col style={{ width:'360px' }} />
-                <col style={{ width:'145px' }} />
-                <col style={{ width:'280px' }} />
-                <col style={{ width:'360px' }} />
-                <col style={{ width:'155px' }} />
-                <col style={{ width:'155px' }} />
-                <col style={{ width:'130px' }} />
-                <col style={{ width:'220px' }} />
-                <col style={{ width:'95px' }} />
-                <col style={{ width:'95px' }} />
-                <col style={{ width:'110px' }} />
-                <col style={{ width:'110px' }} />
-                <col style={{ width:'280px' }} />
-              </colgroup>
+            <table className="ops-data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', tableLayout: 'auto' }}>
+              
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                 <tr style={{ background: '#fafafa' }}>
                   <th style={{ padding: '10px 10px', borderBottom: '1px solid #e0e0e0' }}>
                     <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} />
                   </th>
-                  {['Status', 'Rider', 'Description', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa', 'Shareholders'].map((h) => (
+                  {['Description', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa', 'Shareholders'].map((h) => (
                     <th key={h} style={{ textAlign: 'left', padding: '10px 10px', borderBottom: '1px solid #e0e0e0', color: '#555', fontWeight: '600', whiteSpace: 'nowrap', fontSize: '10px' }}>{h}</th>
                   ))}
                 </tr>
@@ -739,12 +778,6 @@ export default function OperationsChallan() {
                       <td style={{ padding: '9px 10px' }} onClick={(e) => e.stopPropagation()}>
                         <input type="checkbox" checked={selectedIds.has(c.challan_id)} onChange={() => toggleOne(c.challan_id)} />
                       </td>
-                      <td style={{ padding: '9px 10px' }}><StatusBadge status={st} /></td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>
-                        {c.rider_count > 1
-                          ? <span style={{ color: '#777', fontWeight: 600 }}>Multiple Riders</span>
-                          : (c.rider_id ? (riderMap[c.rider_id] || `Rider #${c.rider_id}`) : <span style={{ color: '#bbb', fontStyle: 'italic' }}>Unassigned</span>)}
-                      </td>
                       <td style={{ padding: '9px 10px', color: '#555', verticalAlign:'top' }}>
                         {rowHasDescription ? (
                           <div style={{ whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45, color:'#333', fontWeight:500 }}>{descriptionText}</div>
@@ -765,7 +798,7 @@ export default function OperationsChallan() {
                       <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_standard_hissa || 0}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_premium_hissa || 0}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_goat_hissa || 0}</td>
-                      <td style={{ padding: '9px 10px', color: '#555', fontWeight: '600' }}>{c.total_hissa ?? c.order_count ?? '—'}</td>
+                      <td style={{ padding: '9px 10px', color: '#555', fontWeight: '600' }}>{Number(c.total_hissa ?? c.order_count ?? 0)}</td>
                       <td style={{ padding: '9px 10px', color: '#666', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }} title={names}>
                         {names}
                       </td>
@@ -907,14 +940,9 @@ export default function OperationsChallan() {
             ['Day', modal.challan?.day || '—'],
             ['Slot', modal.challan?.slot || '—'],
             ['Rider', modalRiderDetails.name],
-            ['Vehicle', modalRiderDetails.vehicle],
-            ['Rider Number', modalRiderDetails.number],
-            ['Standard', String(modal.challan?.total_standard_hissa || 0)],
-            ['Premium', String(modal.challan?.total_premium_hissa || 0)],
-            ['Goat', String(modal.challan?.total_goat_hissa || 0)],
-            ['Total Hissa', String(modal.challan?.total_hissa ?? modal.challan?.order_count ?? 0)],
+                        ['Total Hissa', formatTotalHissa(modal.challan?.total_hissa ?? modal.challan?.order_count ?? 0, { premium: modal.challan?.total_premium_hissa, standard: modal.challan?.total_standard_hissa, goat: modal.challan?.total_goat_hissa })],
           ]}
-          orders={modal.orders || []}
+          orders={(modal.orders || []).filter((o) => ALLOWED_ORDER_TYPES.includes(normalizeOrderType(o.order_type)))}
           renderOrderStatus={(o) => <StatusBadge status={o.delivery_status} />}
         />
       )}

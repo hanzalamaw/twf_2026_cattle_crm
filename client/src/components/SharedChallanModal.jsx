@@ -5,18 +5,19 @@ const modalOverlayStyle = {
   inset: 0,
   background: 'rgba(0,0,0,0.5)',
   display: 'flex',
-  alignItems: 'center',
+  alignItems: 'flex-start',
   justifyContent: 'center',
   zIndex: 1000,
-  padding: '16px',
+  padding: '50px 16px 16px',
 };
 
-const nowrapCell = { whiteSpace: 'nowrap' };
+const nowrapCell = { whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere' };
 const wrapCell = {
   whiteSpace: 'normal',
   wordBreak: 'break-word',
   overflowWrap: 'anywhere',
   lineHeight: 1.45,
+  maxWidth: '240px',
 };
 
 function SpecialRequestPatch() {
@@ -50,15 +51,15 @@ export default function SharedChallanModal({
   return (
     <div style={modalOverlayStyle} onClick={onClose} role="presentation">
       <div
-        style={{ background:'#FFFFFF', borderRadius:'18px', border:'1.5px solid #F0F0F0', padding:'24px 28px', maxWidth, width:'100%', maxHeight:'92vh', overflow:'auto', boxShadow:'0 10px 40px rgba(0,0,0,0.12)' }}
+        style={{ background:'#FFFFFF', borderRadius:'18px', border:'1.5px solid #F0F0F0', padding:'clamp(14px, 2vw, 24px)', maxWidth, width:'100%', maxHeight:'78dvh', overflowY:'auto', overflowX:'hidden', boxShadow:'0 10px 40px rgba(0,0,0,0.12)' }}
         onClick={(e)=>e.stopPropagation()}
         role="dialog"
-        aria-label={`Challan #${challanId || '—'}`}
+        aria-label={`Challan ${challanId || '—'}`}
       >
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'16px', gap:'16px' }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap' }}>
-              <h2 style={{ margin:0, fontSize:'18px', fontWeight:'700', color:'#222' }}>Challan #{challanId || '—'}</h2>
+              <h2 style={{ margin:0, fontSize:'18px', fontWeight:'700', color:'#222' }}>Challan {challanId || '—'}</h2>
               {hasDescription && <SpecialRequestPatch />}
             </div>
             <div style={{ marginTop:'7px', fontSize:'12px', color:'#666', fontWeight:'500' }}>
@@ -102,22 +103,28 @@ export default function SharedChallanModal({
 
         {children}
 
+
+        <style>{`
+          .modal-orders-table th,
+          .modal-orders-table td {
+            max-width: 220px;
+            white-space: normal !important;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            vertical-align: top;
+          }
+          .modal-orders-table th { white-space: nowrap !important; }
+          @media (max-width: 767px) {
+            .modal-info-grid { grid-template-columns: 1fr !important; }
+            .modal-orders-table th,
+            .modal-orders-table td { max-width: 150px; font-size: 11px; padding: 8px 7px !important; }
+          }
+        `}</style>
         <div style={{ borderTop:'1px solid #f0f0f0', margin:'18px 0 12px' }} />
         <p style={{ margin:'0 0 10px', fontSize:'12px', fontWeight:'700', color:'#333' }}>{title}</p>
-        <div style={{ width:'100%', overflowX:'auto', overflowY:'visible', border:'1px solid #F0F0F0', borderRadius:'10px' }}>
-          <table style={{ width:'1800px', minWidth:'1800px', fontSize:'12px', borderCollapse:'collapse', tableLayout:'fixed' }}>
-            <colgroup>
-              <col style={{ width:'430px' }} />
-              <col style={{ width:'120px' }} />
-              <col style={{ width:'150px' }} />
-              <col style={{ width:'150px' }} />
-              <col style={{ width:'300px' }} />
-              <col style={{ width:'180px' }} />
-              <col style={{ width:'90px' }} />
-              <col style={{ width:'90px' }} />
-              <col style={{ width:'130px' }} />
-              <col style={{ width:'160px' }} />
-            </colgroup>
+        <div style={{ width:'100%', overflowX:'hidden', overflowY:'visible', border:'1px solid #F0F0F0', borderRadius:'10px' }}>
+          <table className="modal-orders-table" style={{ width:'100%', fontSize:'12px', borderCollapse:'collapse', tableLayout:'auto' }}>
+            
             <thead style={{ position:'sticky', top:0, zIndex:1 }}>
               <tr style={{ background:'#FAFAFA' }}>
                 {['Description', 'Order', 'Contact', 'Alt Contact', 'Shareholder', 'Type', 'Cow #', 'Hissa #', 'Slot', 'Status'].map((h)=>(
@@ -131,7 +138,7 @@ export default function SharedChallanModal({
               ) : orders.map((o, i)=>(
                 <tr key={o.order_id || i} style={{ borderBottom:'1px solid #F0F0F0', background: i%2===0 ? '#fff' : '#FAFAFA' }}>
                   <td style={{ padding:'9px 10px', color:'#333', ...wrapCell }}>{o.description || <span style={{ color:'#ccc' }}>—</span>}</td>
-                  <td style={{ padding:'9px 10px', color:'#777', ...wrapCell }}>#{o.order_id || '—'}</td>
+                  <td style={{ padding:'9px 10px', color:'#777', ...wrapCell }}>{o.order_id || '—'}</td>
                   <td style={{ padding:'9px 10px', color:'#555', ...nowrapCell }}>{o.contact || '—'}</td>
                   <td style={{ padding:'9px 10px', color:'#555', ...nowrapCell }}>{o.alt_contact || '—'}</td>
                   <td style={{ padding:'9px 10px', color:'#333', fontWeight:'500', ...wrapCell }}>{o.shareholder_name || o.booking_name || '—'}</td>

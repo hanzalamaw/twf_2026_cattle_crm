@@ -8,6 +8,41 @@ import { getOperationsSocket } from '../utils/operationsSocket';
 
 const STATUSES = ['Pending', 'Rider Assigned', 'Dispatched', 'Delivered', 'Returned to Farm'];
 
+const ALLOWED_ORDER_TYPES = ['Hissa - Standard', 'Hissa Premium', 'Hissa - Waqf', 'Goat(Hissa)'];
+const ORDER_TYPE_FILTERS = [
+  { value: 'Hissa - Standard', label: 'Hissa Standard' },
+  { value: 'Hissa Premium', label: 'Hissa Premium' },
+  { value: 'Hissa - Waqf', label: 'Hissa Waqf' },
+  { value: 'Goat(Hissa)', label: 'Goat(Hissa)' },
+];
+function normalizeOrderType(value) {
+  const lower = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (lower === 'hissa - standard' || lower === 'hissa standard') return 'Hissa - Standard';
+  if (lower === 'hissa premium' || lower === 'hissa - premium') return 'Hissa Premium';
+  if (lower === 'hissa - waqf' || lower === 'hissa waqf') return 'Hissa - Waqf';
+  if (lower === 'goat(hissa)' || lower === 'goat (hissa)' || lower === 'goat hissa') return 'Goat(Hissa)';
+  return '';
+}
+function groupMatchesOrderType(g, filterOrderType) {
+  if (!filterOrderType) return true;
+  return (g.orders || []).some((o) => normalizeOrderType(o.order_type) === filterOrderType);
+}
+
+function formatTotalHissa(total, opts = {}) {
+  const premium = Number(opts.premium || 0), standard = Number(opts.standard || 0), goat = Number(opts.goat || 0);
+  const cleanTotal = Number(total ?? (premium + standard + goat));
+  const parts = [];
+  if (premium > 0) parts.push(premium + ' Premium');
+  if (standard > 0) parts.push(standard + ' Standard');
+  if (goat > 0) parts.push(goat + ' Goat');
+  return parts.length ? cleanTotal + ' (' + parts.join(', ') + ')' : String(cleanTotal || 0);
+}
+function formatRiderCompact(rider, fallbackName = 'Unassigned') {
+  if (!rider) return fallbackName;
+  return String((rider.rider_name || fallbackName) + (rider.contact ? '(' + rider.contact + ')' : '') + (rider.vehicle ? ' ' + rider.vehicle : '')).trim();
+}
+
+
 const STATUS_STYLES = {
   Pending:            { bg: '#F5F5F5',  fg: '#666' },
   'Rider Assigned':   { bg: '#FFF8E1',  fg: '#F57C00' },
@@ -29,9 +64,7 @@ function StatusBadge({ status }) {
 
 function getRiderDetails(rider, fallbackName = 'Unassigned') {
   return {
-    name: rider?.rider_name || fallbackName,
-    vehicle: rider?.vehicle || '—',
-    number: rider?.number_plate || rider?.contact || '—',
+    name: formatRiderCompact(rider, fallbackName),
   };
 }
 
@@ -96,7 +129,7 @@ function SearchableRiderSelect({ value, disabled, onChange, riders, title, menuP
   const [menuStyle, setMenuStyle] = useState(null);
   const containerRef = useRef(null);
   const selected = riders.find((r) => String(r.rider_id) === String(value));
-  const label = selected ? `${selected.rider_name} (${selected.contact || 'N/A'})${selected.vehicle ? ` • ${selected.vehicle}` : ''}${selected.number_plate ? ` • ${selected.number_plate}` : ''}` : (fallbackLabel || '— Unassigned');
+  const label = selected ? formatRiderCompact(selected) : (fallbackLabel || '— Unassigned');
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
@@ -350,6 +383,7 @@ export default function OperationsDeliveries() {
   const [filterSlots,     setFilterSlots]     = useState([]);
   const [filterStatus,    setFilterStatus]    = useState('');
   const [filterRider,     setFilterRider]     = useState('');
+  const [filterOrderType, setFilterOrderType] = useState('');
   const [page,            setPage]            = useState(1);
   const [scanMatchToken,  setScanMatchToken]  = useState('');
   const [scanOpen,        setScanOpen]        = useState(false);
@@ -439,7 +473,8 @@ export default function OperationsDeliveries() {
     return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   }, [groups]);
 
-  const riderOptions = useMemo(() => riders.map((r) => ({ id: String(r.rider_id), label: `${r.rider_name||''} (${r.contact||'N/A'}) [${r.vehicle||'No vehicle'}]` })), [riders]);
+  const riderOptions = useMemo(() => riders.map((r) => ({ id: String(r.rider_id), label: formatRiderCompact(r) })), [riders]);
+  const orderTypeOptions = ALLOWED_ORDER_TYPES;
 
   // ── filter + sort ────────────────────────────────────────────
   // All string comparisons go through normalizeForCompare so that
@@ -464,6 +499,7 @@ export default function OperationsDeliveries() {
 
     if (filterStatus) list = list.filter((g) => (g.derived_status || 'Pending') === filterStatus);
     if (filterRider)  list = list.filter((g) => String(g.rider_id || '') === filterRider);
+    if (filterOrderType) list = list.filter((g) => groupMatchesOrderType(g, filterOrderType));
     if (scanMatchToken) list = list.filter((g) => g.qr_token === scanMatchToken);
 
     // sort: day (normalised) → first slot (normalised) → address
@@ -481,18 +517,18 @@ export default function OperationsDeliveries() {
     });
 
     return list;
-  }, [groups, search, filterDay, filterSlots, filterStatus, filterRider, scanMatchToken]);
+  }, [groups, search, filterDay, filterSlots, filterStatus, filterRider, filterOrderType, scanMatchToken]);
 
   const summary = useMemo(() => {
-    let tp=0,ts=0,tg=0;
-    for (const g of displayGroups) { tp+=Number(g.premium_hissa_count||0); ts+=Number(g.standard_hissa_count||0); tg+=Number(g.goat_hissa_count||0); }
-    return { totalHissa: tp+ts, totalPremium: tp, totalStandard: ts, totalGoat: tg };
+    let tp=0,ts=0,tw=0,tg=0;
+    for (const g of displayGroups) { tp+=Number(g.premium_hissa_count||0); ts+=Number(g.standard_hissa_count||0); tw+=Number(g.waqf_hissa_count||0); tg+=Number(g.goat_hissa_count||0); }
+    return { totalHissa: tp+ts+tw+tg, totalPremium: tp, totalStandard: ts, totalWaqf: tw, totalGoat: tg };
   }, [displayGroups]);
 
   const totalPages  = Math.max(1, Math.ceil(displayGroups.length / PAGE_SIZE));
   const pagedGroups = useMemo(() => displayGroups.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE), [displayGroups, page]);
 
-  useEffect(() => { setPage(1); }, [search, filterDay, filterSlots, filterStatus, filterRider, scanMatchToken, selectedBatch]);
+  useEffect(() => { setPage(1); }, [search, filterDay, filterSlots, filterStatus, filterRider, filterOrderType, scanMatchToken, selectedBatch]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
   const rowDomId = (g) => `dlv-${g.challan_id || g.group_key}`;
@@ -648,7 +684,7 @@ export default function OperationsDeliveries() {
 
   const resetFilters = () => {
     setSearch(''); setFilterDay(''); setFilterSlots([]); setFilterStatus('');
-    setFilterRider(''); setSlotDropdownOpen(false); setScanMatchToken('');
+    setFilterRider(''); setFilterOrderType(''); setSlotDropdownOpen(false); setScanMatchToken('');
   };
 
   const toggleSlot = (slot) => {
@@ -668,6 +704,21 @@ export default function OperationsDeliveries() {
   return (
     <>
       <style>{`
+
+          .ops-data-table { width: max-content !important; min-width: 100% !important; table-layout: auto !important; }
+          .ops-data-table th,
+          .ops-data-table td {
+            max-width: 240px;
+            white-space: normal !important;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            vertical-align: top;
+          }
+          .ops-data-table th { white-space: nowrap !important; }
+          @media (max-width: 767px) {
+            .ops-data-table th,
+            .ops-data-table td { max-width: 180px; }
+          }
         @media (max-width: 767px) {
           .om-root { padding: 16px 12px 24px !important; overflow: auto !important; }
           .om-filter-desktop { display: none !important; }
@@ -707,8 +758,8 @@ export default function OperationsDeliveries() {
         </div>
 
         {/* Summary cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', marginBottom: '12px' }}>
-          {[['Total Hissa', summary.totalHissa], ['Premium', summary.totalPremium], ['Standard', summary.totalStandard], ['Goat (Hissa)', summary.totalGoat]].map(([k, v]) => (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '8px', marginBottom: '12px' }}>
+          {[['Total Hissa', summary.totalHissa], ['Premium', summary.totalPremium], ['Standard', summary.totalStandard], ['Waqf', summary.totalWaqf], ['Goat (Hissa)', summary.totalGoat]].map(([k, v]) => (
             <div key={k} style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: '8px', padding: '10px' }}>
               <div style={{ fontSize: '10px', color: '#777' }}>{k}</div>
               <div style={{ fontSize: '16px', fontWeight: 700 }}>{v}</div>
@@ -795,6 +846,12 @@ export default function OperationsDeliveries() {
               <option value="">All</option>{riderOptions.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
             </select>
           </div>
+          <div style={{ width: 150 }}>
+            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Order Type</label>
+            <select value={filterOrderType} onChange={(e) => setFilterOrderType(e.target.value)} style={inputStyle}>
+              <option value="">All</option>{ORDER_TYPE_FILTERS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
           <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap' }}>
             <button type="button" onClick={() => setScanOpen(true)} style={{ padding: '6px 13px', height: '29px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Scan QR</button>
             <button type="button" onClick={load} style={{ padding: '6px 13px', height: '29px', background: '#fff', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>Refresh</button>
@@ -811,7 +868,7 @@ export default function OperationsDeliveries() {
         <div className="om-filter-mobile" style={{ display: 'none' }}>
           {mobileFiltersOpen && (
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {[{ label:'Status', value:filterStatus, set:setFilterStatus, opts:STATUSES.map(s=>({v:s,l:s})) }, { label:'Rider', value:filterRider, set:setFilterRider, opts:riderOptions.map(r=>({v:r.id,l:r.label})) }].map(({ label, value, set, opts }) => (
+              {[{ label:'Status', value:filterStatus, set:setFilterStatus, opts:STATUSES.map(s=>({v:s,l:s})) }, { label:'Rider', value:filterRider, set:setFilterRider, opts:riderOptions.map(r=>({v:r.id,l:r.label})) }, { label:'Order Type', value:filterOrderType, set:setFilterOrderType, opts:ORDER_TYPE_FILTERS.map(t=>({v:t.value,l:t.label})) }].map(({ label, value, set, opts }) => (
                 <div key={label}><label style={{ display:'block', fontSize:'11px', color:'#666', marginBottom:'4px' }}>{label}</label>
                   <select value={value} onChange={(e)=>set(e.target.value)} style={{ width:'100%', padding:'9px 12px', borderRadius:'8px', border:'1px solid #e0e0e0', fontSize:'13px' }}>
                     <option value="">All</option>{opts.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
@@ -842,23 +899,8 @@ export default function OperationsDeliveries() {
           ) : displayGroups.length === 0 ? (
             <div style={{ padding:'40px', textAlign:'center', color:'#666', fontSize:'11px' }}>{groups.length===0 ? 'No challans for this batch.' : 'No rows match the current filters.'}</div>
           ) : (
-            <table className="ops-data-table" style={{ width:'100%', minWidth:'2850px', borderCollapse:'collapse', fontSize:'11px', tableLayout:'fixed' }}>
-              <colgroup>
-                <col style={{ width:'160px' }} />
-                <col style={{ width:'300px' }} />
-                <col style={{ width:'360px' }} />
-                <col style={{ width:'140px' }} />
-                <col style={{ width:'280px' }} />
-                <col style={{ width:'360px' }} />
-                <col style={{ width:'150px' }} />
-                <col style={{ width:'150px' }} />
-                <col style={{ width:'130px' }} />
-                <col style={{ width:'220px' }} />
-                <col style={{ width:'95px' }} />
-                <col style={{ width:'95px' }} />
-                <col style={{ width:'110px' }} />
-                <col style={{ width:'110px' }} />
-              </colgroup>
+            <table className="ops-data-table" style={{ width:'100%', borderCollapse:'collapse', fontSize:'11px', tableLayout:'auto' }}>
+              
               <thead style={{ position:'sticky', top:0, zIndex:1 }}>
                 <tr style={{ background:'#fafafa' }}>
                   {['Status', 'Rider', 'Description', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa'].map((h) => (
@@ -910,7 +952,7 @@ export default function OperationsDeliveries() {
                       <td style={{ padding:'9px 10px', color:'#555' }}>{g.standard_hissa_count||0}</td>
                       <td style={{ padding:'9px 10px', color:'#555' }}>{g.premium_hissa_count||0}</td>
                       <td style={{ padding:'9px 10px', color:'#555' }}>{g.goat_hissa_count||0}</td>
-                      <td style={{ padding:'9px 10px', color:'#555', fontWeight:'600' }}>{g.hissa_count||0}</td>
+                      <td style={{ padding:'9px 10px', color:'#555', fontWeight:'600' }}>{Number(g.hissa_count || 0)}</td>
 
                     </tr>
                   );
@@ -1050,14 +1092,9 @@ export default function OperationsDeliveries() {
             ['Day', modal.challan?.day || '—'],
             ['Slot', modal.challan?.slot || '—'],
             ['Rider', modalRiderDetails.name],
-            ['Vehicle', modalRiderDetails.vehicle],
-            ['Rider Number', modalRiderDetails.number],
-            ['Standard', String(modalTotals.standard || 0)],
-            ['Premium', String(modalTotals.premium || 0)],
-            ['Goat', String(modalTotals.goat || 0)],
-            ['Total Hissa', String(modalTotals.total || 0)],
+                        ['Total Hissa', formatTotalHissa(modalTotals.total || 0, { premium: modalTotals.premium, standard: modalTotals.standard, goat: modalTotals.goat })],
           ]}
-          orders={modal.orders || []}
+          orders={(modal.orders || []).filter((o) => ALLOWED_ORDER_TYPES.includes(normalizeOrderType(o.order_type)))}
           renderOrderStatus={(o) => <StatusBadge status={o.delivery_status} />}
         >
           <label style={{ display:'block', fontSize:'12px', fontWeight:'600', marginBottom:'4px', color:'#333' }}>Update Status (all orders)</label>
