@@ -11,9 +11,9 @@ const REGENERATE_EMAIL = 'hanzalamawahab@gmail.com';
 const ALLOWED_ORDER_TYPES = ['Hissa - Standard', 'Hissa Premium', 'Hissa - Waqf', 'Goat(Hissa)'];
 const ORDER_TYPE_FILTERS = [
   { value: 'Hissa - Standard', label: 'Hissa Standard' },
-  { value: 'Hissa Premium', label: 'Hissa Premium' },
-  { value: 'Hissa - Waqf', label: 'Hissa Waqf' },
-  { value: 'Goat(Hissa)', label: 'Goat(Hissa)' },
+  { value: 'Hissa Premium', label: 'Premium' },
+  { value: 'Hissa - Waqf', label: 'Waqf' },
+  { value: 'Goat(Hissa)', label: 'Goat' },
 ];
 function normalizeOrderType(value) {
   const lower = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -98,7 +98,7 @@ function getDescriptionText(source) {
     source.note,
   ]);
   const orderDescriptions = getUniqueDescriptionValues((source.orders || []).map((o) => o.description));
-  return [...direct, ...orderDescriptions].filter(Boolean).join(' | ');
+  return [...direct, ...orderDescriptions].filter(Boolean).join('\n');
 }
 
 function hasDescription(source) {
@@ -460,6 +460,83 @@ y = boxY + boxH + 32;
 
 const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px', background: '#fff' };
 
+function MultiSelectDropdown({ label, options = [], values = [], onChange, placeholder = 'All', width = 170 }) {
+  const [open, setOpen] = useState(false);
+  const selectedValues = Array.isArray(values) ? values : [];
+  const selectedCount = selectedValues.length;
+  const toggleValue = (value) => {
+    onChange(selectedValues.includes(value)
+      ? selectedValues.filter((v) => v !== value)
+      : [...selectedValues, value]
+    );
+  };
+  return (
+    <div style={{ width, minWidth: width, position: 'relative' }}>
+      {label && <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>{label}</label>}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{ width: '100%', textAlign: 'left', padding: '6px 10px', borderRadius: '6px', border: `1px solid ${open ? '#FF5722' : '#e0e0e0'}`, background: '#fff', fontSize: '11px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px', color: selectedCount ? '#FF5722' : '#555', fontWeight: selectedCount ? '600' : '400' }}
+      >
+        <span>{selectedCount ? `${selectedCount} selected` : placeholder}</span>
+        <span style={{ fontSize: '8px', opacity: 0.5 }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', zIndex: 80, left: 0, top: 'calc(100% + 4px)', minWidth: '100%', width: 'max-content', maxWidth: '280px', maxHeight: '220px', overflow: 'auto', border: '1px solid #e0e0e0', borderRadius: '8px', background: '#fff', padding: '6px 4px', boxShadow: '0 6px 18px rgba(0,0,0,0.1)' }}>
+          {selectedCount > 0 && (
+            <div
+              onClick={() => onChange([])}
+              style={{ padding: '5px 10px', fontSize: '10px', color: '#FF5722', cursor: 'pointer', fontWeight: '600', borderBottom: '1px solid #f5f5f5', marginBottom: '2px' }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#fff4f0'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            >
+              Clear selection
+            </div>
+          )}
+          {options.length === 0 ? (
+            <div style={{ padding: '8px 10px', fontSize: '10px', color: '#aaa' }}>No options available</div>
+          ) : options.map((opt) => {
+            const isSelected = selectedValues.includes(opt.value);
+            return (
+              <label
+                key={opt.value}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', fontSize: '10px', cursor: 'pointer', borderRadius: '5px', background: isSelected ? '#FFF4F0' : 'transparent', color: isSelected ? '#FF5722' : '#333', fontWeight: isSelected ? '600' : '400' }}
+                onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#fafafa'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = isSelected ? '#FFF4F0' : 'transparent'; }}
+              >
+                <input type="checkbox" checked={isSelected} onChange={() => toggleValue(opt.value)} style={{ cursor: 'pointer', accentColor: '#FF5722' }} />
+                {opt.label}
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function normalizeForCompare(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function splitUniqueCsvValues(values) {
+  return [...new Set((Array.isArray(values) ? values : [values])
+    .flatMap((v) => Array.isArray(v) ? v : String(v || '').split(','))
+    .map((v) => String(v || '').trim())
+    .filter(Boolean))];
+}
+
+function MultiLineCell({ values, empty = '—', style = {} }) {
+  const list = splitUniqueCsvValues(values);
+  if (!list.length) return <span style={{ color: '#ccc' }}>{empty}</span>;
+  return (
+    <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', lineHeight: 1.45, ...style }}>
+      {list.map((v, i) => <div key={`${v}-${i}`}>{v}</div>)}
+    </div>
+  );
+}
+
+
 export default function OperationsChallan() {
   const { user, authFetch } = useAuth();
   const emailOk = (user?.email || '').trim().toLowerCase() === REGENERATE_EMAIL;
@@ -476,8 +553,9 @@ export default function OperationsChallan() {
 
   const [search,      setSearch]      = useState('');
   const [filterDay,   setFilterDay]   = useState('');
-  const [filterSlot,  setFilterSlot]  = useState('');
-  const [filterOrderType, setFilterOrderType] = useState('');
+  const [filterSlot,  setFilterSlot]  = useState([]);
+  const [filterStatus, setFilterStatus] = useState([]);
+  const [filterOrderType, setFilterOrderType] = useState([]);
   const [page,        setPage]        = useState(1);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [modal,       setModal]       = useState(null);
@@ -563,25 +641,31 @@ export default function OperationsChallan() {
     challans.forEach((c) => String(c.slot || '').split(',').map((s) => s.trim()).filter(Boolean).forEach((s) => all.add(s)));
     return [...all].sort();
   }, [challans]);
+  const slotFilterOptions = useMemo(() => slotOptions.map((s) => ({ value: s, label: s })), [slotOptions]);
+  const statusFilterOptions = useMemo(() => STATUS_STYLES ? Object.keys(STATUS_STYLES).map((s) => ({ value: s, label: s })) : [], []);
 
   const displayRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return challans.filter((c) => {
-      if (filterDay && String(c.day || '').trim().toLowerCase() !== String(filterDay).trim().toLowerCase()) return false;
-      if (filterSlot) {
-        const slots = String(c.slot || '').split(',').map((s) => s.trim()).filter(Boolean);
-        if (!slots.map((x) => x.toLowerCase()).includes(String(filterSlot).trim().toLowerCase())) return false;
+      if (filterDay && normalizeForCompare(c.day) !== normalizeForCompare(filterDay)) return false;
+      if (filterSlot.length) {
+        const slots = String(c.slot || '').split(',').map((v) => v.trim()).filter(Boolean);
+        if (!filterSlot.some((slot) => slots.some((s) => normalizeForCompare(s) === normalizeForCompare(slot)))) return false;
       }
-      if (filterOrderType && !getChallanOrderTypes(c).includes(filterOrderType)) return false;
+      if (filterOrderType.length) {
+        const rowTypes = getChallanOrderTypes(c);
+        if (!filterOrderType.some((t) => rowTypes.includes(t))) return false;
+      }
+      if (filterStatus.length && !filterStatus.includes(challanDerivedStatus(c))) return false;
       if (!q) return true;
-      const hay = [c.address, c.area, c.day, c.slot, c.booking_name, c.shareholders_csv].filter(Boolean).join(' ').toLowerCase();
+      const hay = [c.address, c.area, c.day, c.slot, c.booking_name, c.shareholders_csv, c.contacts_csv, c.alt_contacts_csv, c.customer_ids_csv, c.description].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
     });
-  }, [challans, search, filterDay, filterSlot, filterOrderType]);
+  }, [challans, search, filterDay, filterSlot, filterStatus, filterOrderType]);
 
   const totalPages = Math.max(1, Math.ceil(displayRows.length / PAGE_SIZE));
   const pagedRows  = useMemo(() => displayRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [displayRows, page]);
-  useEffect(() => { setPage(1); }, [search, filterDay, filterSlot, filterOrderType, selectedBatch]);
+  useEffect(() => { setPage(1); }, [search, filterDay, filterSlot, filterStatus, filterOrderType, selectedBatch]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
   const toggleOne = (id) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -699,20 +783,9 @@ export default function OperationsChallan() {
               {dayOptions.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </div>
-          <div style={{ width: 130 }}>
-            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Slot</label>
-            <select value={filterSlot} onChange={(e) => setFilterSlot(e.target.value)} style={inputStyle}>
-              <option value="">All</option>
-              {slotOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div style={{ width: 150 }}>
-            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Order Type</label>
-            <select value={filterOrderType} onChange={(e) => setFilterOrderType(e.target.value)} style={inputStyle}>
-              <option value="">All</option>
-              {ORDER_TYPE_FILTERS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
-          </div>
+          <MultiSelectDropdown label="Slots" options={slotFilterOptions} values={filterSlot} onChange={setFilterSlot} placeholder="All slots" width={150} />
+          <MultiSelectDropdown label="Status" options={statusFilterOptions} values={filterStatus} onChange={setFilterStatus} placeholder="All status" width={150} />
+          <MultiSelectDropdown label="Order Type" options={ORDER_TYPE_FILTERS} values={filterOrderType} onChange={setFilterOrderType} placeholder="All types" width={160} />
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button type="button" disabled={busy} onClick={onPrintPdf}
               style={{ padding: '6px 13px', height: '29px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>
@@ -752,14 +825,14 @@ export default function OperationsChallan() {
                   <th style={{ padding: '10px 10px', borderBottom: '1px solid #e0e0e0' }}>
                     <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} />
                   </th>
-                  {['Description', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Alt Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Goat (Hissa)', 'Total Hissa', 'Shareholders'].map((h) => (
+                  {['Description', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Waqf', 'Goat (Hissa)', 'Total Hissa', 'Shareholders'].map((h) => (
                     <th key={h} style={{ textAlign: 'left', padding: '10px 10px', borderBottom: '1px solid #e0e0e0', color: '#555', fontWeight: '600', whiteSpace: 'nowrap', fontSize: '10px' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {pagedRows.length === 0 ? (
-                  <tr><td colSpan={15} style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>No rows found.</td></tr>
+                  <tr><td colSpan={14} style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>No rows found.</td></tr>
                 ) : pagedRows.map((c, idx) => {
                   const st          = challanDerivedStatus(c);
                   const descriptionText = getDescriptionText(c);
@@ -780,16 +853,15 @@ export default function OperationsChallan() {
                       </td>
                       <td style={{ padding: '9px 10px', color: '#555', verticalAlign:'top' }}>
                         {rowHasDescription ? (
-                          <div style={{ whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45, color:'#333', fontWeight:500 }}>{descriptionText}</div>
+                          <div style={{ whiteSpace:'pre-line', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45, color:'#333', fontWeight:500 }}>{descriptionText}</div>
                         ) : <span style={{ color: '#ccc' }}>—</span>}
                       </td>
-                      <td style={{ padding: '9px 10px', color: '#777', fontWeight: '500' }}>{customerIds}</td>
+                      <td style={{ padding: '9px 10px', color: '#777', fontWeight: '500' }}><MultiLineCell values={customerIds} /></td>
                       <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{c.booking_name || '—'}</td>
                       <td style={{ padding: '9px 10px', color: '#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>
                         <div>{formatAddress(c.address) || '—'}</div>
                       </td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{contacts}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{altContacts || <span style={{ color: '#ccc' }}>—</span>}</td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}><MultiLineCell values={[contacts, altContacts]} /></td>
                       <td style={{ padding: '9px 10px', color: '#555', whiteSpace: 'nowrap' }}>
                         <div>{c.day || '—'}</div>
                         {c.slot && <div style={{ fontSize: '9px', color: '#aaa' }}>{c.slot}</div>}
@@ -797,6 +869,7 @@ export default function OperationsChallan() {
                       <td style={{ padding: '9px 10px', color: '#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{c.area || '—'}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_standard_hissa || 0}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_premium_hissa || 0}</td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_waqf_hissa || 0}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_goat_hissa || 0}</td>
                       <td style={{ padding: '9px 10px', color: '#555', fontWeight: '600' }}>{Number(c.total_hissa ?? c.order_count ?? 0)}</td>
                       <td style={{ padding: '9px 10px', color: '#666', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }} title={names}>

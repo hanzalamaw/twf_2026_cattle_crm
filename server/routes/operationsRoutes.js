@@ -53,6 +53,11 @@ function classifyHissa(orderType) {
 const GSEP = "\x1F";
 
 function groupKeyForOrder(row) {
+  // Waqf challans are grouped by customer id only. Other order types keep the existing day + address grouping.
+  if (classifyHissa(row.order_type) === "waqf") {
+    const customerId = String(row.customer_id || "").trim().toLowerCase();
+    return `waqf${GSEP}${customerId || normalizeAddr(row.address)}`;
+  }
   return `${normalizeDay(row.day)}${GSEP}${normalizeAddr(row.address)}`;
 }
 
@@ -690,6 +695,7 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
           hissa_count: Number(c.total_hissa || 0),
           standard_hissa_count: Number(c.total_standard_hissa || 0),
           premium_hissa_count: Number(c.total_premium_hissa || 0),
+          waqf_hissa_count: Number(c.total_waqf_hissa || 0),
           goat_hissa_count: Number(c.total_goat_hissa || 0),
           waqf_hissa_count: Number(c.total_waqf_hissa || 0),
           customer_ids: customerIds,

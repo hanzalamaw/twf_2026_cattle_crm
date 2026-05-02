@@ -8,7 +8,7 @@ const modalOverlayStyle = {
   alignItems: 'flex-start',
   justifyContent: 'center',
   zIndex: 1000,
-  padding: '50px 16px 16px',
+  padding: 'clamp(8px, 2vw, 16px)',
 };
 
 const nowrapCell = { whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere' };
@@ -46,7 +46,8 @@ export default function SharedChallanModal({
   title = 'Orders on this challan',
   maxWidth = '1320px',
 }) {
-  const hasDescription = Boolean(String(description || '').trim());
+  const normalizedDescription = String(description || '').replace(/\s*\|\s*/g, ' | ').replace(/[\r\n]+/g, ' | ').replace(/\s{2,}/g, ' ').trim();
+  const hasDescription = Boolean(normalizedDescription);
 
   return (
     <div style={modalOverlayStyle} onClick={onClose} role="presentation">
@@ -75,7 +76,7 @@ export default function SharedChallanModal({
           <div style={{ border:'1px solid #E4E4E4', borderRadius:'10px', overflow:'hidden', background:'#F5F5F5' }}>
             <div style={{ display:'grid', gridTemplateColumns:'130px 1fr', gap:'0', padding:'14px 16px', fontSize:'12px', lineHeight:1.5 }}>
               <span style={{ fontWeight:'700', color:'#555' }}>Description:</span>
-              <span style={{ color: hasDescription ? '#222' : '#aaa', fontStyle: hasDescription ? 'normal' : 'italic', whiteSpace:'pre-wrap', wordBreak:'break-word', overflowWrap:'anywhere' }}>{hasDescription ? description : '—'}</span>
+              <span style={{ color: hasDescription ? '#222' : '#aaa', fontStyle: hasDescription ? 'normal' : 'italic', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere' }}>{hasDescription ? normalizedDescription : '—'}</span>
             </div>
           </div>
         </div>
