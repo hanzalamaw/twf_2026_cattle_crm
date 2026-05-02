@@ -76,7 +76,25 @@ function getUniqueDescriptionValues(values) {
 
 function getDescriptionText(source) {
   if (!source) return '';
-  const direct = getUniqueDescriptionValues([
+
+  const normalize = (v) =>
+    String(v || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+
+  const originalMap = new Map();
+
+  const addValue = (val) => {
+    const norm = normalize(val);
+    if (!norm) return;
+    if (!originalMap.has(norm)) {
+      originalMap.set(norm, String(val).trim());
+    }
+  };
+
+  // from challan
+  [
     source.description,
     source.descriptions,
     source.description_csv,
@@ -87,9 +105,14 @@ function getDescriptionText(source) {
     source.remarks,
     source.notes,
     source.note,
-  ]);
-  const orderDescriptions = getUniqueDescriptionValues((source.orders || []).map((o) => o.description));
-  return [...direct, ...orderDescriptions].filter(Boolean).join('\n');
+  ].forEach(addValue);
+
+  // from orders
+  (source.orders || []).forEach((o) => {
+    addValue(o.description);
+  });
+
+  return Array.from(originalMap.values()).join(' | ');
 }
 
 function hasDescription(source) {
