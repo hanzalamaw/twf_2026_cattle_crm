@@ -2183,8 +2183,8 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
         .text("The Warsi Farm", fromX, topY + 24, { lineBreak: false });
 
       doc.font("Helvetica").fontSize(10.5).fillColor(C_SUB)
-        .text("B-655, Gulberg, F.B Area Block", fromX, topY + 46, { lineBreak: false })
-        .text("# 13, Karachi", fromX, topY + 62, { lineBreak: false })
+        .text("D-63, Block # H, North", fromX, topY + 46, { lineBreak: false })
+        .text("Nazimabad, Karachi", fromX, topY + 62, { lineBreak: false })
         .text("Contact: 0331-9911466", fromX, topY + 80, { lineBreak: false });
 
       // --- TO column (full text, wraps — no ellipsis) ---
