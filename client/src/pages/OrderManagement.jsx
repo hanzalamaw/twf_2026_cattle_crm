@@ -139,12 +139,15 @@ export default function OrderManagement() {
   const token = localStorage.getItem('token');
   const location = useLocation();
   const isFarm = location.pathname.startsWith('/farm');
+  // Farm view must show DB order_type 'Cow' and 'Fancy Cow' as 'Fancy Cow', plus exact 'Goat'.
+  // Backend expands Fancy Cow to include legacy Cow only when farm_order_management=1.
   const FARM_ORDER_TYPES = ['Fancy Cow', 'Goat'];
   const visibleOrderTypes = (filters.order_types || []).filter((t) => (
     isFarm ? FARM_ORDER_TYPES.includes(t) : !HIDDEN_TYPES_BOOKING.includes(t)
   ));
   const applyFarmOrderScope = (params) => {
     if (!isFarm) return;
+    params.set('farm_order_management', '1');
     if (orderType) {
       params.set('order_type', orderType);
       return;

@@ -775,6 +775,7 @@ app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
         payment_status,
         source,
         omit_hidden_types,
+        farm_order_management,
       } = req.query;
       const conditions = [];
       const params = [];
@@ -802,7 +803,25 @@ app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
         params.push(slot);
       }
       const orderTypesRaw = Array.isArray(order_type) ? order_type : order_type ? [order_type] : [];
-      const orderTypes = orderTypesRaw.map((t) => normalizeOrderType(t));
+      let orderTypes = orderTypesRaw.map((t) => normalizeOrderType(t));
+
+      // Farm Order Management only:
+      // - DB may contain old rows as order_type = 'Cow' and new rows as 'Fancy Cow'.
+      // - Frontend should display both as 'Fancy Cow'.
+      // - Goat must remain exact 'Goat' only, not Goat (Hissa).
+      if (farm_order_management === "1") {
+        const expanded = new Set();
+        for (const type of orderTypes) {
+          if (type === "Fancy Cow") {
+            expanded.add("Fancy Cow");
+            expanded.add("Cow");
+          } else if (type === "Goat") {
+            expanded.add("Goat");
+          }
+        }
+        orderTypes = Array.from(expanded);
+      }
+
       if (orderTypes.length > 0) {
         conditions.push(`o.order_type IN (${orderTypes.map(() => "?").join(",")})`);
         params.push(...orderTypes);
