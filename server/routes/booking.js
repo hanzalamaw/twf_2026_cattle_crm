@@ -2271,26 +2271,54 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
         doc.roundedRect(ML, rowY, CW, ITEM_H, 4)
           .fillColor(C_BG).fill();
 
-        // Description: order type + shareholder (medium) + cow/hissa
-        const displayType = (row.type === "Hissa - Standard") ? "Hissa - Ijtimai" : (row.type || "Hissa");
-        const itemTitle = truncate(`${displayType} (${row.day || "1"})`, 190, "Helvetica-Bold", 11);
+        // Description: invoice-only display labels.
+        // Farm animal orders should show simple animal labels only and hide cow/hissa numbers.
+        // Booking Goat (Hissa) orders are relabelled by exact package price.
+        const normalizedRowType = String(row.type || "").trim();
+        const rowTotalAmount = Number(row.total_amount || 0);
+        const isFarmAnimalOrder = normalizedRowType === "Fancy Cow" || normalizedRowType === "Cow" || normalizedRowType === "Goat";
+        const isGoatHissaOrder = normalizedRowType === "Goat (Hissa)";
+
+        let displayType = normalizedRowType || "Hissa";
+        if (normalizedRowType === "Hissa - Standard") {
+          displayType = "Hissa - Ijtimai";
+        } else if (normalizedRowType === "Fancy Cow" || normalizedRowType === "Cow") {
+          displayType = "Cow";
+        } else if (normalizedRowType === "Goat") {
+          displayType = "Goat";
+        } else if (isGoatHissaOrder && rowTotalAmount === 51000) {
+          displayType = "Super Goat (Hissa) - ";
+        } else if (isGoatHissaOrder && rowTotalAmount === 59000) {
+          displayType = "Premium Goat (Hissa) - ";
+        }
+
+        const itemTitle = truncate(`${displayType}${isFarmAnimalOrder ? "" : ` (${row.day || "1"})`}`, 190, "Helvetica-Bold", 11);
         const shareholderLine = truncate(
           `${row.shareholder_name || "—"}`,
           190,
           "Helvetica",
           10
         );
-        const isGoatHissaOrder = row.type === "Goat (Hissa)";
-        const itemSub = isGoatHissaOrder
-          ? `Goat Number: ${row.cow || "—"}`
-          : `Cow: ${row.cow || "—"} | Hissa: ${row.hissa || "—"}`;
+        const itemSub = isFarmAnimalOrder
+          ? ""
+          : isGoatHissaOrder
+            ? `Goat Number: ${row.cow || "—"}`
+            : `Cow: ${row.cow || "—"} | Hissa: ${row.hissa || "—"}`;
 
-        doc.font("Helvetica-Bold").fontSize(11).fillColor("#1a1a1a")
-          .text(itemTitle, COL_DESC, rowY + 7, { lineBreak: false });
-        doc.font("Helvetica").fontSize(10).fillColor("#4a4a4a")
-          .text(shareholderLine, COL_DESC, rowY + 22, { lineBreak: false });
-        doc.font("Helvetica").fontSize(9.5).fillColor("#5f5f5f")
-          .text(itemSub, COL_DESC, rowY + 36, { lineBreak: false });
+        if (isFarmAnimalOrder) {
+          // Farm invoice rows show only the animal label, vertically centred in the gray row.
+          doc.font("Helvetica-Bold").fontSize(11).fillColor("#1a1a1a")
+            .text(itemTitle, COL_DESC, rowY + 19, { lineBreak: false });
+        } else {
+          doc.font("Helvetica-Bold").fontSize(11).fillColor("#1a1a1a")
+            .text(itemTitle, COL_DESC, rowY + 7, { lineBreak: false });
+          doc.font("Helvetica").fontSize(10).fillColor("#4a4a4a")
+            .text(shareholderLine, COL_DESC, rowY + 22, { lineBreak: false });
+          if (itemSub) {
+            doc.font("Helvetica").fontSize(9.5).fillColor("#5f5f5f")
+              .text(itemSub, COL_DESC, rowY + 36, { lineBreak: false });
+          }
+        }
 
         // Quantity — vertically centred in row with description block
         const qtyY = rowY + 19;
