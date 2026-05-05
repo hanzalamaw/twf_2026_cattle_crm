@@ -139,9 +139,18 @@ export default function OrderManagement() {
   const token = localStorage.getItem('token');
   const location = useLocation();
   const isFarm = location.pathname.startsWith('/farm');
+  const FARM_ORDER_TYPES = ['Fancy Cow', 'Goat'];
   const visibleOrderTypes = (filters.order_types || []).filter((t) => (
-    isFarm ? ['Fancy Cow', 'Goat'].includes(t) : !HIDDEN_TYPES_BOOKING.includes(t)
+    isFarm ? FARM_ORDER_TYPES.includes(t) : !HIDDEN_TYPES_BOOKING.includes(t)
   ));
+  const applyFarmOrderScope = (params) => {
+    if (!isFarm) return;
+    if (orderType) {
+      params.set('order_type', orderType);
+      return;
+    }
+    FARM_ORDER_TYPES.forEach((type) => params.append('order_type', type));
+  };
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
   /* ── fetch ── */
@@ -153,7 +162,7 @@ export default function OrderManagement() {
       const res = await authFetch(url);
       if (res.ok) { const data = await res.json(); setFilters(data); }
     } catch (e) { console.error(e); }
-  }, [authFetch, yearFilter]);
+  }, [authFetch, yearFilter, isFarm]);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true); setError('');
@@ -165,10 +174,14 @@ export default function OrderManagement() {
         if (day)              params.set('day',         day);
         if (cowNumber.trim()) params.set('cow_number',  cowNumber.trim());
       }
-      if (orderType)          params.set('order_type',  orderType);
+      if (isFarm) {
+        applyFarmOrderScope(params);
+      } else {
+        if (orderType)        params.set('order_type',  orderType);
+        params.set('omit_hidden_types', '1');
+      }
       if (reference)          params.set('reference',   reference);
       if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-      if (!isFarm) params.set('omit_hidden_types', '1');
       params.set('page',  String(page));
       params.set('limit', String(PAGE_SIZE));
       const res = await authFetch(`${API}/booking/orders?${params}`);
@@ -178,12 +191,12 @@ export default function OrderManagement() {
         const total = typeof json.total === 'number' ? json.total : (data?.length ?? 0);
         const filtered = (Array.isArray(data) ? data : []).filter((r) => {
           if (isFarm) {
-            return ['Fancy Cow', 'Goat'].includes(r.type);
+            return FARM_ORDER_TYPES.includes(r.type);
           }
           return !HIDDEN_TYPES_BOOKING.includes(r.type);
         });
         setOrders(filtered);
-        setTotalCount(isFarm ? filtered.length : total);
+        setTotalCount(total);
       } else { setError('Failed to load orders'); }
     } catch (e) { setError('Failed to load orders'); }
     finally { setLoading(false); }
@@ -301,10 +314,14 @@ export default function OrderManagement() {
           if (day) params.set('day', day);
           if (cowNumber?.trim()) params.set('cow_number', cowNumber.trim());
         }
-        if (orderType) params.set('order_type', orderType);
+        if (isFarm) {
+          applyFarmOrderScope(params);
+        } else {
+          if (orderType) params.set('order_type', orderType);
+          params.set('omit_hidden_types', '1');
+        }
         if (reference) params.set('reference', reference);
         if (yearFilter && yearFilter !== 'all') params.set('year', yearFilter);
-        if (!isFarm) params.set('omit_hidden_types', '1');
         params.set('page', String(pageNum));
         params.set('limit', String(limit));
         const res = await authFetch(`${API}/booking/orders?${params}`);
@@ -313,7 +330,7 @@ export default function OrderManagement() {
         const data = Array.isArray(json) ? json : json.data;
         const rawChunk = Array.isArray(data) ? data : [];
         const chunk = rawChunk.filter((r) =>
-          isFarm ? ['Fancy Cow', 'Goat'].includes(r.type) : !HIDDEN_TYPES_BOOKING.includes(r.type)
+          isFarm ? FARM_ORDER_TYPES.includes(r.type) : !HIDDEN_TYPES_BOOKING.includes(r.type)
         );
         allOrders = allOrders.concat(chunk);
         if (rawChunk.length < limit) break;

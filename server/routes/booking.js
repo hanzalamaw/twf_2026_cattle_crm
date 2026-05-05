@@ -933,7 +933,7 @@ app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
 
   app.get("/api/booking/orders/filters", verifyToken, async (req, res) => {
     try {
-      const { year } = req.query;
+      const { year, source } = req.query;
       const conditions = [];
       const params = [];
       if (year === "2026" || year === "2025") {
@@ -941,6 +941,9 @@ app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
         params.push(year);
       } else if (year === "2024") {
         conditions.push("(booking_date IS NULL OR YEAR(booking_date) < 2025)");
+      }
+      if (source === "Farm") {
+        conditions.push("TRIM(COALESCE(order_source, '')) = 'Farm'");
       }
       const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
       const andOrWhere = whereClause ? " AND " : " WHERE ";
@@ -2287,9 +2290,9 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
         } else if (normalizedRowType === "Goat") {
           displayType = "Goat";
         } else if (isGoatHissaOrder && rowTotalAmount === 51000) {
-          displayType = "Super Goat (Hissa) - ";
+          displayType = "Super Goat (Hissa)";
         } else if (isGoatHissaOrder && rowTotalAmount === 59000) {
-          displayType = "Premium Goat (Hissa) - ";
+          displayType = "Premium Goat (Hissa)";
         }
 
         const itemTitle = truncate(`${displayType}${isFarmAnimalOrder ? "" : ` (${row.day || "1"})`}`, 190, "Helvetica-Bold", 11);
