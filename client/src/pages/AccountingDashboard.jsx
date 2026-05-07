@@ -94,8 +94,16 @@ const KPIBox = ({ title, value, icon, bubble, reveal = true }) => {
 
 const BudgetUsageTable = ({ categories }) => {
   const [collapsed, setCollapsed] = useState(false);
+  const [openCats, setOpenCats] = useState({});
 
   const money = (n) => `PKR ${fmt(Math.round(Number(n || 0)))}`;
+
+  const toggleCat = (key) => {
+    setOpenCats((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
   return (
     <div className="card animCard">
@@ -103,7 +111,8 @@ const BudgetUsageTable = ({ categories }) => {
         className="cardTitleBig cardTitleClickable"
         onClick={() => setCollapsed((v) => !v)}
       >
-        CATEGORY BUDGET USAGE <span className="collapseChevron">{collapsed ? "▶" : "▼"}</span>
+        CATEGORY BUDGET USAGE{" "}
+        <span className="collapseChevron">{collapsed ? "▶" : "▼"}</span>
       </div>
 
       {!collapsed && (
@@ -112,9 +121,7 @@ const BudgetUsageTable = ({ categories }) => {
             <thead>
               <tr>
                 <th>Category / Sub Category</th>
-                <th>Allocated Budget</th>
                 <th>Used Budget</th>
-                <th>Remaining</th>
                 <th>Usage</th>
               </tr>
             </thead>
@@ -122,39 +129,66 @@ const BudgetUsageTable = ({ categories }) => {
             <tbody>
               {(categories || []).length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="emptyTd">
+                  <td colSpan={3} className="emptyTd">
                     No category budget found
                   </td>
                 </tr>
               ) : (
-                categories.map((cat) => (
-                  <React.Fragment key={cat.categoryKey}>
-                    <tr className="catRow">
-                      <td>{cat.name}</td>
-                      <td>{money(cat.budget)}</td>
-                      <td>{money(cat.usedBudget)}</td>
-                      <td>{money(cat.remainingBudget)}</td>
-                      <td>
-                        <UsageBar value={cat.usagePercent} />
-                      </td>
-                    </tr>
+                categories
+                  .filter((cat) => Number(cat.usedBudget || 0) > 0)
+                  .map((cat) => {
+                    const filteredSubs = (cat.subCategories || []).filter(
+                      (sub) => Number(sub.usedBudget || 0) > 0
+                    );
 
-                    {(cat.subCategories || []).map((sub) => (
-                      <tr key={sub.subCategoryKey} className="subRow">
-                        <td>
-                          <span className="subIndent">↳</span>
-                          {sub.name}
-                        </td>
-                        <td>{money(sub.budget)}</td>
-                        <td>{money(sub.usedBudget)}</td>
-                        <td>{money(sub.remainingBudget)}</td>
-                        <td>
-                          <UsageBar value={sub.usagePercent} />
-                        </td>
-                      </tr>
-                    ))}
-                  </React.Fragment>
-                ))
+                    const isOpen = !!openCats[cat.categoryKey];
+                    const hasSubs = filteredSubs.length > 0;
+
+                    return (
+                      <React.Fragment key={cat.categoryKey}>
+                        <tr className="catRow">
+                          <td>
+                            <button
+                              type="button"
+                              className={`catArrowBtn ${isOpen ? "catArrowOpen" : ""}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (hasSubs) toggleCat(cat.categoryKey);
+                              }}
+                              disabled={!hasSubs}
+                              title={hasSubs ? "Show sub categories" : "No sub categories"}
+                            >
+                              ▶
+                            </button>
+
+                            {cat.name}
+                          </td>
+
+                          <td>{money(cat.usedBudget)}</td>
+
+                          <td>
+                            <UsageBar value={cat.usagePercent} />
+                          </td>
+                        </tr>
+
+                        {isOpen &&
+                          filteredSubs.map((sub) => (
+                            <tr key={sub.subCategoryKey} className="subRow">
+                              <td>
+                                <span className="subIndent">↳</span>
+                                {sub.name}
+                              </td>
+
+                              <td>{money(sub.usedBudget)}</td>
+
+                              <td>
+                                <UsageBar value={sub.usagePercent} />
+                              </td>
+                            </tr>
+                          ))}
+                      </React.Fragment>
+                    );
+                  })
               )}
             </tbody>
           </table>
@@ -858,6 +892,39 @@ const AccountingDashboard = () => {
 .usageOverText {
   color: #d97706 !important;
   font-weight: 700;
+}
+
+.catArrowBtn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 6px;
+  margin-right: 8px;
+  cursor: pointer;
+  color: #6b7280;
+  font-size: 10px;
+  transition: all .15s ease;
+}
+
+.catArrowBtn:hover:not(:disabled) {
+  background: #fff4f0;
+  border-color: #FF5722;
+  color: #FF5722;
+}
+
+.catArrowBtn:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+
+.catArrowOpen {
+  transform: rotate(90deg);
+}
+
+.tblBudget th:nth-child(2),
+.tblBudget td:nth-child(2) {
+  text-align: right;
 }
       `}</style>
 
