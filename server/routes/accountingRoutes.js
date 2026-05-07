@@ -135,21 +135,61 @@ async function getNextExpenseId(db, table, prefix) {
 // subTable   : e.g. "booking_expense_sub_categories"
 // auditTable : e.g. "booking_expense_export_audit"
 // idPrefix   : e.g. "BEXP" | "FEXP" | "PEXP"
+function getAuthenticatedUserName(req) {
+  const u = req.user || req.userData || req.auth || {};
+
+  return (
+    u.name ||
+    u.full_name ||
+    u.fullName ||
+    u.username ||
+    u.email ||
+    u.user_name ||
+    u.id ||
+    u.user_id ||
+    null
+  );
+}
+
+function appendExpenseSearchCondition(cond, params, search) {
+  if (!search) return;
+
+  const like = `%${String(search)
+    .replace(/%/g, "\\%")
+    .replace(/_/g, "\\_")}%`;
+
+  cond.push(`
+    (
+      e.expense_id LIKE ?
+      OR e.description LIKE ?
+      OR e.done_by LIKE ?
+      OR c.name LIKE ?
+      OR sc.name LIKE ?
+      OR CAST(e.bank AS CHAR) LIKE ?
+      OR CAST(e.cash AS CHAR) LIKE ?
+      OR CAST(e.total AS CHAR) LIKE ?
+    )
+  `);
+
+  params.push(like, like, like, like, like, like, like, like);
+}
+
 function registerExpenseRoutes(
   app,
   db,
   verifyToken,
   { basePath, expTable, catTable, subTable, auditTable, idPrefix }
 ) {
-  // ── GET  {basePath}/categories ────────────────────────────────────────────
   app.get(`${basePath}/categories`, verifyToken, async (req, res) => {
     try {
       const [cats] = await db.execute(
         `SELECT category_id, name, budget FROM \`${catTable}\` ORDER BY name ASC`
       );
+
       const [subs] = await db.execute(
         `SELECT sub_category_id, category_id, name, budget FROM \`${subTable}\` ORDER BY name ASC`
       );
+
       res.json({
         categories: cats || [],
         sub_categories: subs || [],
@@ -160,73 +200,77 @@ function registerExpenseRoutes(
     }
   });
 
-  // ── POST {basePath}/categories ────────────────────────────────────────────
   app.post(`${basePath}/categories`, verifyToken, async (req, res) => {
     try {
       const { name, budget = 0 } = req.body || {};
+
       if (!name || !String(name).trim()) {
         return res.status(400).json({ message: "Category name is required" });
       }
+
       const [result] = await db.execute(
         `INSERT INTO \`${catTable}\` (name, budget) VALUES (?, ?)`,
         [String(name).trim(), parseFloat(budget) || 0]
       );
-      res.status(201).json({ category_id: result.insertId, name: String(name).trim(), budget: parseFloat(budget) || 0 });
+
+      res.status(201).json({
+        category_id: result.insertId,
+        name: String(name).trim(),
+        budget: parseFloat(budget) || 0,
+      });
     } catch (e) {
       if (e.code === "ER_DUP_ENTRY") {
         return res.status(409).json({ message: "Category name already exists" });
       }
+
       logError("EXPENSES", `POST ${basePath}/categories`, e);
       res.status(500).json({ message: "Server error" });
     }
   });
 
-  // ── PUT  {basePath}/categories/:catId ─────────────────────────────────────
   app.put(`${basePath}/categories/:catId`, verifyToken, async (req, res) => {
     try {
       const catId = parseInt(req.params.catId, 10);
       const { name, budget = 0 } = req.body || {};
+
       if (!name || !String(name).trim()) {
         return res.status(400).json({ message: "Category name is required" });
       }
+
       const [result] = await db.execute(
         `UPDATE \`${catTable}\` SET name = ?, budget = ? WHERE category_id = ?`,
         [String(name).trim(), parseFloat(budget) || 0, catId]
       );
-      if (result.affectedRows === 0) return res.status(404).json({ message: "Category not found" });
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+
       res.json({ ok: true });
     } catch (e) {
       if (e.code === "ER_DUP_ENTRY") {
         return res.status(409).json({ message: "Category name already exists" });
       }
+
       logError("EXPENSES", `PUT ${basePath}/categories/:catId`, e);
       res.status(500).json({ message: "Server error" });
     }
   });
 
-  // ── DELETE {basePath}/categories/:catId ───────────────────────────────────
   app.delete(`${basePath}/categories/:catId`, verifyToken, async (req, res) => {
     try {
       const catId = parseInt(req.params.catId, 10);
-      // Nullify expense links
+
       await db.execute(
         `UPDATE \`${expTable}\` SET category_id = NULL, sub_category_id = NULL WHERE category_id = ?`,
         [catId]
       );
-      // Sub-categories cascade via FK, but nullify expense sub links first
-      const [subs] = await db.execute(
-        `SELECT sub_category_id FROM \`${subTable}\` WHERE category_id = ?`,
+
+      await db.execute(
+        `DELETE FROM \`${catTable}\` WHERE category_id = ?`,
         [catId]
       );
-      if (subs && subs.length > 0) {
-        const subIds = subs.map((s) => s.sub_category_id);
-        const ph = subIds.map(() => "?").join(",");
-        await db.execute(
-          `UPDATE \`${expTable}\` SET sub_category_id = NULL WHERE sub_category_id IN (${ph})`,
-          subIds
-        );
-      }
-      await db.execute(`DELETE FROM \`${catTable}\` WHERE category_id = ?`, [catId]);
+
       res.json({ ok: true });
     } catch (e) {
       logError("EXPENSES", `DELETE ${basePath}/categories/:catId`, e);
@@ -234,67 +278,85 @@ function registerExpenseRoutes(
     }
   });
 
-  // ── POST {basePath}/categories/:catId/sub-categories ──────────────────────
   app.post(`${basePath}/categories/:catId/sub-categories`, verifyToken, async (req, res) => {
     try {
       const catId = parseInt(req.params.catId, 10);
       const { name, budget = 0 } = req.body || {};
+
       if (!name || !String(name).trim()) {
         return res.status(400).json({ message: "Sub-category name is required" });
       }
+
       const [result] = await db.execute(
         `INSERT INTO \`${subTable}\` (category_id, name, budget) VALUES (?, ?, ?)`,
         [catId, String(name).trim(), parseFloat(budget) || 0]
       );
-      res.status(201).json({ sub_category_id: result.insertId, category_id: catId, name: String(name).trim(), budget: parseFloat(budget) || 0 });
+
+      res.status(201).json({
+        sub_category_id: result.insertId,
+        category_id: catId,
+        name: String(name).trim(),
+        budget: parseFloat(budget) || 0,
+      });
     } catch (e) {
       if (e.code === "ER_DUP_ENTRY") {
         return res.status(409).json({ message: "Sub-category name already exists in this category" });
       }
+
       logError("EXPENSES", `POST ${basePath}/categories/:catId/sub-categories`, e);
       res.status(500).json({ message: "Server error" });
     }
   });
 
-  // ── PUT  {basePath}/categories/:catId/sub-categories/:subId ──────────────
   app.put(`${basePath}/categories/:catId/sub-categories/:subId`, verifyToken, async (req, res) => {
     try {
       const catId = parseInt(req.params.catId, 10);
       const subId = parseInt(req.params.subId, 10);
       const { name, budget = 0 } = req.body || {};
+
       if (!name || !String(name).trim()) {
         return res.status(400).json({ message: "Sub-category name is required" });
       }
+
       const [result] = await db.execute(
         `UPDATE \`${subTable}\` SET name = ?, budget = ? WHERE sub_category_id = ? AND category_id = ?`,
         [String(name).trim(), parseFloat(budget) || 0, subId, catId]
       );
-      if (result.affectedRows === 0) return res.status(404).json({ message: "Sub-category not found" });
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: "Sub-category not found" });
+      }
+
       res.json({ ok: true });
     } catch (e) {
       if (e.code === "ER_DUP_ENTRY") {
         return res.status(409).json({ message: "Sub-category name already exists in this category" });
       }
+
       logError("EXPENSES", `PUT ${basePath}/categories/:catId/sub-categories/:subId`, e);
       res.status(500).json({ message: "Server error" });
     }
   });
 
-  // ── DELETE {basePath}/categories/:catId/sub-categories/:subId ────────────
   app.delete(`${basePath}/categories/:catId/sub-categories/:subId`, verifyToken, async (req, res) => {
     try {
       const catId = parseInt(req.params.catId, 10);
       const subId = parseInt(req.params.subId, 10);
-      // Nullify expense links for this sub-category
+
       await db.execute(
         `UPDATE \`${expTable}\` SET sub_category_id = NULL WHERE sub_category_id = ?`,
         [subId]
       );
+
       const [result] = await db.execute(
         `DELETE FROM \`${subTable}\` WHERE sub_category_id = ? AND category_id = ?`,
         [subId, catId]
       );
-      if (result.affectedRows === 0) return res.status(404).json({ message: "Sub-category not found" });
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: "Sub-category not found" });
+      }
+
       res.json({ ok: true });
     } catch (e) {
       logError("EXPENSES", `DELETE ${basePath}/categories/:catId/sub-categories/:subId`, e);
@@ -302,40 +364,46 @@ function registerExpenseRoutes(
     }
   });
 
-  // ── GET  {basePath}/category-spent ────────────────────────────────────────
-  // Returns how much has been spent in total for a given category (and optionally sub-category)
   app.get(`${basePath}/category-spent`, verifyToken, async (req, res) => {
     try {
       const catId = parseInt(req.query.category_id, 10);
-      const subId = req.query.sub_category_id ? parseInt(req.query.sub_category_id, 10) : null;
+      const subId = req.query.sub_category_id
+        ? parseInt(req.query.sub_category_id, 10)
+        : null;
 
       if (!catId || Number.isNaN(catId)) {
-        return res.json({ category_spent: 0, sub_category_spent: 0 });
+        return res.json({
+          category_spent: 0,
+          sub_category_spent: 0,
+        });
       }
 
       const [catRows] = await db.execute(
         `SELECT COALESCE(SUM(total), 0) AS spent FROM \`${expTable}\` WHERE category_id = ?`,
         [catId]
       );
-      const category_spent = Number(catRows?.[0]?.spent || 0);
 
       let sub_category_spent = 0;
+
       if (subId && !Number.isNaN(subId)) {
         const [subRows] = await db.execute(
           `SELECT COALESCE(SUM(total), 0) AS spent FROM \`${expTable}\` WHERE sub_category_id = ?`,
           [subId]
         );
+
         sub_category_spent = Number(subRows?.[0]?.spent || 0);
       }
 
-      res.json({ category_spent, sub_category_spent });
+      res.json({
+        category_spent: Number(catRows?.[0]?.spent || 0),
+        sub_category_spent,
+      });
     } catch (e) {
       logError("EXPENSES", `GET ${basePath}/category-spent`, e);
       res.status(500).json({ message: "Server error" });
     }
   });
 
-  // ── GET  {basePath}/next-id ───────────────────────────────────────────────
   app.get(`${basePath}/next-id`, verifyToken, async (req, res) => {
     try {
       const expense_id = await getNextExpenseId(db, expTable, idPrefix);
@@ -346,7 +414,6 @@ function registerExpenseRoutes(
     }
   });
 
-  // ── GET  {basePath}/summary ───────────────────────────────────────────────
   app.get(`${basePath}/summary`, verifyToken, async (req, res) => {
     try {
       const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
@@ -354,28 +421,36 @@ function registerExpenseRoutes(
 
       const params = [];
       const cond = buildExpenseYearWhere(year, params, "e.done_at");
-      let searchCond = "";
-      if (search) {
-        const like = `%${search.replace(/%/g, "\\%").replace(/_/g, "\\_")}%`;
-        searchCond = ` AND (e.expense_id LIKE ? OR e.description LIKE ? OR e.done_by LIKE ? OR CAST(e.bank AS CHAR) LIKE ? OR CAST(e.cash AS CHAR) LIKE ?)`;
-        params.push(like, like, like, like, like);
-      }
+
+      appendExpenseSearchCondition(cond, params, search);
+
       const where = cond.length ? `WHERE ${cond.join(" AND ")}` : "";
 
       const [rows] = await db.execute(
-        `SELECT COALESCE(SUM(e.bank), 0) AS b, COALESCE(SUM(e.cash), 0) AS c
-         FROM \`${expTable}\` e ${where}${searchCond}`,
+        `
+        SELECT
+          COALESCE(SUM(e.bank), 0) AS b,
+          COALESCE(SUM(e.cash), 0) AS c
+        FROM \`${expTable}\` e
+        LEFT JOIN \`${catTable}\` c ON c.category_id = e.category_id
+        LEFT JOIN \`${subTable}\` sc ON sc.sub_category_id = e.sub_category_id
+        ${where}
+        `,
         params
       );
+
       const r = rows?.[0] || {};
-      res.json({ totalBank: Number(r.b || 0), totalCash: Number(r.c || 0) });
+
+      res.json({
+        totalBank: Number(r.b || 0),
+        totalCash: Number(r.c || 0),
+      });
     } catch (e) {
       logError("EXPENSES", `GET ${basePath}/summary`, e);
       res.status(500).json({ message: "Server error" });
     }
   });
 
-  // ── GET  {basePath} (list with pagination + search) ──────────────────────
   app.get(`${basePath}`, verifyToken, async (req, res) => {
     try {
       const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
@@ -386,44 +461,59 @@ function registerExpenseRoutes(
 
       const params = [];
       const cond = buildExpenseYearWhere(year, params, "e.done_at");
-      let searchCond = "";
-      if (search) {
-        const like = `%${search.replace(/%/g, "\\%").replace(/_/g, "\\_")}%`;
-        searchCond = ` AND (e.expense_id LIKE ? OR e.description LIKE ? OR e.done_by LIKE ? OR CAST(e.bank AS CHAR) LIKE ? OR CAST(e.cash AS CHAR) LIKE ?)`;
-        params.push(like, like, like, like, like);
-      }
+
+      appendExpenseSearchCondition(cond, params, search);
+
       const where = cond.length ? `WHERE ${cond.join(" AND ")}` : "";
 
-      const countSql = `SELECT COUNT(*) AS c FROM \`${expTable}\` e ${where}${searchCond}`;
-      const [countRows] = await db.execute(countSql, params);
+      const [countRows] = await db.execute(
+        `
+        SELECT COUNT(*) AS c
+        FROM \`${expTable}\` e
+        LEFT JOIN \`${catTable}\` c ON c.category_id = e.category_id
+        LEFT JOIN \`${subTable}\` sc ON sc.sub_category_id = e.sub_category_id
+        ${where}
+        `,
+        params
+      );
+
       const total = Number(countRows?.[0]?.c || 0);
 
-      const dataSql = `
+      const [dataRows] = await db.execute(
+        `
         SELECT
-          e.expense_id, e.bank, e.cash, e.total, e.done_at, e.description, e.done_by,
-          e.category_id, e.sub_category_id,
-          c.name  AS category_name,
+          e.expense_id,
+          e.bank,
+          e.cash,
+          e.total,
+          e.done_at,
+          e.description,
+          e.done_by,
+          e.category_id,
+          e.sub_category_id,
+          c.name AS category_name,
           sc.name AS sub_category_name
         FROM \`${expTable}\` e
-        LEFT JOIN \`${catTable}\` c   ON c.category_id     = e.category_id
-        LEFT JOIN \`${subTable}\` sc  ON sc.sub_category_id = e.sub_category_id
-        ${where}${searchCond}
+        LEFT JOIN \`${catTable}\` c ON c.category_id = e.category_id
+        LEFT JOIN \`${subTable}\` sc ON sc.sub_category_id = e.sub_category_id
+        ${where}
         ORDER BY e.done_at DESC, e.expense_id DESC
         ${limitOffsetClause(limit, offset)}
-      `;
-      const [dataRows] = await db.execute(dataSql, params);
+        `,
+        params
+      );
 
       const data = (dataRows || []).map((r) => ({
-        expense_id:        r.expense_id,
-        bank:              Number(r.bank || 0),
-        cash:              Number(r.cash || 0),
-        total:             Number(r.total || 0),
-        done_at:           toDateOnly(r.done_at) ?? r.done_at,
-        description:       r.description ?? "",
-        done_by:           r.done_by ?? "",
-        category_id:       r.category_id ?? null,
-        sub_category_id:   r.sub_category_id ?? null,
-        category_name:     r.category_name ?? "",
+        expense_id: r.expense_id,
+        bank: Number(r.bank || 0),
+        cash: Number(r.cash || 0),
+        total: Number(r.total || 0),
+        done_at: toDateOnly(r.done_at) ?? r.done_at,
+        description: r.description ?? "",
+        done_by: r.done_by ?? "",
+        category_id: r.category_id ?? null,
+        sub_category_id: r.sub_category_id ?? null,
+        category_name: r.category_name ?? "",
         sub_category_name: r.sub_category_name ?? "",
       }));
 
@@ -434,29 +524,58 @@ function registerExpenseRoutes(
     }
   });
 
-  // ── POST {basePath} (add expense) ─────────────────────────────────────────
   app.post(`${basePath}`, verifyToken, async (req, res) => {
     try {
-      const { bank = 0, cash = 0, description, done_at, done_by, category_id, sub_category_id } = req.body || {};
+      const {
+        bank = 0,
+        cash = 0,
+        description,
+        done_at,
+        done_by,
+        category_id,
+        sub_category_id,
+      } = req.body || {};
+
       const bankVal = Math.max(0, parseFloat(bank) || 0);
       const cashVal = Math.max(0, parseFloat(cash) || 0);
+
       if (bankVal + cashVal === 0) {
-        return res.status(400).json({ message: "At least one of bank or cash must be > 0" });
+        return res.status(400).json({
+          message: "At least one of bank or cash must be > 0",
+        });
       }
 
       const expense_id = await getNextExpenseId(db, expTable, idPrefix);
+      const totalVal = bankVal + cashVal;
+
+      const doneByVal = done_by
+        ? String(done_by).trim()
+        : getAuthenticatedUserName(req);
 
       await db.execute(
-        `INSERT INTO \`${expTable}\`
-           (expense_id, bank, cash, description, done_at, done_by, category_id, sub_category_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `
+        INSERT INTO \`${expTable}\`
+          (
+            expense_id,
+            bank,
+            cash,
+            total,
+            description,
+            done_at,
+            done_by,
+            category_id,
+            sub_category_id
+          )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
         [
           expense_id,
           bankVal,
           cashVal,
+          totalVal,
           description ? String(description).trim() : null,
           done_at || null,
-          done_by ? String(done_by).trim() : null,
+          doneByVal,
           category_id ? parseInt(category_id, 10) : null,
           sub_category_id ? parseInt(sub_category_id, 10) : null,
         ]
@@ -469,35 +588,66 @@ function registerExpenseRoutes(
     }
   });
 
-  // ── PUT  {basePath}/:expenseId (edit expense) ─────────────────────────────
   app.put(`${basePath}/:expenseId`, verifyToken, async (req, res) => {
     try {
       const { expenseId } = req.params;
-      const { bank = 0, cash = 0, description, done_at, done_by, category_id, sub_category_id } = req.body || {};
+
+      const {
+        bank = 0,
+        cash = 0,
+        description,
+        done_at,
+        done_by,
+        category_id,
+        sub_category_id,
+      } = req.body || {};
+
       const bankVal = Math.max(0, parseFloat(bank) || 0);
       const cashVal = Math.max(0, parseFloat(cash) || 0);
+
       if (bankVal + cashVal === 0) {
-        return res.status(400).json({ message: "At least one of bank or cash must be > 0" });
+        return res.status(400).json({
+          message: "At least one of bank or cash must be > 0",
+        });
       }
 
+      const totalVal = bankVal + cashVal;
+
+      const doneByVal = done_by
+        ? String(done_by).trim()
+        : getAuthenticatedUserName(req);
+
       const [result] = await db.execute(
-        `UPDATE \`${expTable}\`
-         SET bank = ?, cash = ?, description = ?, done_at = ?, done_by = ?,
-             category_id = ?, sub_category_id = ?
-         WHERE expense_id = ?`,
+        `
+        UPDATE \`${expTable}\`
+        SET
+          bank = ?,
+          cash = ?,
+          total = ?,
+          description = ?,
+          done_at = ?,
+          done_by = ?,
+          category_id = ?,
+          sub_category_id = ?
+        WHERE expense_id = ?
+        `,
         [
           bankVal,
           cashVal,
+          totalVal,
           description ? String(description).trim() : null,
           done_at || null,
-          done_by ? String(done_by).trim() : null,
+          doneByVal,
           category_id ? parseInt(category_id, 10) : null,
           sub_category_id ? parseInt(sub_category_id, 10) : null,
           expenseId,
         ]
       );
 
-      if (result.affectedRows === 0) return res.status(404).json({ message: "Expense not found" });
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: "Expense not found" });
+      }
+
       res.json({ ok: true });
     } catch (e) {
       logError("EXPENSES", `PUT ${basePath}/:expenseId`, e);
@@ -505,15 +655,19 @@ function registerExpenseRoutes(
     }
   });
 
-  // ── DELETE {basePath}/:expenseId ──────────────────────────────────────────
   app.delete(`${basePath}/:expenseId`, verifyToken, async (req, res) => {
     try {
       const { expenseId } = req.params;
+
       const [result] = await db.execute(
         `DELETE FROM \`${expTable}\` WHERE expense_id = ?`,
         [expenseId]
       );
-      if (result.affectedRows === 0) return res.status(404).json({ message: "Expense not found" });
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: "Expense not found" });
+      }
+
       res.json({ ok: true });
     } catch (e) {
       logError("EXPENSES", `DELETE ${basePath}/:expenseId`, e);
@@ -521,17 +675,17 @@ function registerExpenseRoutes(
     }
   });
 
-  // ── POST {basePath}/export-audit ──────────────────────────────────────────
   app.post(`${basePath}/export-audit`, verifyToken, async (req, res) => {
     try {
       const { count = 0, expense_ids = [] } = req.body || {};
+
       await db.execute(
         `INSERT INTO \`${auditTable}\` (record_count, expense_ids) VALUES (?, ?)`,
         [parseInt(count, 10) || 0, JSON.stringify(expense_ids)]
       );
+
       res.json({ ok: true });
     } catch (e) {
-      // Non-critical — don't fail the export
       logError("EXPENSES", `POST ${basePath}/export-audit`, e);
       res.json({ ok: true });
     }
