@@ -6,6 +6,8 @@ const TYPES = {
   standard: "Hissa - Standard",
   waqf: "Hissa - Waqf",
   goat: "Goat (Hissa)",
+  super_goat: "Super Goat (Hissa)",
+  premium_goat: "Premium Goat (Hissa)",
 };
 
 /**
@@ -29,13 +31,15 @@ function buildYearWhere(year, params) {
 
 /**
  * Normalize order_type in SQL so even if DB has different spacing/hyphens, we still map correctly.
- * NOTE: For donut/target/day-wise we only want the 4 types.
+ * NOTE: Booking dashboard supports hissa + goat sub-types.
  */
 const TYPE_KEY_SQL = `
   CASE
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissapremium') THEN 'premium'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissastandard') THEN 'standard'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissawaqf') THEN 'waqf'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('supergoathissa') THEN 'super_goat'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('premiumgoathissa') THEN 'premium_goat'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('goathissa') THEN 'goat'
     ELSE NULL
   END
@@ -58,6 +62,8 @@ const LEAD_TYPE_KEY_SQL = `
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('hissapremium') THEN 'premium'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('hissastandard') THEN 'standard'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('hissawaqf') THEN 'waqf'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('supergoathissa') THEN 'super_goat'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('premiumgoathissa') THEN 'premium_goat'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('goathissa') THEN 'goat'
     ELSE NULL
   END
@@ -78,7 +84,7 @@ function applyDashboardOrderTypeFilter(orderType, conditions) {
   const allowed = [];
 
   if (list.includes("hissa")) allowed.push("'standard'", "'premium'", "'waqf'");
-  if (list.includes("goat")) allowed.push("'goat'");
+  if (list.includes("goat")) allowed.push("'goat'", "'super_goat'", "'premium_goat'");
 
   conditions.push(`${TYPE_KEY_SQL} IN (${allowed.length ? allowed.join(",") : "'standard','premium','waqf'"})`);
 }
@@ -89,7 +95,7 @@ function applyAreaOrderTypeFilter(orderType, conditions) {
 
   // Area-wise exception: Waqf is never included in area calculation.
   if (list.includes("hissa")) allowed.push("'standard'", "'premium'");
-  if (list.includes("goat")) allowed.push("'goat'");
+  if (list.includes("goat")) allowed.push("'goat'", "'super_goat'", "'premium_goat'");
 
   conditions.push(`${TYPE_KEY_SQL} IN (${allowed.length ? allowed.join(",") : "'standard','premium'"})`);
 }
@@ -99,7 +105,7 @@ function applyLeadOrderTypeFilter(orderType, conditions) {
   const allowed = [];
 
   if (list.includes("hissa")) allowed.push("'standard'", "'premium'", "'waqf'");
-  if (list.includes("goat")) allowed.push("'goat'");
+  if (list.includes("goat")) allowed.push("'goat'", "'super_goat'", "'premium_goat'");
 
   conditions.push(`${LEAD_TYPE_KEY_SQL} IN (${allowed.length ? allowed.join(",") : "'standard','premium','waqf'"})`);
 }
@@ -163,7 +169,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
   // -----------------------
   // GET: /api/dashboard/target-achievement?year=...
-  // Donut + Progress bars (ONLY 4 types)
+  // Donut + Progress bars (hissa + goat with sub-types)
   // -----------------------
   app.get("/api/dashboard/target-achievement", verifyToken, async (req, res) => {
     try {
@@ -187,14 +193,15 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
         params
       );
 
-      const map = { premium: 0, standard: 0, waqf: 0, goat: 0 };
+      const map = { premium: 0, standard: 0, waqf: 0, goat: 0, super_goat: 0, premium_goat: 0 };
       for (const row of rows) {
         if (row.typeKey && map[row.typeKey] !== undefined) {
           map[row.typeKey] = Number(row.cnt || 0);
         }
       }
 
-      const achievedTotal = map.premium + map.standard + map.waqf + map.goat;
+      const goatTotal = map.goat + map.super_goat + map.premium_goat;
+      const achievedTotal = map.premium + map.standard + map.waqf + goatTotal;
       const achievedForTarget = map.premium + map.standard + map.waqf;
       const targetTotal = year === "2024" ? 500 : year === "2025" ? 1000 : 2000;
 
@@ -202,7 +209,9 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
         { key: "premium", label: TYPES.premium, value: map.premium },
         { key: "standard", label: TYPES.standard, value: map.standard },
         { key: "waqf", label: TYPES.waqf, value: map.waqf },
-        { key: "goat", label: TYPES.goat, value: map.goat },
+        { key: "goat", label: TYPES.goat, value: goatTotal },
+        { key: "super_goat", label: TYPES.super_goat, value: map.super_goat },
+        { key: "premium_goat", label: TYPES.premium_goat, value: map.premium_goat },
       ].map((b) => ({
         ...b,
         percentage: achievedTotal > 0 ? (b.value / achievedTotal) * 100 : 0,
@@ -225,9 +234,9 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
   // -----------------------
   // GET: /api/dashboard/day-wise?year=...
-  // Day 1/2/3 cards, columns: Premium Standard Waqf Goat Total
+  // Day 1/2/3 cards, columns: Premium Standard Waqf Total Super Goat Premium Goat
   // rows: Total Orders, Payment Cleared, Pending (Completely), Pending (Partially)
-  // (ONLY 4 types)
+  // (goat split by order_type sub-category)
   // -----------------------
   app.get("/api/dashboard/day-wise", verifyToken, async (req, res) => {
     try {
@@ -267,6 +276,8 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
         standard: 0,
         waqf: 0,
         goat: 0,
+        super_goat: 0,
+        premium_goat: 0,
       });
 
       const base = {
@@ -317,44 +328,47 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
       const toCard = (dkey) => {
         const d = base[dkey];
-        const sum = (obj) => Object.values(obj).reduce((a, b) => a + Number(b || 0), 0);
 
         return {
           key: dkey,
           title: d.title,
-          columns: ["Premium", "Standard", "Waqf", "Goat", "Total"],
+          columns: ["Premium", "Standard", "Waqf", "Total", "Super Goat", "Premium Goat"],
           data: [
             {
               label: "Total Orders",
               premium: d.rows.totalOrders.premium,
               standard: d.rows.totalOrders.standard,
               waqf: d.rows.totalOrders.waqf,
-              goat: d.rows.totalOrders.goat,
-              total: sum(d.rows.totalOrders),
+              super_goat: d.rows.totalOrders.super_goat + d.rows.totalOrders.goat,
+              premium_goat: d.rows.totalOrders.premium_goat,
+              total: d.rows.totalOrders.premium + d.rows.totalOrders.standard + d.rows.totalOrders.waqf,
             },
             {
               label: "Payment Cleared",
               premium: d.rows.paymentCleared.premium,
               standard: d.rows.paymentCleared.standard,
               waqf: d.rows.paymentCleared.waqf,
-              goat: d.rows.paymentCleared.goat,
-              total: sum(d.rows.paymentCleared),
+              super_goat: d.rows.paymentCleared.super_goat + d.rows.paymentCleared.goat,
+              premium_goat: d.rows.paymentCleared.premium_goat,
+              total: d.rows.paymentCleared.premium + d.rows.paymentCleared.standard + d.rows.paymentCleared.waqf,
             },
             {
               label: "Pending (Completely)",
               premium: d.rows.pendingCompletely.premium,
               standard: d.rows.pendingCompletely.standard,
               waqf: d.rows.pendingCompletely.waqf,
-              goat: d.rows.pendingCompletely.goat,
-              total: sum(d.rows.pendingCompletely),
+              super_goat: d.rows.pendingCompletely.super_goat + d.rows.pendingCompletely.goat,
+              premium_goat: d.rows.pendingCompletely.premium_goat,
+              total: d.rows.pendingCompletely.premium + d.rows.pendingCompletely.standard + d.rows.pendingCompletely.waqf,
             },
             {
               label: "Pending (Partially)",
               premium: d.rows.pendingPartially.premium,
               standard: d.rows.pendingPartially.standard,
               waqf: d.rows.pendingPartially.waqf,
-              goat: d.rows.pendingPartially.goat,
-              total: sum(d.rows.pendingPartially),
+              super_goat: d.rows.pendingPartially.super_goat + d.rows.pendingPartially.goat,
+              premium_goat: d.rows.pendingPartially.premium_goat,
+              total: d.rows.pendingPartially.premium + d.rows.pendingPartially.standard + d.rows.pendingPartially.waqf,
             },
           ],
         };

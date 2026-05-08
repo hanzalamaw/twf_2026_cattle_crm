@@ -149,24 +149,26 @@ function drawInvoiceTermsPage(doc, ctx) {
  * @param {Function} verifyToken - auth middleware
  */
 export const registerBookingRoutes = (app, db, verifyToken) => {
+  const GOAT_HISSA_TYPES = ["Goat (Hissa)", "Super Goat (Hissa)", "Premium Goat (Hissa)"];
   const normalizeOrderType = (value) => {
     const raw = String(value || "").trim();
     return raw === "Cow" ? "Fancy Cow" : raw;
   };
-  const isGoatHissaType = (orderType) => normalizeOrderType(orderType) === "Goat (Hissa)";
+  const isGoatHissaType = (orderType) => GOAT_HISSA_TYPES.includes(normalizeOrderType(orderType));
   const normalizeGoatNumber = (value) => String(value || "").trim().toUpperCase();
   const isValidGoatNumber = (value) => /^G[1-9]\d*$/.test(normalizeGoatNumber(value));
   const normalizeHissaNumber = (value) => String(value ?? "").trim();
 
   async function getNextAvailableGoatNumber(year, dayValue) {
+    const placeholders = GOAT_HISSA_TYPES.map(() => "?").join(",");
     const [goatRows] = await db.execute(
       `SELECT cow_number
        FROM orders
-       WHERE order_type = 'Goat (Hissa)'
+       WHERE order_type IN (${placeholders})
          AND day = ?
          AND (YEAR(booking_date) = ? OR booking_date IS NULL)
          AND cow_number IS NOT NULL AND cow_number <> ''`,
-      [dayValue, year]
+      [...GOAT_HISSA_TYPES, dayValue, year]
     );
 
     const used = new Set();
@@ -248,6 +250,8 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         "Cow": "C",
         "Fancy Cow": "C",
         "Goat (Hissa)": "G",
+        "Super Goat (Hissa)": "G",
+        "Premium Goat (Hissa)": "G",
         "Hissa - Standard": "S",
         "Hissa - Premium": "P",
         "Hissa - Waqf": "W",
@@ -302,7 +306,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const year = booking_date ? (new Date(booking_date).getFullYear() || 2026) : 2026;
 
       // Only for Hissa types
-      const hissaTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf", "Goat (Hissa)"];
+      const hissaTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf", ...GOAT_HISSA_TYPES];
       if (!hissaTypes.includes(orderType)) {
         return res.json({ cow_number: "", hissa_number: "" });
       }
@@ -391,7 +395,7 @@ app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
       "Hissa - Standard",
       "Hissa - Premium",
       "Hissa - Waqf",
-      "Goat (Hissa)",
+        ...GOAT_HISSA_TYPES,
     ];
 
     const normalizeDay = (value) => {
@@ -515,7 +519,7 @@ app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
         o.cow_number,
         o.slot
       FROM orders o
-      WHERE o.order_type = ?
+      WHERE o.order_type IN (${GOAT_HISSA_TYPES.map(() => "?").join(",")})
         AND o.cow_number IS NOT NULL
         AND TRIM(o.cow_number) <> ''
         AND YEAR(o.booking_date) = ?
@@ -524,7 +528,7 @@ app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
         CAST(REGEXP_REPLACE(UPPER(TRIM(o.cow_number)), '[^0-9]', '') AS UNSIGNED) ASC,
         o.created_at ASC
       `,
-      ["Goat (Hissa)", year]
+      [...GOAT_HISSA_TYPES, year]
     );
 
     for (const r of goatRows) {
@@ -579,22 +583,24 @@ app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
       }
 
       let query = `
-        SELECT order_id, booking_name, shareholder_name, contact 
-        FROM orders 
-        WHERE cow_number = ? AND hissa_number = ? AND order_type = ?
+        SELECT order_id, booking_name, shareholder_name, contact
+        FROM orders
+        WHERE cow_number = ? AND hissa_number = ?
         AND (YEAR(booking_date) = ? OR booking_date IS NULL)
       `;
-      const params = [cowNum, hissaNum, orderType, year];
+      const params = [cowNum, hissaNum, year];
+      if (isGoatHissaType(orderType)) {
+        query += ` AND order_type IN (${GOAT_HISSA_TYPES.map(() => "?").join(",")})`;
+        params.push(...GOAT_HISSA_TYPES);
+      } else {
+        query += " AND order_type = ?";
+        params.push(orderType);
+      }
 
       if (dayValue) {
         query += " AND day = ?";
         params.push(dayValue);
       }
-      if (dayValue && isGoatHissaType(orderType)) {
-        query += " AND day = ?";
-        params.push(dayValue);
-      }
-
       // Exclude current order_id if editing
       if (order_id) {
         query += " AND order_id != ?";

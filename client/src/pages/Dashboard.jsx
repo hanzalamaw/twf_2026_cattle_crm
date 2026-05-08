@@ -17,6 +17,11 @@ const FIXED_TYPES_BOOKING = [
   { key: "goat",     label: "Goat (Hissa)"     },
 ];
 
+const BOOKING_GOAT_CHILDREN = [
+  { key: "super_goat", label: "Super Goat (Hissa)" },
+  { key: "premium_goat", label: "Premium Goat (Hissa)" },
+];
+
 const FIXED_TYPES_FARM = [
   { key: "cow",  label: "Fancy Cow" },
   { key: "goat", label: "Goat" },
@@ -106,6 +111,7 @@ const KPIBox = ({ title, value, icon, bubble, isMoney, isPercent, reveal = true,
 const SEGMENT_COLORS = {
   premium:  { fill: "#FF5722" }, standard: { fill: "#2196F3" },
   waqf:     { fill: "#4CAF50" }, goat:     { fill: "#FF9800" },
+  super_goat: { fill: "#f59e0b" }, premium_goat: { fill: "#d97706" },
   cow:      { fill: "#3B82F6" },
   farm_goat:{ fill: "#10B981" },
   remaining:{ fill: "#EAEAEA" },
@@ -233,9 +239,26 @@ const ProgressRow = ({ label, value, percentage, color, active, onHover, segment
   );
 };
 
-const TargetAchievement = ({ achieved, target, breakdown }) => {
+const TargetAchievement = ({ achieved, target, breakdown, goatChildren = [] }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [activeKey, setActiveKey] = useState(null);
+  const [goatExpanded, setGoatExpanded] = useState(false);
+  const breakdownList = Array.isArray(breakdown) ? breakdown : [];
+  const goatTotalValue = Number(breakdownList.find((b) => b.key === "goat")?.value || 0);
+  const goatChildList = goatChildren
+    .map((c) => {
+      const found = breakdownList.find((b) => b.key === c.key);
+      const childValue = Number(found?.value || 0);
+      return {
+        key: c.key,
+        label: c.label,
+        value: childValue,
+        // Child goat percentages are relative to total Goat (Hissa), not all orders.
+        percentage: goatTotalValue > 0 ? (childValue / goatTotalValue) * 100 : 0,
+      };
+    })
+    .filter((row) => row.value > 0);
+  const displayRows = breakdownList.filter((b) => !goatChildList.some((child) => child.key === b.key));
   return (
     <div className="card animCard" style={{ paddingBottom: 24 }}>
       <div className="cardTitleBig cardTitleClickable" onClick={() => setCollapsed(v => !v)}>
@@ -244,13 +267,50 @@ const TargetAchievement = ({ achieved, target, breakdown }) => {
       {!collapsed && (
         <div className="targetGrid">
           <div className="donutWrap">
-            <TargetDonut achieved={achieved} target={target} breakdown={breakdown} activeKey={activeKey} onSegmentHover={setActiveKey} />
+            <TargetDonut achieved={achieved} target={target} breakdown={displayRows} activeKey={activeKey} onSegmentHover={setActiveKey} />
           </div>
           <div className="progressWrap">
-            {(breakdown || []).map((b) => (
-              <ProgressRow key={b.key} segmentKey={b.key} label={b.label} value={b.value}
-                percentage={b.percentage} color={SEGMENT_COLORS[b.key]?.fill || "#FF5722"}
-                active={activeKey === b.key} onHover={setActiveKey} goalValue={b.goalValue} />
+            {displayRows.map((b) => (
+              <React.Fragment key={b.key}>
+                <div className="targetProgressRowShell">
+                  {b.key === "goat" ? (
+                    <button
+                      type="button"
+                      className={`targetExpandBtn ${goatExpanded ? "targetExpandBtnOpen" : ""}`}
+                      onClick={() => setGoatExpanded((v) => !v)}
+                      disabled={goatChildList.length === 0}
+                      title="Show goat categories"
+                    >
+                      ▶
+                    </button>
+                  ) : (
+                    <span className="targetExpandSpacer" />
+                  )}
+                  <ProgressRow
+                    segmentKey={b.key}
+                    label={b.label}
+                    value={b.value}
+                    percentage={b.percentage}
+                    color={SEGMENT_COLORS[b.key]?.fill || "#FF5722"}
+                    active={activeKey === b.key}
+                    onHover={setActiveKey}
+                    goalValue={b.goalValue}
+                  />
+                </div>
+                {b.key === "goat" && goatExpanded && goatChildList.map((child) => (
+                  <div key={child.key} className="targetProgressChild">
+                    <ProgressRow
+                      segmentKey={child.key}
+                      label={child.label}
+                      value={child.value}
+                      percentage={child.percentage}
+                      color={SEGMENT_COLORS[child.key]?.fill || SEGMENT_COLORS.goat.fill}
+                      active={activeKey === child.key}
+                      onHover={setActiveKey}
+                    />
+                  </div>
+                ))}
+              </React.Fragment>
             ))}
           </div>
         </div>
@@ -260,9 +320,9 @@ const TargetAchievement = ({ achieved, target, breakdown }) => {
 };
 
 /* ── Day Wise ── */
-/* 
-  Column order change: Standard | Premium | Waqf | Total (std+prem+waqf) | Goat
-  Total = Standard + Premium + Waqf only (not goat)
+/*
+  Column order: Standard | Premium | Waqf | Total (std+prem+waqf) | Super Goat | Premium Goat | Goat Total
+  Total = Standard + Premium + Waqf only (goat categories are NOT included)
   The toggle has NO effect here.
 */
 const DayWiseSummary = ({ days }) => {
@@ -270,10 +330,11 @@ const DayWiseSummary = ({ days }) => {
   const [highlightRow, setHighlightRow] = useState(null);
   const dayList = days || [];
 
-  // We always render: standard, premium, waqf, total, goat
+  // We always render: standard, premium, waqf, total, super goat, premium goat, goat total
   const hissaKeys = ["standard", "premium", "waqf"];
   const hissaLabels = ["Standard", "Premium", "Waqf"];
-  const colLabels = [...hissaLabels, "Total", "Goat"];
+  const goatKeys = ["super_goat", "premium_goat"];
+  const colLabels = [...hissaLabels, "Total", "Super Goat", "Premium Goat", "Goat Total"];
 
   const rowLabels = ["Total Orders", "Payment Cleared", "Pending (Completely)", "Pending (Partially)"];
   const renderCell = (val) => {
@@ -299,7 +360,7 @@ const DayWiseSummary = ({ days }) => {
               <tr>
                 {dayList.map((d, di) =>
                   colLabels.map((col, ci) => (
-                    <th key={`${d.key}-${col}-${ci}`} className={`dayWiseColHeader${di > 0 && ci === 0 ? " dayWiseColGroupStart" : ""}${col === "Total" ? " dayWiseTotalCol" : ""}${col === "Goat" ? " dayWiseGoatCol" : ""}`}>{col}</th>
+                    <th key={`${d.key}-${col}-${ci}`} className={`dayWiseColHeader${di > 0 && ci === 0 ? " dayWiseColGroupStart" : ""}${col === "Total" ? " dayWiseTotalCol" : ""}${col === "Super Goat" || col === "Premium Goat" || col === "Goat Total" ? " dayWiseGoatCol" : ""}`}>{col}</th>
                   ))
                 )}
               </tr>
@@ -312,7 +373,7 @@ const DayWiseSummary = ({ days }) => {
                   {dayList.map((d, di) => {
                     const row = (d.data || []).find((r) => r.label === label);
                     if (!row) return colLabels.map((col, ci) => (
-                      <td key={`${d.key}-${label}-${col}-${ci}`} className={`dayWiseCell${di > 0 && ci === 0 ? " dayWiseCellGroupStart" : ""}${col === "Total" ? " dayWiseCellTotal dayWiseTotalCol" : ""}${col === "Goat" ? " dayWiseGoatCol" : ""}`}>—</td>
+                      <td key={`${d.key}-${label}-${col}-${ci}`} className={`dayWiseCell${di > 0 && ci === 0 ? " dayWiseCellGroupStart" : ""}${col === "Total" ? " dayWiseCellTotal dayWiseTotalCol" : ""}${col === "Super Goat" || col === "Premium Goat" || col === "Goat Total" ? " dayWiseGoatCol" : ""}`}>—</td>
                     ));
 
                     // Compute hissa total (std+prem+waqf only)
@@ -329,9 +390,13 @@ const DayWiseSummary = ({ days }) => {
                         <td className="dayWiseCell dayWiseCellTotal dayWiseTotalCol">
                           {renderCell(hissaTotal)}
                         </td>
-                        {/* Goat column last */}
-                        <td className="dayWiseCell dayWiseGoatCol">
-                          {renderCell(row["goat"])}
+                        {goatKeys.map((goatKey) => (
+                          <td key={goatKey} className="dayWiseCell dayWiseGoatCol">
+                            {renderCell(row[goatKey])}
+                          </td>
+                        ))}
+                        <td className="dayWiseCell dayWiseCellTotal dayWiseGoatCol">
+                          {renderCell((Number(row.super_goat || 0) + Number(row.premium_goat || 0)))}
                         </td>
                       </React.Fragment>
                     );
@@ -771,6 +836,17 @@ const Dashboard = () => {
     }
     return { key: t.key, label: t.label, value, percentage: achievedReal > 0 ? (value / achievedReal) * 100 : 0 };
   });
+  const bookingGoatChildren = isBooking
+    ? BOOKING_GOAT_CHILDREN.map((child) => {
+        const found = apiMap.get(child.key);
+        const value = Number(found?.value || 0);
+        return {
+          ...child,
+          value,
+          percentage: achievedReal > 0 ? (value / achievedReal) * 100 : 0,
+        };
+      })
+    : [];
 
   return (
     <div className="page">
@@ -902,6 +978,23 @@ const Dashboard = () => {
         .donutRed { font-size:12px; font-weight:400; color:#b91c1c; font-style:italic; }
         .donutWrap { display:flex; flex-direction:column; align-items:center; gap:10px; }
         .progressWrap { display:flex; flex-direction:column; gap:10px; }
+        .targetProgressRowShell { display:flex; align-items:stretch; gap:8px; }
+        .targetProgressChild {
+          margin-left:40px;
+          width:calc(100% - 60px);
+          max-width:calc(100% - 60px);
+        }
+        .targetProgressRowShell .progressRow,
+        .targetProgressChild .progressRow { flex:1; width:100%; }
+        .targetExpandSpacer { width:24px; min-width:24px; display:inline-block; }
+        .targetExpandBtn {
+          width:24px; min-width:24px; border:1px solid #e5e7eb; border-radius:6px;
+          background:#fff; color:#6b7280; cursor:pointer; align-self:center;
+          transition:all .15s ease;
+        }
+        .targetExpandBtn:hover:not(:disabled) { background:#fff4f0; border-color:#FF5722; color:#FF5722; }
+        .targetExpandBtn:disabled { opacity:.35; cursor:not-allowed; }
+        .targetExpandBtnOpen { transform:rotate(90deg); }
         .progressRow { display:flex; flex-direction:column; gap:4px; padding:6px 8px; border-radius:8px; border:1px solid transparent; transition:background .15s,border-color .15s,transform .15s,box-shadow .15s; }
         .progressRowActive { background:#fafafa; border-color:#e5e7eb; transform:translateX(3px); box-shadow:0 2px 8px rgba(0,0,0,0.06); }
         .progressHead { display:flex; justify-content:space-between; align-items:center; gap:8px; }
@@ -1029,7 +1122,7 @@ const Dashboard = () => {
           .mDayRow { background:#fff; border-radius:8px; border:1px solid #f0f0f0; padding:8px 10px; margin-bottom:6px; }
           .mDayRow:last-child { margin-bottom:0; }
           .mDayRowLabel { font-size:11px; font-weight:600; color:#374151; border-left:3px solid #FF5722; padding-left:8px; margin-bottom:8px; line-height:1.3; }
-          .mDayRowGrid { display:grid; grid-template-columns:repeat(5,1fr); gap:4px; }
+          .mDayRowGrid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
           .mDayCell { text-align:center; }
           .mDayCellKey { font-size:9px; font-weight:500; color:#9ca3af; text-transform:uppercase; letter-spacing:.3px; margin-bottom:2px; }
           .mDayCellVal { font-size:12px; font-weight:600; color:#111827; }
@@ -1108,7 +1201,12 @@ const Dashboard = () => {
       {loading ? (
         <div className="card animCard" style={{ textAlign: "center", color: "#6b7280" }}>Loading dashboard...</div>
       ) : (<>
-        <TargetAchievement achieved={achievedForDonut} target={targetTotal} breakdown={fixedBreakdown} />
+        <TargetAchievement
+          achieved={achievedForDonut}
+          target={targetTotal}
+          breakdown={[...fixedBreakdown, ...bookingGoatChildren]}
+          goatChildren={isBooking ? BOOKING_GOAT_CHILDREN : []}
+        />
         {(isAccounting || !isFarm) && <DayWiseSummary days={days} />}
         <SourceWiseSummary sources={sources} />
         <ReferenceWiseSummary references={references} />

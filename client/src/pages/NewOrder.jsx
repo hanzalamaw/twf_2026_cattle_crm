@@ -2,7 +2,13 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { API_BASE as API } from '../config/api';
 
-const ORDER_TYPES = ['Hissa - Standard', 'Hissa - Premium', 'Hissa - Waqf', 'Goat (Hissa)'];
+const ORDER_TYPES = [
+  'Hissa - Standard',
+  'Hissa - Premium',
+  'Hissa - Waqf',
+  'Super Goat (Hissa)',
+  'Premium Goat (Hissa)',
+];
 const FARM_ORDER_TYPES = ['Fancy Cow', 'Goat'];
 const ORDER_SOURCES = ['Tele-Sales', 'Social Media (Organic)', 'Social Media (Ads)', 'Previous Customer', 'Website', 'Reference', 'Farm', 'International Calling'];
 const BOOKING_SLOTS = ['SLOT 1', 'SLOT 2', 'SLOT 3', 'SLOT WAQF'];
@@ -17,6 +23,7 @@ const EMPTY_FORM = {
   order_source: '', reference: '', closed_by: '', description: '', slot: '',
 };
 const GOAT_NUMBER_PATTERN = /^G[1-9]\d*$/;
+const BOOKING_GOAT_TYPES = ['Goat (Hissa)', 'Super Goat (Hissa)', 'Premium Goat (Hissa)'];
 
 const NewOrder = () => {
   const navigate = useNavigate();
@@ -106,8 +113,10 @@ const NewOrder = () => {
     } catch (err) { console.error(err); }
   }, []);
 
+  const isGoatOrderType = (orderType) => BOOKING_GOAT_TYPES.includes(String(orderType || '').trim());
+
   const shouldSkipCowHissaDuplicate = (orderType, cow, hissa) => {
-    if (orderType !== 'Goat (Hissa)') return false;
+    if (!isGoatOrderType(orderType)) return false;
     const c = String(cow ?? '').trim();
     return !GOAT_NUMBER_PATTERN.test(c);
   };
@@ -134,7 +143,13 @@ const NewOrder = () => {
     generateCustomerId(v);
   };
 
-  const getPresetAmount = (t) => ({ 'Hissa - Standard': '25000', 'Hissa - Premium': '30000', 'Hissa - Waqf': '21000' })[t] || '';
+  const getPresetAmount = (t) => ({
+    'Hissa - Standard': '25000',
+    'Hissa - Premium': '30000',
+    'Hissa - Waqf': '21000',
+    'Super Goat (Hissa)': '51000',
+    'Premium Goat (Hissa)': '59000',
+  })[t] || '';
 
   const handleOrderTypeChange = (e) => {
     const v = e.target.value;
@@ -144,7 +159,7 @@ const NewOrder = () => {
         return { ...p, order_type: v, total_amount: getPresetAmount(v), cow_number: '0', hissa_number: '0', day: '', slot: '' };
       }
       getAvailableCowHissa(v, p.day, p.booking_date);
-      return { ...p, order_type: v, total_amount: getPresetAmount(v), hissa_number: v === 'Goat (Hissa)' ? '0' : p.hissa_number };
+      return { ...p, order_type: v, total_amount: getPresetAmount(v), hissa_number: isGoatOrderType(v) ? '0' : p.hissa_number };
     });
   };
 
@@ -155,7 +170,7 @@ const NewOrder = () => {
 
   const handleCowNumberChange = (e) => {
     const raw = e.target.value;
-    if (formData.order_type === 'Goat (Hissa)') {
+    if (isGoatOrderType(formData.order_type)) {
       const clean = raw.toUpperCase().replace(/[^G0-9]/g, '');
       const normalized = clean.startsWith('G') ? `G${clean.slice(1).replace(/G/g, '')}` : clean.replace(/G/g, '');
       setFormData((p) => ({ ...p, cow_number: normalized, hissa_number: '0' }));
@@ -190,7 +205,7 @@ const NewOrder = () => {
       const dup = await checkCowHissaDuplicate(cow_number, hissa_number, order_type, day, booking_date);
       if (dup) { setDuplicateError(dup); setLoading(false); return; }
     }
-    if (!isFarm && order_type === 'Goat (Hissa)' && !GOAT_NUMBER_PATTERN.test(String(cow_number || '').trim().toUpperCase())) {
+    if (!isFarm && isGoatOrderType(order_type) && !GOAT_NUMBER_PATTERN.test(String(cow_number || '').trim().toUpperCase())) {
       setError('Goat Number must follow G1, G2, G3 format.');
       setLoading(false);
       return;
@@ -208,8 +223,8 @@ const NewOrder = () => {
         }
       : {
           ...formData,
-          cow_number: order_type === 'Goat (Hissa)' ? String(cow_number || '').trim().toUpperCase() : formData.cow_number,
-          hissa_number: order_type === 'Goat (Hissa)' ? '0' : formData.hissa_number,
+          cow_number: isGoatOrderType(order_type) ? String(cow_number || '').trim().toUpperCase() : formData.cow_number,
+          hissa_number: isGoatOrderType(order_type) ? '0' : formData.hissa_number,
         };
     try {
       const res = await fetch(`${API}/booking/orders`, {
@@ -245,7 +260,7 @@ const NewOrder = () => {
   const sectionStyle = { background: '#FFFFFF', borderRadius: '6px', padding: '16px', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' };
   const sectionTitleStyle = { fontSize: '11px', fontWeight: '600', color: '#FF5722', marginBottom: '13px', paddingBottom: '8px', borderBottom: '1px solid #e0e0e0' };
 
-  const isGoat = !isFarm && formData.order_type === 'Goat (Hissa)';
+  const isGoat = !isFarm && isGoatOrderType(formData.order_type);
 
   return (
     <>
