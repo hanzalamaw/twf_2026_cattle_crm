@@ -1,5 +1,6 @@
 // src/pages/AccountingDashboard.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "../context/AuthContext";
 import { API_BASE } from "../config/api";
 import {
@@ -92,9 +93,16 @@ const KPIBox = ({ title, value, icon, bubble, reveal = true }) => {
   );
 };
 
-const BudgetUsageTable = ({ categories }) => {
+const BudgetUsageTable = ({ categories, year, token }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [openCats, setOpenCats] = useState({});
+  const [detailModal, setDetailModal] = useState({
+    open: false,
+    loading: false,
+    title: "",
+    expenses: [],
+    totals: { bank: 0, cash: 0 },
+  });
 
   const money = (n) => `PKR ${fmt(Math.round(Number(n || 0)))}`;
 
@@ -103,6 +111,43 @@ const BudgetUsageTable = ({ categories }) => {
       ...prev,
       [key]: !prev[key],
     }));
+  };
+
+  const openDetails = async ({ title, categoryId, subCategoryId = null }) => {
+    setDetailModal({
+      open: true,
+      loading: true,
+      title,
+      expenses: [],
+      totals: { bank: 0, cash: 0 },
+    });
+
+    try {
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const params = new URLSearchParams({
+        year: year || "all",
+        category_id: String(categoryId),
+      });
+      if (subCategoryId) params.set("sub_category_id", String(subCategoryId));
+
+      const res = await fetch(`${API_BASE}/accounting-dashboard/budget-usage-expenses?${params.toString()}`, {
+        headers,
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      setDetailModal((prev) => ({
+        ...prev,
+        loading: false,
+        expenses: Array.isArray(json.expenses) ? json.expenses : [],
+        totals: {
+          bank: Number(json?.totals?.bank || 0),
+          cash: Number(json?.totals?.cash || 0),
+        },
+      }));
+    } catch (_) {
+      setDetailModal((prev) => ({ ...prev, loading: false, expenses: [] }));
+    }
   };
 
   return (
@@ -148,22 +193,33 @@ const BudgetUsageTable = ({ categories }) => {
                       <React.Fragment key={cat.categoryKey}>
                         <tr className="catRow">
                           <td>
-                            <button
-                              type="button"
-                              className={`catArrowBtn ${isOpen ? "catArrowOpen" : ""}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (hasSubs) toggleCat(cat.categoryKey);
-                              }}
-                              disabled={!hasSubs}
-                              title={hasSubs ? "Show sub categories" : "No sub categories"}
-                            >
-                              ▶
-                            </button>
-
-                            {cat.name}
+                            <div className="budgetNameCell">
+                              <button
+                                type="button"
+                                className={`catArrowBtn ${isOpen ? "catArrowOpen" : ""}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (hasSubs) toggleCat(cat.categoryKey);
+                                }}
+                                disabled={!hasSubs}
+                                title={hasSubs ? "Show sub categories" : "No sub categories"}
+                              >
+                                ▶
+                              </button>
+                              <button
+                                type="button"
+                                className="budgetItemBtn"
+                                onClick={() =>
+                                  openDetails({
+                                    title: cat.name,
+                                    categoryId: cat.category_id,
+                                  })
+                                }
+                              >
+                                {cat.name}
+                              </button>
+                            </div>
                           </td>
-
                           <td>{money(cat.usedBudget)}</td>
 
                           <td>
@@ -175,10 +231,23 @@ const BudgetUsageTable = ({ categories }) => {
                           filteredSubs.map((sub) => (
                             <tr key={sub.subCategoryKey} className="subRow">
                               <td>
-                                <span className="subIndent">↳</span>
-                                {sub.name}
+                                <div className="budgetNameCell">
+                                  <span className="subIndent">↳</span>
+                                  <button
+                                    type="button"
+                                    className="budgetItemBtn budgetItemSubBtn"
+                                    onClick={() =>
+                                      openDetails({
+                                        title: `${cat.name} / ${sub.name}`,
+                                        categoryId: cat.category_id,
+                                        subCategoryId: sub.sub_category_id,
+                                      })
+                                    }
+                                  >
+                                    {sub.name}
+                                  </button>
+                                </div>
                               </td>
-
                               <td>{money(sub.usedBudget)}</td>
 
                               <td>
@@ -194,6 +263,75 @@ const BudgetUsageTable = ({ categories }) => {
           </table>
         </div>
       )}
+
+      {detailModal.open &&
+        createPortal(
+          <div className="budgetModalBackdrop" onClick={() => setDetailModal((p) => ({ ...p, open: false }))}>
+            <div className="budgetModalCard" onClick={(e) => e.stopPropagation()}>
+              <div className="budgetModalHeader">
+                <h3>{detailModal.title} Expenses</h3>
+                <button
+                  type="button"
+                  className="budgetModalClose"
+                  onClick={() => setDetailModal((p) => ({ ...p, open: false }))}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="budgetModalTopCards">
+                <div className="budgetMiniCard">
+                  <div>Bank Expenses</div>
+                  <strong>{money(detailModal.totals.bank)}</strong>
+                </div>
+                <div className="budgetMiniCard">
+                  <div>Cash Expenses</div>
+                  <strong>{money(detailModal.totals.cash)}</strong>
+                </div>
+              </div>
+
+              {detailModal.loading ? (
+                <div className="chartPlaceholder">Loading expenses...</div>
+              ) : detailModal.expenses.length === 0 ? (
+                <div className="chartPlaceholder">No expenses found</div>
+              ) : (
+                <div className="budgetModalTableWrap">
+                  <table className="tblBudget tblBudgetModal">
+                    <thead>
+                      <tr>
+                        <th>Expense ID</th>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Done By</th>
+                        <th>Category</th>
+                        <th>Sub-Category</th>
+                        <th>Bank</th>
+                        <th>Cash</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailModal.expenses.map((row) => (
+                        <tr key={row.expense_id}>
+                          <td>{row.expense_id}</td>
+                          <td>{row.done_at || "—"}</td>
+                          <td>{row.description || "—"}</td>
+                          <td>{row.done_by || "—"}</td>
+                          <td>{row.category_name || "—"}</td>
+                          <td>{row.sub_category_name || "—"}</td>
+                          <td>{money(row.bank)}</td>
+                          <td>{money(row.cash)}</td>
+                          <td>{money(row.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };
@@ -923,8 +1061,128 @@ const AccountingDashboard = () => {
 }
 
 .tblBudget th:nth-child(2),
-.tblBudget td:nth-child(2) {
+        .tblBudget td:nth-child(2),
+        .tblBudgetModal th:nth-child(7),
+        .tblBudgetModal td:nth-child(7),
+        .tblBudgetModal th:nth-child(8),
+        .tblBudgetModal td:nth-child(8),
+        .tblBudgetModal th:nth-child(9),
+        .tblBudgetModal td:nth-child(9) {
   text-align: right;
+}
+
+.budgetNameCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.budgetItemBtn {
+  border: none;
+  background: transparent;
+  color: #374151;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.budgetItemBtn:hover {
+  color: #FF5722;
+  text-decoration: underline;
+}
+
+.budgetItemSubBtn {
+  font-weight: 500;
+}
+
+.budgetModalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1200;
+}
+
+.budgetModalCard {
+  width: min(1100px, 100%);
+  max-height: 90vh;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.budgetModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #f1f1f1;
+}
+
+.budgetModalHeader h3 {
+  margin: 0;
+  font-size: 14px;
+  color: #111827;
+}
+
+.budgetModalClose {
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  cursor: pointer;
+  color: #9ca3af;
+}
+
+.budgetModalTopCards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 16px 0;
+}
+
+.budgetMiniCard {
+  border: 1px solid #f1f1f1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fffaf8;
+}
+
+.budgetMiniCard div {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.budgetMiniCard strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+  color: #111827;
+}
+
+.budgetModalTableWrap {
+  padding: 12px 16px 16px;
+  overflow: auto;
+}
+
+.tblBudget th:nth-child(1),
+.tblBudget td:nth-child(1) {
+  width: 1%;
+}
+
+.tblBudget th:nth-child(2),
+.tblBudget td:nth-child(2) {
+  white-space: nowrap;
+}
+
+.tblBudget th:nth-child(3),
+.tblBudget td:nth-child(3) {
+  width: 99%;
 }
       `}</style>
 
@@ -1017,7 +1275,7 @@ const AccountingDashboard = () => {
         </div>
       ) : (
         <>
-          <BudgetUsageTable categories={budgetUsage} />
+          <BudgetUsageTable categories={budgetUsage} year={year} token={token} />
           <DailyExpensesChart series={dailyExpenses} reveal={kpiValuesVisible} />
         </>
       )}

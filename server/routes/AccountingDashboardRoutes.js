@@ -237,4 +237,78 @@ export const registerAccountingDashboardRoutes = (app, db, verifyToken) => {
       res.status(500).json({ message: "Server error" });
     }
   });
+
+  app.get("/api/accounting-dashboard/budget-usage-expenses", verifyToken, async (req, res) => {
+    try {
+      const year = req.query.year || "all";
+      const categoryId = req.query.category_id ? Number(req.query.category_id) : null;
+      const subCategoryId = req.query.sub_category_id ? Number(req.query.sub_category_id) : null;
+
+      if (!categoryId || Number.isNaN(categoryId)) {
+        return res.status(400).json({ message: "category_id is required" });
+      }
+
+      const params = [];
+      const conditions = buildExpenseYearWhere(year, params, "e.done_at");
+      conditions.push("e.category_id = ?");
+      params.push(categoryId);
+
+      if (subCategoryId && !Number.isNaN(subCategoryId)) {
+        conditions.push("e.sub_category_id = ?");
+        params.push(subCategoryId);
+      }
+
+      const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+      const [rows] = await db.execute(
+        `
+        SELECT
+          e.expense_id,
+          e.done_at,
+          e.description,
+          e.done_by,
+          e.bank,
+          e.cash,
+          COALESCE(e.total, COALESCE(e.bank, 0) + COALESCE(e.cash, 0)) AS total,
+          c.name AS category_name,
+          sc.name AS sub_category_name
+        FROM booking_expenses e
+        LEFT JOIN booking_expense_categories c ON c.category_id = e.category_id
+        LEFT JOIN booking_expense_sub_categories sc ON sc.sub_category_id = e.sub_category_id
+        ${where}
+        ORDER BY e.done_at DESC, e.expense_id DESC
+        `,
+        params
+      );
+
+      const expenses = (rows || []).map((r) => ({
+        expense_id: r.expense_id,
+        done_at: toDateOnly(r.done_at) ?? r.done_at,
+        description: r.description ?? "",
+        done_by: r.done_by ?? "",
+        category_name: r.category_name ?? "",
+        sub_category_name: r.sub_category_name ?? "",
+        bank: Number(r.bank || 0),
+        cash: Number(r.cash || 0),
+        total: Number(r.total || 0),
+      }));
+
+      const totals = expenses.reduce(
+        (acc, row) => {
+          acc.bank += Number(row.bank || 0);
+          acc.cash += Number(row.cash || 0);
+          return acc;
+        },
+        { bank: 0, cash: 0 }
+      );
+
+      res.json({
+        totals,
+        expenses,
+      });
+    } catch (e) {
+      logError("ACCOUNTING_DASHBOARD", "Budget usage expenses error", e);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
 };
