@@ -96,6 +96,8 @@ const KPIBox = ({ title, value, icon, bubble, reveal = true }) => {
 const BudgetUsageTable = ({ categories, year, token }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [openCats, setOpenCats] = useState({});
+  const [openFilter, setOpenFilter] = useState(null);
+  const [columnFilters, setColumnFilters] = useState({});
   const [detailModal, setDetailModal] = useState({
     open: false,
     loading: false,
@@ -105,6 +107,54 @@ const BudgetUsageTable = ({ categories, year, token }) => {
   });
 
   const money = (n) => `PKR ${fmt(Math.round(Number(n || 0)))}`;
+  const modalColumns = [
+    { key: "done_at", label: "Date" },
+    { key: "description", label: "Description" },
+    { key: "done_by", label: "Done By" },
+    { key: "category_name", label: "Category" },
+    { key: "sub_category_name", label: "Sub-Category" },
+    { key: "bank", label: "Bank", numeric: true },
+    { key: "cash", label: "Cash", numeric: true },
+    { key: "total", label: "Total", numeric: true },
+  ];
+
+  const getCellValue = useCallback(
+    (row, key) => {
+      if (key === "done_at") return row.done_at || "—";
+      if (key === "bank" || key === "cash" || key === "total") return money(row[key]);
+      return row[key] || "—";
+    },
+    []
+  );
+
+  const groupedByDate = useMemo(() => {
+    const all = Array.isArray(detailModal.expenses) ? detailModal.expenses : [];
+    const filtered = all.filter((row) =>
+      modalColumns.every((col) => {
+        const allowed = columnFilters[col.key];
+        if (!Array.isArray(allowed) || allowed.length === 0) return true;
+        return allowed.includes(getCellValue(row, col.key));
+      })
+    );
+
+    const map = new Map();
+    filtered.forEach((row) => {
+      const dateKey = row.done_at || "No Date";
+      if (!map.has(dateKey)) map.set(dateKey, []);
+      map.get(dateKey).push(row);
+    });
+
+    return map;
+  }, [detailModal.expenses, columnFilters, modalColumns, getCellValue]);
+
+  const filterOptions = useMemo(() => {
+    const all = Array.isArray(detailModal.expenses) ? detailModal.expenses : [];
+    const out = {};
+    modalColumns.forEach((col) => {
+      out[col.key] = Array.from(new Set(all.map((row) => getCellValue(row, col.key))));
+    });
+    return out;
+  }, [detailModal.expenses, modalColumns, getCellValue]);
 
   const toggleCat = (key) => {
     setOpenCats((prev) => ({
@@ -114,6 +164,8 @@ const BudgetUsageTable = ({ categories, year, token }) => {
   };
 
   const openDetails = async ({ title, categoryId, subCategoryId = null }) => {
+    setOpenFilter(null);
+    setColumnFilters({});
     setDetailModal({
       open: true,
       loading: true,
@@ -266,14 +318,29 @@ const BudgetUsageTable = ({ categories, year, token }) => {
 
       {detailModal.open &&
         createPortal(
-          <div className="budgetModalBackdrop" onClick={() => setDetailModal((p) => ({ ...p, open: false }))}>
-            <div className="budgetModalCard" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="budgetModalBackdrop"
+            onClick={() => {
+              setOpenFilter(null);
+              setDetailModal((p) => ({ ...p, open: false }));
+            }}
+          >
+            <div
+              className="budgetModalCard"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpenFilter(null);
+              }}
+            >
               <div className="budgetModalHeader">
                 <h3>{detailModal.title} Expenses</h3>
                 <button
                   type="button"
                   className="budgetModalClose"
-                  onClick={() => setDetailModal((p) => ({ ...p, open: false }))}
+                  onClick={() => {
+                    setOpenFilter(null);
+                    setDetailModal((p) => ({ ...p, open: false }));
+                  }}
                 >
                   ✕
                 </button>
@@ -292,42 +359,127 @@ const BudgetUsageTable = ({ categories, year, token }) => {
 
               {detailModal.loading ? (
                 <div className="chartPlaceholder">Loading expenses...</div>
-              ) : detailModal.expenses.length === 0 ? (
+              ) : groupedByDate.size === 0 ? (
                 <div className="chartPlaceholder">No expenses found</div>
               ) : (
                 <div className="budgetModalTableWrap">
                   <table className="tblBudget tblBudgetModal">
                     <thead>
                       <tr>
-                        <th>Expense ID</th>
-                        <th>Date</th>
-                        <th>Description</th>
-                        <th>Done By</th>
-                        <th>Category</th>
-                        <th>Sub-Category</th>
-                        <th>Bank</th>
-                        <th>Cash</th>
-                        <th>Total</th>
+                        {modalColumns.map((col) => (
+                          <th key={col.key} className={col.numeric ? "numCol" : ""}>
+                            <div className="modalFilterHead">
+                              <span>{col.label}</span>
+                              <button
+                                type="button"
+                                className={`modalFilterBtn ${
+                                  Array.isArray(columnFilters[col.key]) && columnFilters[col.key].length > 0
+                                    ? "modalFilterBtnActive"
+                                    : ""
+                                }`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  setOpenFilter((prev) =>
+                                    prev?.key === col.key
+                                      ? null
+                                      : {
+                                          key: col.key,
+                                          top: rect.bottom + 6,
+                                          left: rect.left,
+                                          width: Math.max(190, rect.width + 150),
+                                        }
+                                  );
+                                }}
+                              >
+                                ▾
+                              </button>
+                            </div>
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {detailModal.expenses.map((row) => (
-                        <tr key={row.expense_id}>
-                          <td>{row.expense_id}</td>
-                          <td>{row.done_at || "—"}</td>
-                          <td>{row.description || "—"}</td>
-                          <td>{row.done_by || "—"}</td>
-                          <td>{row.category_name || "—"}</td>
-                          <td>{row.sub_category_name || "—"}</td>
-                          <td>{money(row.bank)}</td>
-                          <td>{money(row.cash)}</td>
-                          <td>{money(row.total)}</td>
-                        </tr>
+                      {Array.from(groupedByDate.entries()).map(([dateKey, rows]) => (
+                        <React.Fragment key={dateKey}>
+                          {rows.map((row, idx) => (
+                            <tr
+                              key={row.expense_id}
+                              className={
+                                rows.length === 1
+                                  ? "dateGroupSingle"
+                                  : idx === 0
+                                  ? "dateGroupFirst"
+                                  : idx === rows.length - 1
+                                  ? "dateGroupLast"
+                                  : "dateGroupMiddle"
+                              }
+                            >
+                              {modalColumns.map((col) => (
+                                <td key={`${row.expense_id}-${col.key}`} className={col.numeric ? "numCol" : ""}>
+                                  {getCellValue(row, col.key)}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>
                 </div>
               )}
+            </div>
+          </div>,
+          document.body
+        )}
+      {openFilter?.key &&
+        createPortal(
+          <div
+            className="modalFilterMenu"
+            style={{
+              position: "fixed",
+              top: openFilter.top,
+              left: Math.max(8, Math.min(openFilter.left, window.innerWidth - openFilter.width - 8)),
+              width: openFilter.width,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="modalFilterClear"
+              onClick={() =>
+                setColumnFilters((prev) => ({
+                  ...prev,
+                  [openFilter.key]: [],
+                }))
+              }
+            >
+              Clear filter
+            </button>
+            <div className="modalFilterOptions">
+              {(filterOptions[openFilter.key] || []).map((opt) => {
+                const active = Array.isArray(columnFilters[openFilter.key])
+                  ? columnFilters[openFilter.key].includes(opt)
+                  : false;
+                return (
+                  <label key={opt} className="modalFilterOption">
+                    <input
+                      type="checkbox"
+                      checked={active}
+                      onChange={() => {
+                        setColumnFilters((prev) => {
+                          const current = Array.isArray(prev[openFilter.key]) ? [...prev[openFilter.key]] : [];
+                          const next = current.includes(opt)
+                            ? current.filter((v) => v !== opt)
+                            : [...current, opt];
+                          return { ...prev, [openFilter.key]: next };
+                        });
+                      }}
+                    />
+                    <span>{opt}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>,
           document.body
@@ -1062,12 +1214,14 @@ const AccountingDashboard = () => {
 
 .tblBudget th:nth-child(2),
         .tblBudget td:nth-child(2),
+        .tblBudgetModal th:nth-child(5),
+        .tblBudgetModal td:nth-child(5),
+        .tblBudgetModal th:nth-child(6),
+        .tblBudgetModal td:nth-child(6),
         .tblBudgetModal th:nth-child(7),
         .tblBudgetModal td:nth-child(7),
-        .tblBudgetModal th:nth-child(8),
-        .tblBudgetModal td:nth-child(8),
-        .tblBudgetModal th:nth-child(9),
-        .tblBudgetModal td:nth-child(9) {
+        .tblBudgetModal th.numCol,
+        .tblBudgetModal td.numCol {
   text-align: right;
 }
 
@@ -1168,6 +1322,103 @@ const AccountingDashboard = () => {
 .budgetModalTableWrap {
   padding: 12px 16px 16px;
   overflow: auto;
+}
+
+.modalFilterHead {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.modalFilterBtn {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #6b7280;
+  border-radius: 6px;
+  height: 22px;
+  min-width: 22px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.modalFilterBtnActive {
+  border-color: #FF5722;
+  color: #FF5722;
+  background: #fff4f0;
+}
+
+.modalFilterMenu {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+  z-index: 2500;
+  padding: 8px;
+}
+
+.modalFilterClear {
+  border: none;
+  background: transparent;
+  color: #FF5722;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 0 8px;
+}
+
+.modalFilterOptions {
+  max-height: 170px;
+  overflow: auto;
+  border-top: 1px solid #f1f1f1;
+  padding-top: 6px;
+}
+
+.modalFilterOption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #374151;
+  padding: 4px 0;
+}
+
+.dateGroupFirst td,
+.dateGroupMiddle td,
+.dateGroupLast td,
+.dateGroupSingle td {
+  border-bottom: none !important;
+  border-left: none !important;
+  border-right: none !important;
+}
+
+.dateGroupFirst td:first-child,
+.dateGroupMiddle td:first-child,
+.dateGroupLast td:first-child,
+.dateGroupSingle td:first-child {
+  border-left: 1px dotted #f59e0b;
+}
+
+.dateGroupFirst td:last-child,
+.dateGroupMiddle td:last-child,
+.dateGroupLast td:last-child,
+.dateGroupSingle td:last-child {
+  border-right: 1px dotted #f59e0b;
+}
+
+.dateGroupFirst td:first-child,
+.dateGroupFirst td,
+.dateGroupSingle td:first-child,
+.dateGroupSingle td {
+  border-top: 1px dotted #f59e0b;
+}
+
+.dateGroupLast td:first-child,
+.dateGroupLast td,
+.dateGroupSingle td:first-child,
+.dateGroupSingle td {
+  border-bottom: 1px dotted #f59e0b !important;
 }
 
 .tblBudget th:nth-child(1),
