@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { OPERATION_MODULES } from './operationModules';
+import { OPERATION_MODULES, operationModuleHasAccess } from './operationModules';
 
 /**
  * Same card grid as Select Management — styles live in OperationsLayout (mob-*).
@@ -19,11 +19,11 @@ export default function Operations() {
     return () => clearTimeout(t);
   }, []);
 
-  const hasAccess = (key) => !!perms[key];
-  const accessibleCount = OPERATION_MODULES.filter((m) => hasAccess(m.permission)).length;
+  const hasAccess = (module) => operationModuleHasAccess(module, perms);
+  const accessibleCount = OPERATION_MODULES.filter((m) => hasAccess(m)).length;
 
   const handleClick = (m) => {
-    if (!hasAccess(m.permission)) {
+    if (!hasAccess(m)) {
       setAccessBlocked(m.name);
       setTimeout(() => setAccessBlocked(null), 3000);
       return;
@@ -45,7 +45,7 @@ export default function Operations() {
 
       <div className="mob-grid">
         {OPERATION_MODULES.map((m, idx) => {
-          const accessible = hasAccess(m.permission);
+          const accessible = hasAccess(m);
           const isLastOdd = idx === OPERATION_MODULES.length - 1 && OPERATION_MODULES.length % 2 !== 0;
           return (
             <button

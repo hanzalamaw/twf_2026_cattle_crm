@@ -17,6 +17,8 @@ import OperationsChallan from './pages/OperationsChallan';
 import OperationsGeneral from './pages/OperationsGeneral';
 import OperationsSupport from './pages/OperationsSupport';
 import OperationsRiders from './pages/OperationsRiders';
+import OperationsRiderSupervisorView from './pages/OperationsRiderSupervisorView';
+import OperationsAffluent from './pages/OperationsAffluent';
 import OperationPlaceholder from './pages/OperationPlaceholder';
 import ProcurementDashboard from './pages/ProcurementDashboard';
 import NewProcurement from './pages/NewProcurement';
@@ -44,6 +46,18 @@ const ProtectedRoute = ({ children }) => {
     const redirect = encodeURIComponent(location.pathname || '/');
     return <Navigate to={`/login?redirect=${redirect}`} replace />;
   }
+  return children;
+};
+
+/** Enter Operations layout (module grid, rider pages, etc.) — includes supervisor-only roles. */
+function hasOperationsShellAccess(permissions) {
+  const p = permissions || {};
+  return !!(p.operation_management || p.operation_rider_management || p.operation_rider_management_supervisor);
+}
+
+const RequireOperationsShell = ({ children }) => {
+  const { user } = useAuth();
+  if (!hasOperationsShellAccess(user?.permissions)) return <Navigate to="/" replace />;
   return children;
 };
 
@@ -107,7 +121,7 @@ const RequireBookingRoleAccess = ({ children }) => {
 const RequireOperationSub = ({ permission, children }) => {
   const { user } = useAuth();
   const p = user?.permissions || {};
-  if (!p.operation_management) return <Navigate to="/" replace />;
+  if (!hasOperationsShellAccess(p)) return <Navigate to="/" replace />;
   if (!p[permission]) return <Navigate to="/operations" replace />;
   return children;
 };
@@ -115,17 +129,46 @@ const RequireOperationSub = ({ permission, children }) => {
 const RequireDeliveriesOnly = ({ children }) => {
   const { user } = useAuth();
   const p = user?.permissions || {};
-  if (!p.operation_management) return <Navigate to="/" replace />;
+  if (!hasOperationsShellAccess(p)) return <Navigate to="/" replace />;
   if (!p.operation_deliveries_management) return <Navigate to="/operations" replace />;
   return children;
+};
+
+const RequireAffluentOnly = ({ children }) => {
+  const { user } = useAuth();
+  const p = user?.permissions || {};
+  if (!hasOperationsShellAccess(p)) return <Navigate to="/" replace />;
+  if (!p.operation_affluent_management) return <Navigate to="/operations" replace />;
+  return children;
+};
+
+/** Admin rider UI vs supervisor-only rider view */
+const OperationsRidersEntry = () => {
+  const { user } = useAuth();
+  const p = user?.permissions || {};
+  if (!hasOperationsShellAccess(p)) return <Navigate to="/" replace />;
+  if (p.operation_rider_management) return <OperationsRiders />;
+  if (p.operation_rider_management_supervisor) return <OperationsRiderSupervisorView />;
+  return <Navigate to="/operations" replace />;
 };
 
 const RequireChallanOnly = ({ children }) => {
   const { user } = useAuth();
   const p = user?.permissions || {};
-  if (!p.operation_management) return <Navigate to="/" replace />;
+  if (!hasOperationsShellAccess(p)) return <Navigate to="/" replace />;
   if (!p.operation_challan_management) return <Navigate to="/operations" replace />;
   return children;
+};
+
+/** Show sidebar on rider routes for rider admins only; supervisor-only view is full-width (top bar in OperationsLayout). */
+const OperationsMainLayout = () => {
+  const location = useLocation();
+  const { user } = useAuth();
+  const p = user?.permissions || {};
+  const onRiders = location.pathname.startsWith('/operations/riders');
+  const supervisorOnly = !!p.operation_rider_management_supervisor && !p.operation_rider_management;
+  const showSidebar = onRiders && !supervisorOnly;
+  return <MainLayout showSidebar={showSidebar} systemName="Operations Management" />;
 };
 
 const TermsOrHome = () => {
@@ -158,7 +201,9 @@ const ROUTE_TITLES = {
   '/operations/general': 'Operations — General',
   '/operations/support': 'Operations — Support',
   '/operations/riders': 'Operations — Riders',
+  '/operations/riders/supervisors': 'Operations — Riders',
   '/operations/deliveries': 'Deliveries Management',
+  '/operations/affluent': 'Affluent Management',
   '/operations/challan': 'Challan Management',
   '/farm': 'Farm Management',
   '/farm/dashboard': 'Farm Dashboard',
@@ -291,13 +336,15 @@ function App() {
             <Route path="expenses" element={<RequireBookingRoleAccess><Expenses /></RequireBookingRoleAccess>} />
           </Route>
 
-          <Route path="/operations" element={<ProtectedRoute><RequirePermission permission="operation_management"><MainLayout showSidebar={false} systemName="Operations Management" /></RequirePermission></ProtectedRoute>}>
+          <Route path="/operations" element={<ProtectedRoute><RequireOperationsShell><OperationsMainLayout /></RequireOperationsShell></ProtectedRoute>}>
             <Route element={<OperationsLayout />}>
               <Route index element={<Operations />} />
               <Route path="general" element={<RequireOperationSub permission="operation_general_dashboard"><OperationsGeneral /></RequireOperationSub>} />
               <Route path="support" element={<RequireOperationSub permission="operation_customer_support"><OperationsSupport /></RequireOperationSub>} />
-              <Route path="riders" element={<RequireOperationSub permission="operation_rider_management"><OperationsRiders /></RequireOperationSub>} />
+              <Route path="riders" element={<OperationsRidersEntry />} />
+              <Route path="riders/supervisors" element={<OperationsRidersEntry />} />
               <Route path="deliveries" element={<RequireDeliveriesOnly><OperationsDeliveries /></RequireDeliveriesOnly>} />
+              <Route path="affluent" element={<RequireAffluentOnly><OperationsAffluent /></RequireAffluentOnly>} />
               <Route path="challan" element={<RequireChallanOnly><OperationsChallan /></RequireChallanOnly>} />
             </Route>
           </Route>

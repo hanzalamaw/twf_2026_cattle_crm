@@ -128,6 +128,20 @@ function hasDescription(source) {
   return getDescriptionText(source).length > 0;
 }
 
+function isAffluentOrder(source, totalField = 'total_hissa', waqfField = 'total_waqf_hissa') {
+  const totalHissa = Number(source?.[totalField] || 0);
+  const waqfHissa = Number(source?.[waqfField] || 0);
+  return hasDescription(source) || (totalHissa - waqfHissa >= 3);
+}
+
+function NoBadge({ number }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: '700', background: '#FFF3E0', color: '#E65100', whiteSpace: 'nowrap' }}>
+      {number || '—'}
+    </span>
+  );
+}
+
 function RedDot() {
   return <span title="Special request" style={{ display:'inline-block', width:'8px', height:'8px', borderRadius:'999px', background:'#D32F2F', flexShrink:0 }} />;
 }
@@ -575,6 +589,7 @@ export default function OperationsChallan() {
   const [confirmRegen,  setConfirmRegen]  = useState(false);
 
   const [search,      setSearch]      = useState('');
+  const [challanSearch, setChallanSearch] = useState('');
   const [filterDay,   setFilterDay]   = useState('');
   const [filterSlot,  setFilterSlot]  = useState([]);
   const [filterStatus, setFilterStatus] = useState([]);
@@ -669,6 +684,7 @@ export default function OperationsChallan() {
 
   const displayRows = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const challanQ = challanSearch.trim().toLowerCase();
     return challans.filter((c) => {
       if (filterDay && normalizeForCompare(c.day) !== normalizeForCompare(filterDay)) return false;
       if (filterSlot.length) {
@@ -680,15 +696,18 @@ export default function OperationsChallan() {
         if (!filterOrderType.some((t) => rowTypes.includes(t))) return false;
       }
       if (filterStatus.length && !filterStatus.includes(challanDerivedStatus(c))) return false;
-      if (!q) return true;
-      const hay = [c.address, c.area, c.day, c.slot, c.booking_name, c.shareholders_csv, c.contacts_csv, c.alt_contacts_csv, c.customer_ids_csv, c.description].filter(Boolean).join(' ').toLowerCase();
-      return hay.includes(q);
+      if (q) {
+        const hay = [c.address, c.area, c.day, c.slot, c.booking_name, c.shareholders_csv, c.contacts_csv, c.alt_contacts_csv, c.customer_ids_csv, c.description].filter(Boolean).join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (challanQ && !String(c.challan_id || '').toLowerCase().includes(challanQ)) return false;
+      return true;
     });
-  }, [challans, search, filterDay, filterSlot, filterStatus, filterOrderType]);
+  }, [challans, search, challanSearch, filterDay, filterSlot, filterStatus, filterOrderType]);
 
   const totalPages = Math.max(1, Math.ceil(displayRows.length / PAGE_SIZE));
   const pagedRows  = useMemo(() => displayRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [displayRows, page]);
-  useEffect(() => { setPage(1); }, [search, filterDay, filterSlot, filterStatus, filterOrderType, selectedBatch]);
+  useEffect(() => { setPage(1); }, [search, challanSearch, filterDay, filterSlot, filterStatus, filterOrderType, selectedBatch]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
   const toggleOne = (id) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -795,9 +814,13 @@ export default function OperationsChallan() {
 
         {/* Filters */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '14px', alignItems: 'flex-end', flexShrink: 0 }}>
-          <div style={{ flex: '1 1 280px', minWidth: 200 }}>
+          <div style={{ flex: '1 1 200px', minWidth: 160 }}>
             <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Search</label>
             <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} style={inputStyle} placeholder="Address, area, shareholders…" />
+          </div>
+          <div style={{ flex: '0 1 180px', minWidth: 150 }}>
+            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Challan No.</label>
+            <input type="text" value={challanSearch} onChange={(e) => setChallanSearch(e.target.value)} style={inputStyle} placeholder="Search challan no…" />
           </div>
           <div style={{ width: 130 }}>
             <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Day</label>
@@ -845,6 +868,9 @@ export default function OperationsChallan() {
               
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                 <tr style={{ background: '#fafafa' }}>
+                  <th style={{ textAlign: 'left', padding: '10px 10px', borderBottom: '1px solid #e0e0e0', color: '#555', fontWeight: '600', whiteSpace: 'nowrap', fontSize: '10px' }}>
+                    No.
+                  </th>
                   <th style={{ padding: '10px 10px', borderBottom: '1px solid #e0e0e0' }}>
                     <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} />
                   </th>
@@ -855,22 +881,26 @@ export default function OperationsChallan() {
               </thead>
               <tbody>
                 {pagedRows.length === 0 ? (
-                  <tr><td colSpan={14} style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>No rows found.</td></tr>
+                  <tr><td colSpan={15} style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>No rows found.</td></tr>
                 ) : pagedRows.map((c, idx) => {
                   const st          = challanDerivedStatus(c);
                   const descriptionText = getDescriptionText(c);
                   const rowHasDescription = Boolean(descriptionText);
+                  const rowIsAffluent = isAffluentOrder(c);
                   const names       = c.shareholders_csv  || '—';
                   const contacts    = c.contacts_csv      || '—';
                   const altContacts = c.alt_contacts_csv  || '';
                   const customerIds = c.customer_ids_csv  || '—';
                   return (
                     <tr key={c.challan_id}
-                      style={{ borderBottom: '1px solid #f3f3f3', background: rowHasDescription ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'), borderLeft: rowHasDescription ? '3px solid #D32F2F' : '3px solid transparent', cursor: c.qr_token ? 'pointer' : 'default' }}
+                      style={{ borderBottom: '1px solid #f3f3f3', background: rowIsAffluent ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'), borderLeft: rowIsAffluent ? '3px solid #D32F2F' : '3px solid transparent', cursor: c.qr_token ? 'pointer' : 'default' }}
                       onClick={() => c.qr_token && openChallanModal(c.qr_token)}
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#f5f9ff'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = rowHasDescription ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'); }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = rowIsAffluent ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'); }}
                     >
+                      <td style={{ padding: '9px 10px' }}>
+                        <NoBadge number={c.challan_id} />
+                      </td>
                       <td style={{ padding: '9px 10px' }} onClick={(e) => e.stopPropagation()}>
                         <input type="checkbox" checked={selectedIds.has(c.challan_id)} onChange={() => toggleOne(c.challan_id)} />
                       </td>
@@ -1026,6 +1056,7 @@ export default function OperationsChallan() {
           challanId={modal.challan?.challan_id}
           customerId={modalCustomerIds.length ? modalCustomerIds.join(', ') : '—'}
           description={modalDescription}
+          affluent={isAffluentOrder({ ...(modal?.challan || {}), orders: modal?.orders || [] })}
           statusBadge={<StatusBadge status={modal.challan?.derived_status} />}
           onClose={() => setModal(null)}
           maxWidth="1240px"

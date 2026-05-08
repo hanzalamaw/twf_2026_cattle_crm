@@ -20,10 +20,10 @@ const wrapCell = {
   maxWidth: '240px',
 };
 
-function SpecialRequestPatch() {
+function AffluentPatch() {
   return (
     <span style={{ display:'inline-flex', alignItems:'center', padding:'5px 12px', borderRadius:'999px', background:'#FFEBEE', color:'#C62828', border:'1px solid #FFCDD2', fontSize:'10px', fontWeight:'700', whiteSpace:'nowrap', textTransform:'uppercase', letterSpacing:'0.2px' }}>
-      Special Request
+      Affluent
     </span>
   );
 }
@@ -38,6 +38,7 @@ export default function SharedChallanModal({
   customerId,
   statusBadge,
   description,
+  affluent = false,
   infoRows = [],
   orders = [],
   renderOrderStatus,
@@ -48,6 +49,7 @@ export default function SharedChallanModal({
 }) {
   const normalizedDescription = String(description || '').replace(/\s*\|\s*/g, ' | ').replace(/[\r\n]+/g, ' | ').replace(/\s{2,}/g, ' ').trim();
   const hasDescription = Boolean(normalizedDescription);
+  const isAffluent = Boolean(affluent);
 
   return (
     <div style={modalOverlayStyle} onClick={onClose} role="presentation">
@@ -61,7 +63,7 @@ export default function SharedChallanModal({
           <div style={{ minWidth: 0 }}>
             <div style={{ display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap' }}>
               <h2 style={{ margin:0, fontSize:'18px', fontWeight:'700', color:'#222' }}>Challan {challanId || '—'}</h2>
-              {hasDescription && <SpecialRequestPatch />}
+              {isAffluent && <AffluentPatch />}
             </div>
             <div style={{ marginTop:'7px', fontSize:'12px', color:'#666', fontWeight:'500' }}>
               Customer ID: <span style={{ color:'#222', fontWeight:'700' }}>{customerId || '—'}</span>

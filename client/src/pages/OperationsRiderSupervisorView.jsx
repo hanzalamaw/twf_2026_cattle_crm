@@ -175,7 +175,7 @@ function getGroupOrderTypes(g) { const direct = [...new Set((g.orders || []).map
 const DAY_OPTIONS = ['Day 1', 'Day 2', 'Day 3'];
 const PAGE_SIZE = 50;
 
-export default function OperationsCustomerSupport() {
+export default function OperationsRiderSupervisorView() {
   const { authFetch } = useAuth();
 
   const [groups,        setGroups]        = useState([]);
@@ -218,8 +218,8 @@ export default function OperationsCustomerSupport() {
       // Load full batch; day/order type filters are client-side like Deliveries.
 
       const [gRes, ridRes] = await Promise.all([
-        authFetch(`${API_BASE}/operations/deliveries/groups?${qs}`),
-        authFetch(`${API_BASE}/operations/riders`),
+        authFetch(`${API_BASE}/operations/supervisor/deliveries/groups?${qs}`),
+        authFetch(`${API_BASE}/operations/supervisor/riders`),
       ]);
 
       const gData = await gRes.json().catch(() => ({}));
@@ -377,9 +377,9 @@ export default function OperationsCustomerSupport() {
         {/* Header */}
         <div className="cs-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>Customer Support</h2>
+            <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>Rider Supervisor</h2>
             <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#888', fontWeight: '500', lineHeight: 1.45, maxWidth: '760px' }}>
-              Look up any challan group, check delivery status, and see which rider is assigned. Click a row to view full details.
+              Delivery groups where at least one assigned rider is on your team. Click a row for challan details.
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>

@@ -26,6 +26,8 @@ export const OPERATION_MODULES = [
     desc: 'Riders, vehicles & routes',
     path: '/operations/riders',
     permission: 'operation_rider_management',
+    /** Show card if admin OR supervisor rider permission */
+    permissionsAny: ['operation_rider_management', 'operation_rider_management_supervisor'],
     emoji: '🏍️',
     accent: '#BF360C',
     soft: '#FFCCBC',
@@ -41,6 +43,16 @@ export const OPERATION_MODULES = [
     soft: '#FFE0B2',
   },
   {
+    id: 'affluent',
+    name: 'Affluent Management',
+    desc: 'Affluent delivery groups only',
+    path: '/operations/affluent',
+    permission: 'operation_affluent_management',
+    emoji: '💎',
+    accent: '#FF7043',
+    soft: '#FFE6DE',
+  },
+  {
     id: 'challan',
     name: 'Challan Management',
     desc: 'Challan PDFs & batch data',
@@ -52,7 +64,13 @@ export const OPERATION_MODULES = [
   },
 ];
 
-export function countAccessibleOperationModules(permissions) {
+/** True if user can open this operations sub-module card */
+export function operationModuleHasAccess(m, permissions = {}) {
   const p = permissions || {};
-  return OPERATION_MODULES.filter((m) => !!p[m.permission]).length;
+  if (m.permissionsAny?.length) return m.permissionsAny.some((key) => !!p[key]);
+  return !!p[m.permission];
+}
+
+export function countAccessibleOperationModules(permissions) {
+  return OPERATION_MODULES.filter((m) => operationModuleHasAccess(m, permissions)).length;
 }

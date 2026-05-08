@@ -87,7 +87,8 @@ const startServer = async () => {
             r.role_name,
             r.control_management, r.booking_management, r.operation_management,
             r.operation_general_dashboard, r.operation_customer_support, r.operation_rider_management,
-            r.operation_deliveries_management, r.operation_challan_management,
+            r.operation_rider_management_supervisor, r.operation_deliveries_management, r.operation_challan_management,
+            r.operation_affluent_management,
             r.farm_management, r.procurement_management, r.accounting_and_finance, r.performance_management
            FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.username = ?`,
           [username]
@@ -191,7 +192,8 @@ const startServer = async () => {
             r.role_name,
             r.control_management, r.booking_management, r.operation_management,
             r.operation_general_dashboard, r.operation_customer_support, r.operation_rider_management,
-            r.operation_deliveries_management, r.operation_challan_management,
+            r.operation_rider_management_supervisor, r.operation_deliveries_management, r.operation_challan_management,
+            r.operation_affluent_management,
             r.farm_management, r.procurement_management, r.accounting_and_finance, r.performance_management
            FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.user_id = ?`,
           [req.userId]
@@ -246,7 +248,8 @@ const startServer = async () => {
             r.role_name,
             r.control_management, r.booking_management, r.operation_management,
             r.operation_general_dashboard, r.operation_customer_support, r.operation_rider_management,
-            r.operation_deliveries_management, r.operation_challan_management,
+            r.operation_rider_management_supervisor, r.operation_deliveries_management, r.operation_challan_management,
+            r.operation_affluent_management,
             r.farm_management, r.procurement_management, r.accounting_and_finance, r.performance_management
            FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.user_id = ?`,
           [userId]
@@ -292,7 +295,8 @@ const startServer = async () => {
             r.role_name,
             r.control_management, r.booking_management, r.operation_management,
             r.operation_general_dashboard, r.operation_customer_support, r.operation_rider_management,
-            r.operation_deliveries_management, r.operation_challan_management,
+            r.operation_rider_management_supervisor, r.operation_deliveries_management, r.operation_challan_management,
+            r.operation_affluent_management,
             r.farm_management, r.procurement_management, r.accounting_and_finance, r.performance_management
            FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.user_id = ?`,
           [session.user_id]

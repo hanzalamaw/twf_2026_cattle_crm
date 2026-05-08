@@ -137,8 +137,16 @@ const SubSystemSelection = ({ forceMobileLayout = false } = {}) => {
   const permissions = user?.permissions || {};
   const hasAccess = (perm) => !!permissions[perm];
 
+  const hasOperationsEntry = (p) =>
+    !!(p.operation_management || p.operation_rider_management || p.operation_rider_management_supervisor);
+
+  const isOptionAccessible = (option) => {
+    if (option.id === 'operations') return hasOperationsEntry(permissions);
+    return hasAccess(option.permission);
+  };
+
   const handleClick = (option) => {
-    if (!hasAccess(option.permission)) {
+    if (!isOptionAccessible(option)) {
       setAccessBlocked(option.name);
       setTimeout(() => setAccessBlocked(null), 3000);
       return;
@@ -162,7 +170,7 @@ const SubSystemSelection = ({ forceMobileLayout = false } = {}) => {
 
   /* ── Mobile Layout ─────────────────────────────────────────── */
   if (forceMobileLayout || isMobile) {
-    const accessibleCount = OPTIONS.filter(o => hasAccess(o.permission)).length;
+    const accessibleCount = OPTIONS.filter((o) => isOptionAccessible(o)).length;
 
     return (
       <>
@@ -485,7 +493,7 @@ const SubSystemSelection = ({ forceMobileLayout = false } = {}) => {
           {/* Cards grid */}
           <div className="mob-grid">
             {OPTIONS.map((option, idx) => {
-              const accessible = hasAccess(option.permission);
+              const accessible = isOptionAccessible(option);
               const isLastOdd = idx === OPTIONS.length - 1 && OPTIONS.length % 2 !== 0;
               return (
                 <button

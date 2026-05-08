@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE } from '../config/api';
 import { getOperationsSocket } from '../utils/operationsSocket';
 import { useAuth } from '../context/AuthContext';
+import { useLocation } from 'react-router-dom';
 
 const RIDER_STATUSES = ['Available', 'On Delivery', 'Off Duty', 'Suspended'];
 
@@ -64,6 +65,7 @@ const compactSelectStyle = {
 
 export default function OperationsRiders() {
   const { authFetch } = useAuth();
+  const location = useLocation();
 
   const [riders, setRiders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -87,9 +89,21 @@ export default function OperationsRiders() {
     availability: 'Available',
     amount_per_delivery: '',
     total_paid: '',
+    supervisor_id: '',
   });
   const [ordersModal, setOrdersModal] = useState(null);
   const [ordersLoading, setOrdersLoading] = useState(false);
+
+  const [adminTab, setAdminTab] = useState('riders');
+  const [supervisors, setSupervisors] = useState([]);
+  const [supLoading, setSupLoading] = useState(false);
+  const [addSupOpen, setAddSupOpen] = useState(false);
+  const [supForm, setSupForm] = useState({ supervisor_name: '', phone: '', user_id: '' });
+  const [userCandidates, setUserCandidates] = useState([]);
+  const [supDetailOpen, setSupDetailOpen] = useState(false);
+  const [supDetail, setSupDetail] = useState(null);
+  const [supDetailLoading, setSupDetailLoading] = useState(false);
+  const [supervisorOptions, setSupervisorOptions] = useState([]);
 
   const [form, setForm] = useState({
     rider_name: '',
@@ -107,11 +121,16 @@ export default function OperationsRiders() {
       const qs = new URLSearchParams();
       if (dayFilter) qs.set('day', dayFilter);
 
-      const res = await authFetch(`${API_BASE}/operations/riders/details${qs.toString() ? `?${qs.toString()}` : ''}`);
+      const [res, supRes] = await Promise.all([
+        authFetch(`${API_BASE}/operations/riders/details${qs.toString() ? `?${qs.toString()}` : ''}`),
+        authFetch(`${API_BASE}/operations/supervisors`),
+      ]);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load riders');
 
       setRiders(data.riders || []);
+      const supData = await supRes.json().catch(() => ({}));
+      if (supRes.ok) setSupervisorOptions(supData.supervisors || []);
     } catch (e) {
       setErr(e.message || 'Load failed');
     } finally {
@@ -123,18 +142,51 @@ export default function OperationsRiders() {
     load();
   }, [load]);
 
+  const loadSupervisors = useCallback(async () => {
+    setSupLoading(true);
+    setErr('');
+    try {
+      const res = await authFetch(`${API_BASE}/operations/supervisors`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Failed to load supervisors');
+      setSupervisors(data.supervisors || []);
+      const ucRes = await authFetch(`${API_BASE}/operations/supervisors/user-candidates`);
+      const ucData = await ucRes.json().catch(() => ({}));
+      if (ucRes.ok) setUserCandidates(ucData.users || []);
+    } catch (e) {
+      setErr(e.message || 'Supervisors load failed');
+    } finally {
+      setSupLoading(false);
+    }
+  }, [authFetch]);
+
+  useEffect(() => {
+    const isSupervisorTab = location.pathname.startsWith('/operations/riders/supervisors');
+    setAdminTab(isSupervisorTab ? 'supervisors' : 'riders');
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (adminTab === 'supervisors') loadSupervisors();
+  }, [adminTab, loadSupervisors]);
+
   useEffect(() => {
     const socket = getOperationsSocket();
     const refresh = () => load();
+    const refreshSup = () => {
+      loadSupervisors();
+      load();
+    };
     socket.on('operations:changed', refresh);
     socket.on('challans:changed', refresh);
-    socket.on('riders:changed', refresh);
+    socket.on('riders:changed', refreshSup);
+    socket.on('supervisors:changed', refreshSup);
     return () => {
       socket.off('operations:changed', refresh);
       socket.off('challans:changed', refresh);
-      socket.off('riders:changed', refresh);
+      socket.off('riders:changed', refreshSup);
+      socket.off('supervisors:changed', refreshSup);
     };
-  }, [load]);
+  }, [load, loadSupervisors]);
 
   const filteredRiders = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -199,6 +251,7 @@ export default function OperationsRiders() {
       availability: rider.availability || 'Available',
       amount_per_delivery: rider.amount_per_delivery ?? '',
       total_paid: rider.total_paid ?? '',
+      supervisor_id: rider.supervisor_id != null && rider.supervisor_id !== '' ? String(rider.supervisor_id) : '',
     });
     setEditOpen(true);
   };
@@ -223,6 +276,7 @@ export default function OperationsRiders() {
         availability: editForm.availability || 'Available',
         amount_per_delivery: editForm.amount_per_delivery === '' ? 0 : Number(editForm.amount_per_delivery),
         total_paid: editForm.total_paid === '' ? 0 : Number(editForm.total_paid),
+        supervisor_id: editForm.supervisor_id === '' ? null : Number(editForm.supervisor_id),
       };
       const res = await authFetch(`${API_BASE}/operations/riders/${editRider.rider_id}`, {
         method: 'PATCH',
@@ -281,6 +335,47 @@ export default function OperationsRiders() {
       setErr(e.message || 'Failed to load rider orders');
     } finally {
       setOrdersLoading(false);
+    }
+  };
+
+  const openSupervisorDetail = async (s) => {
+    setSupDetailOpen(true);
+    setSupDetail(null);
+    setSupDetailLoading(true);
+    setErr('');
+    try {
+      const res = await authFetch(`${API_BASE}/operations/supervisors/${s.supervisor_id}/riders`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Failed to load supervisor');
+      setSupDetail(data);
+    } catch (e) {
+      setErr(e.message || 'Failed to load supervisor');
+    } finally {
+      setSupDetailLoading(false);
+    }
+  };
+
+  const submitSupervisor = async (e) => {
+    e.preventDefault();
+    setErr('');
+    try {
+      const res = await authFetch(`${API_BASE}/operations/supervisors`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          supervisor_name: supForm.supervisor_name.trim(),
+          phone: supForm.phone.trim() || null,
+          user_id: Number(supForm.user_id),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Create failed');
+      setAddSupOpen(false);
+      setSupForm({ supervisor_name: '', phone: '', user_id: '' });
+      await loadSupervisors();
+      await load();
+    } catch (e2) {
+      setErr(e2.message || 'Create failed');
     }
   };
 
@@ -387,14 +482,17 @@ export default function OperationsRiders() {
           </div>
 
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {savingId && (
+            {savingId && adminTab === 'riders' && (
               <span style={{ fontSize: '10px', color: '#999', fontWeight: '600', alignSelf: 'center' }}>
                 Saving…
               </span>
             )}
             <button
               type="button"
-              onClick={load}
+              onClick={() => {
+                load();
+                loadSupervisors();
+              }}
               style={{
                 padding: '7px 13px',
                 background: '#fff',
@@ -408,25 +506,50 @@ export default function OperationsRiders() {
             >
               Refresh
             </button>
-            <button
-              type="button"
-              onClick={() => setAddOpen(true)}
-              style={{
-                padding: '7px 13px',
-                background: '#FF5722',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '11px',
-                fontWeight: '600',
-                cursor: 'pointer',
-              }}
-            >
-              Add Rider
-            </button>
+            {adminTab === 'riders' && (
+              <button
+                type="button"
+                onClick={() => setAddOpen(true)}
+                style={{
+                  padding: '7px 13px',
+                  background: '#FF5722',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                Add Rider
+              </button>
+            )}
+            {adminTab === 'supervisors' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSupForm({ supervisor_name: '', phone: '', user_id: '' });
+                  setAddSupOpen(true);
+                }}
+                style={{
+                  padding: '7px 13px',
+                  background: '#FF5722',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                Add Supervisor
+              </button>
+            )}
           </div>
         </div>
 
+        {adminTab === 'riders' && (
+        <>
         <div
           className="or-filter-desktop"
           style={{
@@ -616,6 +739,14 @@ export default function OperationsRiders() {
                       <p style={{ margin: '5px 0 0', fontSize: '11px', color: '#777', lineHeight: 1.5 }}>
                         {r.contact || 'No phone'} {r.vehicle ? `• ${r.vehicle}` : ''} {r.number_plate ? `• ${r.number_plate}` : ''}
                       </p>
+                      <p style={{ margin: '6px 0 0', fontSize: '10px', color: '#999', lineHeight: 1.4 }}>
+                        Supervisor:{' '}
+                        <span style={{ color: '#555', fontWeight: 600 }}>
+                          {r.supervisor_name || r.supervisor_code
+                            ? `${r.supervisor_name || '—'}${r.supervisor_code ? ` (${r.supervisor_code})` : ''}`
+                            : '—'}
+                        </span>
+                      </p>
                     </div>
                     {riderStatusBadge(r.availability)}
                   </div>
@@ -740,7 +871,195 @@ export default function OperationsRiders() {
             </div>
           )}
         </div>
+        </>
+        )}
+
+        {adminTab === 'supervisors' && (
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            {supLoading ? (
+              <div style={{ padding: '32px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading…</div>
+            ) : (
+              <div style={{ border: '1px solid #e8e8e8', borderRadius: '12px', overflow: 'hidden', background: '#fff' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                  <thead>
+                    <tr style={{ background: '#FAFAFA' }}>
+                      {['Code', 'Name', 'Phone', 'User', 'Riders', ''].map((h) => (
+                        <th key={h} style={{ textAlign: 'left', padding: '10px', borderBottom: '1px solid #eee', color: '#555', fontWeight: 600 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {supervisors.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#888' }}>
+                          No supervisors yet. Use &quot;Add Supervisor&quot; to create one and link a login user.
+                        </td>
+                      </tr>
+                    ) : (
+                      supervisors.map((s) => (
+                        <tr
+                          key={s.supervisor_id}
+                          onClick={() => openSupervisorDetail(s)}
+                          style={{ borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = '#f9f9ff'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}
+                        >
+                          <td style={{ padding: '10px', fontWeight: 700, color: '#E65100' }}>{s.supervisor_code}</td>
+                          <td style={{ padding: '10px' }}>{s.supervisor_name}</td>
+                          <td style={{ padding: '10px' }}>{s.phone || '—'}</td>
+                          <td style={{ padding: '10px' }}>{s.username || s.email || '—'}</td>
+                          <td style={{ padding: '10px', fontWeight: 600 }}>{s.rider_count ?? 0}</td>
+                          <td style={{ padding: '10px', color: '#FF5722', fontWeight: 600 }}>View</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
+
+      {addSupOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1040,
+            padding: '16px',
+          }}
+          onClick={() => setAddSupOpen(false)}
+          role="presentation"
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '16px',
+              border: '1px solid #eee',
+              padding: '18px',
+              width: '100%',
+              maxWidth: '480px',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.15)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Add supervisor"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#333' }}>Add supervisor</h3>
+              <button type="button" onClick={() => setAddSupOpen(false)} style={{ background: 'none', border: 'none', fontSize: '22px', color: '#888', cursor: 'pointer' }}>×</button>
+            </div>
+            <form onSubmit={submitSupervisor}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Supervisor name</label>
+                  <input
+                    required
+                    value={supForm.supervisor_name}
+                    onChange={(e) => setSupForm((p) => ({ ...p, supervisor_name: e.target.value }))}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Phone</label>
+                  <input
+                    value={supForm.phone}
+                    onChange={(e) => setSupForm((p) => ({ ...p, phone: e.target.value }))}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>User account</label>
+                  <select
+                    required
+                    value={supForm.user_id}
+                    onChange={(e) => setSupForm((p) => ({ ...p, user_id: e.target.value }))}
+                    style={inputStyle}
+                  >
+                    <option value="">Select user…</option>
+                    {userCandidates.map((u) => (
+                      <option key={u.user_id} value={String(u.user_id)}>
+                        {u.username} {u.email ? `(${u.email})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p style={{ margin: '6px 0 0', fontSize: '10px', color: '#999' }}>Only users not already linked to a supervisor are listed.</p>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+                <button type="button" onClick={() => setAddSupOpen(false)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" style={{ padding: '10px 14px', borderRadius: '8px', border: 'none', background: '#FF5722', color: '#fff', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Create</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {supDetailOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1040,
+            padding: '16px',
+          }}
+          onClick={() => { setSupDetailOpen(false); setSupDetail(null); }}
+          role="presentation"
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '16px',
+              border: '1px solid #eee',
+              padding: '18px',
+              width: '100%',
+              maxWidth: '560px',
+              maxHeight: '85vh',
+              overflow: 'auto',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.15)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>Supervisor detail</h3>
+              <button type="button" onClick={() => { setSupDetailOpen(false); setSupDetail(null); }} style={{ background: 'none', border: 'none', fontSize: '22px', color: '#888', cursor: 'pointer' }}>×</button>
+            </div>
+            {supDetailLoading ? (
+              <div style={{ padding: '24px', textAlign: 'center', fontSize: '12px', color: '#666' }}>Loading…</div>
+            ) : supDetail?.supervisor ? (
+              <>
+                <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#555' }}>
+                  <strong>{supDetail.supervisor.supervisor_code}</strong> — {supDetail.supervisor.supervisor_name}
+                </p>
+                <p style={{ margin: '0 0 16px', fontSize: '11px', color: '#888' }}>Phone: {supDetail.supervisor.phone || '—'}</p>
+                <h4 style={{ margin: '0 0 8px', fontSize: '12px', color: '#333' }}>Assigned riders</h4>
+                {(supDetail.riders || []).length === 0 ? (
+                  <p style={{ fontSize: '11px', color: '#999' }}>No riders assigned to this supervisor.</p>
+                ) : (
+                  <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '11px', color: '#444' }}>
+                    {(supDetail.riders || []).map((r) => (
+                      <li key={r.rider_id} style={{ marginBottom: '4px' }}>{r.rider_name} {r.contact ? `· ${r.contact}` : ''}</li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <p style={{ fontSize: '11px', color: '#999' }}>No data.</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {addOpen && (
         <div
@@ -972,6 +1291,22 @@ export default function OperationsRiders() {
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Total paid</label>
                   <input type="number" min="0" step="0.01" value={editForm.total_paid} onChange={(e) => setEditForm((p) => ({ ...p, total_paid: e.target.value }))} style={inputStyle} />
+                </div>
+
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Supervisor</label>
+                  <select
+                    value={editForm.supervisor_id}
+                    onChange={(e) => setEditForm((p) => ({ ...p, supervisor_id: e.target.value }))}
+                    style={inputStyle}
+                  >
+                    <option value="">— Unassigned —</option>
+                    {supervisorOptions.map((s) => (
+                      <option key={s.supervisor_id} value={String(s.supervisor_id)}>
+                        {s.supervisor_code} — {s.supervisor_name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

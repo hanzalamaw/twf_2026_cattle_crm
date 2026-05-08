@@ -20,6 +20,9 @@ export default function OperationsLayout() {
   const accessibleCount = countAccessibleOperationModules(p);
   const total = OPERATION_MODULES.length;
   const isOverview = location.pathname === '/operations' || location.pathname === '/operations/';
+  const isRidersSubtree = location.pathname.startsWith('/operations/riders');
+  /** Rider admin uses sidebar for logout; supervisor-only keeps this top bar. */
+  const hideOpsSubTopbar = isRidersSubtree && !!p.operation_rider_management;
 
   return (
     <>
@@ -357,7 +360,7 @@ export default function OperationsLayout() {
               </button>
             </div>
           </div>
-        ) : (
+        ) : hideOpsSubTopbar ? null : (
           <div className="ops-sub-topbar">
             <div className="ops-sub-topbar-nav">
               <Link to="/operations">← Operations modules</Link>

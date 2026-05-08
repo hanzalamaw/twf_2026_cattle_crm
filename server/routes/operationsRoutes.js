@@ -96,6 +96,23 @@ async function fetchRiderById(db, riderId) {
   return rows[0] || null;
 }
 
+/** Human-readable supervisor for audit_logs JSON (avoid raw supervisor_id only). */
+async function supervisorLabelForAudit(db, supervisorId) {
+  if (supervisorId == null || supervisorId === "") return "—";
+  const sid = Number(supervisorId);
+  if (!Number.isFinite(sid) || sid <= 0) return "—";
+  const [rows] = await db.execute(
+    `SELECT supervisor_name, supervisor_code FROM rider_supervisors WHERE supervisor_id = ?`,
+    [sid]
+  );
+  if (!rows.length) return `Unknown supervisor (id ${sid})`;
+  const name = rows[0].supervisor_name != null ? String(rows[0].supervisor_name).trim() : "";
+  if (name) return name;
+  const code = rows[0].supervisor_code != null ? String(rows[0].supervisor_code).trim() : "";
+  if (code) return code;
+  return `Supervisor #${sid}`;
+}
+
 async function resolveChallanRiderAuditState(db, challanId) {
   const [rows] = await db.execute(
     `SELECT DISTINCT o.rider_id, r.rider_name, r.contact, r.vehicle, r.number_plate
@@ -124,15 +141,182 @@ async function resolveChallanRiderAuditState(db, challanId) {
 async function fetchRoleOpsFlags(db, userId) {
   const [rows] = await db.execute(
     `SELECT r.operation_management, r.operation_general_dashboard, r.operation_customer_support,
-            r.operation_rider_management, r.operation_deliveries_management, r.operation_challan_management
+            r.operation_rider_management, r.operation_rider_management_supervisor,
+            r.operation_deliveries_management, r.operation_challan_management, r.operation_affluent_management
      FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.user_id = ?`,
     [userId]
   );
   return rows[0] || null;
 }
 
+async function getSupervisorRecordForUser(db, userId) {
+  const [rows] = await db.execute(
+    `SELECT supervisor_id, supervisor_code, supervisor_name, phone, user_id, created_at
+     FROM rider_supervisors WHERE user_id = ?`,
+    [userId]
+  );
+  return rows[0] || null;
+}
+
+/** If user only has rider-supervisor ops access, challan must include an order rider under that supervisor. */
+async function assertChallanVisibleToScopedSupervisor(db, userId, flags, challanId) {
+  const broad =
+    flags.operation_deliveries_management ||
+    flags.operation_challan_management ||
+    flags.operation_customer_support;
+  if (broad) return true;
+  if (!flags.operation_rider_management_supervisor) return false;
+  const sup = await getSupervisorRecordForUser(db, userId);
+  if (!sup) return false;
+  const [rows] = await db.execute(
+    `SELECT 1 AS ok FROM orders o
+     INNER JOIN challan_orders co ON co.order_id = o.order_id
+     INNER JOIN riders r ON r.rider_id = o.rider_id
+     WHERE co.challan_id = ? AND r.supervisor_id = ? AND ${nonWaqfOrder("o")}
+     LIMIT 1`,
+    [challanId, sup.supervisor_id]
+  );
+  return rows.length > 0;
+}
+
+async function nextSupervisorCode(db) {
+  const [rows] = await db.execute(
+    `SELECT supervisor_code FROM rider_supervisors ORDER BY supervisor_id DESC LIMIT 1`
+  );
+  let n = 1;
+  if (rows.length && rows[0].supervisor_code) {
+    const m = String(rows[0].supervisor_code).match(/(\d+)$/);
+    if (m) n = parseInt(m[1], 10) + 1;
+  }
+  return `SUP-${String(n).padStart(4, "0")}`;
+}
+
+async function buildDeliveriesGroupsForBatch(db, batchId, dayFilter, supervisorId = null) {
+  let challanSql = `SELECT c.challan_id, c.qr_token, c.booking_name, c.address, c.area,
+                c.description, c.slot, c.day, c.challan_date,
+                c.total_hissa, c.total_premium_hissa, c.total_standard_hissa, c.total_waqf_hissa, c.total_goat_hissa,
+                cb.label AS batch_label
+         FROM challan c
+         LEFT JOIN challan_batch cb ON cb.batch_id = c.batch_id
+         WHERE c.batch_id = ? AND COALESCE(c.total_hissa, 0) > 0`;
+  const challanParams = [batchId];
+
+  if (dayFilter) {
+    challanSql += ` AND LOWER(TRIM(COALESCE(c.day, ''))) = LOWER(TRIM(?))`;
+    challanParams.push(dayFilter);
+  }
+  challanSql += ` ORDER BY c.day, c.slot, c.address, c.challan_id`;
+
+  let [challans] = await db.execute(challanSql, challanParams);
+
+  if (supervisorId != null) {
+    const [allowedRows] = await db.execute(
+      `SELECT DISTINCT c.challan_id FROM challan c
+       INNER JOIN challan_orders co ON co.challan_id = c.challan_id
+       INNER JOIN orders o ON o.order_id = co.order_id
+       INNER JOIN riders r ON r.rider_id = o.rider_id
+       WHERE c.batch_id = ? AND r.supervisor_id = ? AND ${nonWaqfOrder("o")}`,
+      [batchId, supervisorId]
+    );
+    const allowed = new Set(allowedRows.map((x) => x.challan_id));
+    challans = challans.filter((c) => allowed.has(c.challan_id));
+  }
+
+  if (challans.length === 0) return { groups: [], batch_id: batchId };
+
+  const challanIds = challans.map((c) => c.challan_id);
+  const placeholders = challanIds.map(() => "?").join(",");
+
+  const [orderRows] = await db.execute(
+    `SELECT co.challan_id,
+            o.order_id, o.customer_id, o.booking_name, o.shareholder_name,
+            o.contact, o.alt_contact, o.address, o.area, o.day, o.slot,
+            o.order_type, o.cow_number, o.hissa_number, o.description,
+            o.delivery_status, o.rider_id
+     FROM challan_orders co
+     INNER JOIN orders o ON o.order_id = co.order_id
+     WHERE co.challan_id IN (${placeholders}) AND ${nonWaqfOrder("o")}
+     ORDER BY co.challan_id, o.order_id`,
+    challanIds
+  );
+
+  const ordersByChallan = new Map();
+  for (const o of orderRows) {
+    if (!ordersByChallan.has(o.challan_id)) ordersByChallan.set(o.challan_id, []);
+    ordersByChallan.get(o.challan_id).push(o);
+  }
+
+  const groups = challans.map((c) => {
+    const orders = ordersByChallan.get(c.challan_id) || [];
+
+    const shareholderNames = [...new Set(orders.map((x) => x.shareholder_name).filter(Boolean))];
+    const bookingNames = [...new Set(orders.map((x) => x.booking_name).filter(Boolean))];
+    const customerIds = [...new Set(orders.map((x) => x.customer_id).filter(Boolean))];
+    const contacts = [...new Set(orders.map((x) => x.contact).filter(Boolean))];
+    const altContacts = [...new Set(orders.map((x) => x.alt_contact).filter(Boolean))];
+    const slots = [...new Set(orders.map((x) => String(x.slot || "").trim()).filter(Boolean))].sort();
+    const riderIds = uniqueRiderIdsFromOrders(orders);
+    const groupRiderId = riderIds.length === 1 ? riderIds[0] : null;
+
+    const statuses = orders.map((o) => o.delivery_status || "Pending");
+    const allDelivered = statuses.length > 0 && statuses.every((s) => s === "Delivered");
+    const anyReturned = statuses.some((s) => s === "Returned to Farm");
+    const anyDispatched = statuses.some((s) => s === "Dispatched");
+    const anyRiderAssigned = statuses.some((s) => s === "Rider Assigned");
+    let derivedStatus = "Pending";
+    if (allDelivered) derivedStatus = "Delivered";
+    else if (anyReturned) derivedStatus = "Returned to Farm";
+    else if (anyDispatched) derivedStatus = "Dispatched";
+    else if (anyRiderAssigned) derivedStatus = "Rider Assigned";
+
+    return {
+      group_key: `${c.challan_id}`,
+      challan_id: c.challan_id,
+      qr_token: c.qr_token,
+      rider_id: groupRiderId,
+      rider_count: riderIds.length,
+      day: c.day,
+      slots,
+      slot: c.slot,
+      address: c.address,
+      area: c.area,
+      description: c.description,
+      batch_label: c.batch_label,
+      hissa_count: Number(c.total_hissa || 0),
+      standard_hissa_count: Number(c.total_standard_hissa || 0),
+      premium_hissa_count: Number(c.total_premium_hissa || 0),
+      waqf_hissa_count: Number(c.total_waqf_hissa || 0),
+      goat_hissa_count: Number(c.total_goat_hissa || 0),
+      customer_ids: customerIds,
+      booking_names: bookingNames,
+      contacts,
+      alt_contacts: altContacts,
+      shareholder_names: shareholderNames,
+      derived_status: derivedStatus,
+      orders,
+      challan: {
+        challan_id: c.challan_id,
+        qr_token: c.qr_token,
+        rider_id: groupRiderId,
+        rider_count: riderIds.length,
+        address: c.address,
+        area: c.area,
+        day: c.day,
+        slot: c.slot,
+        derived_status: derivedStatus,
+      },
+    };
+  });
+
+  return { groups, batch_id: batchId };
+}
+
 function requireOperationParent(req, res, flags) {
-  if (!flags?.operation_management) {
+  const ok =
+    !!flags?.operation_management ||
+    !!flags?.operation_rider_management ||
+    !!flags?.operation_rider_management_supervisor;
+  if (!ok) {
     res.status(403).json({ message: "Operations access denied" });
     return false;
   }
@@ -166,7 +350,10 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
   app.get("/api/operations/batches", verifyToken, async (req, res) => {
     try {
       const flags = await assertSub(req, res, (f) =>
-        f.operation_challan_management || f.operation_deliveries_management || f.operation_customer_support
+        f.operation_challan_management ||
+        f.operation_deliveries_management ||
+        f.operation_customer_support ||
+        f.operation_rider_management_supervisor
       );
       if (!flags) return;
       const [rows] = await db.execute(
@@ -296,7 +483,15 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
   // ── Challan detail by QR token ──────────────────────────────
   app.get("/api/operations/challans/by-token/:token", verifyToken, async (req, res) => {
     try {
-      const flags = await assertSub(req, res, (f) => f.operation_deliveries_management || f.operation_challan_management || f.operation_customer_support);
+      const flags = await assertSub(
+        req,
+        res,
+        (f) =>
+          f.operation_deliveries_management ||
+          f.operation_challan_management ||
+          f.operation_customer_support ||
+          f.operation_rider_management_supervisor
+      );
       if (!flags) return;
       const token = String(req.params.token || "").trim();
       if (!token) return res.status(400).json({ message: "Invalid token" });
@@ -308,6 +503,8 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       );
       if (ch.length === 0) return res.status(404).json({ message: "Challan not found" });
       const challan = ch[0];
+      const visible = await assertChallanVisibleToScopedSupervisor(db, req.userId, flags, challan.challan_id);
+      if (!visible) return res.status(403).json({ message: "Insufficient permission" });
       const [orderRows] = await db.execute(
         `SELECT o.order_id, o.booking_name, o.shareholder_name, o.contact, o.alt_contact,
                 o.address, o.area, o.day, o.slot, o.order_type, o.cow_number, o.hissa_number,
@@ -612,116 +809,32 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       if (!batchId) batchId = await resolveLatestBatchId(db);
       if (!batchId) return res.json({ groups: [] });
 
-      // Optional day filter
       const dayFilter = req.query.day ? String(req.query.day).trim() : null;
-
-      let challanSql = `SELECT c.challan_id, c.qr_token, c.booking_name, c.address, c.area,
-                c.description, c.slot, c.day, c.challan_date,
-                c.total_hissa, c.total_premium_hissa, c.total_standard_hissa, c.total_waqf_hissa, c.total_goat_hissa,
-                cb.label AS batch_label
-         FROM challan c
-         LEFT JOIN challan_batch cb ON cb.batch_id = c.batch_id
-         WHERE c.batch_id = ? AND COALESCE(c.total_hissa, 0) > 0`;
-      const challanParams = [batchId];
-
-      if (dayFilter) {
-        challanSql += ` AND LOWER(TRIM(COALESCE(c.day, ''))) = LOWER(TRIM(?))`;
-        challanParams.push(dayFilter);
-      }
-      challanSql += ` ORDER BY c.day, c.slot, c.address, c.challan_id`;
-
-      const [challans] = await db.execute(challanSql, challanParams);
-
-      if (challans.length === 0) return res.json({ groups: [] });
-
-      const challanIds = challans.map((c) => c.challan_id);
-      const placeholders = challanIds.map(() => "?").join(",");
-
-      const [orderRows] = await db.execute(
-        `SELECT co.challan_id,
-                o.order_id, o.customer_id, o.booking_name, o.shareholder_name,
-                o.contact, o.alt_contact, o.address, o.area, o.day, o.slot,
-                o.order_type, o.cow_number, o.hissa_number, o.description,
-                o.delivery_status, o.rider_id
-         FROM challan_orders co
-         INNER JOIN orders o ON o.order_id = co.order_id
-         WHERE co.challan_id IN (${placeholders}) AND ${nonWaqfOrder('o')}
-         ORDER BY co.challan_id, o.order_id`,
-        challanIds
-      );
-
-      const ordersByChallan = new Map();
-      for (const o of orderRows) {
-        if (!ordersByChallan.has(o.challan_id)) ordersByChallan.set(o.challan_id, []);
-        ordersByChallan.get(o.challan_id).push(o);
-      }
-
-      const groups = challans.map((c) => {
-        const orders = ordersByChallan.get(c.challan_id) || [];
-
-        const shareholderNames = [...new Set(orders.map((x) => x.shareholder_name).filter(Boolean))];
-        const bookingNames     = [...new Set(orders.map((x) => x.booking_name).filter(Boolean))];
-        const customerIds      = [...new Set(orders.map((x) => x.customer_id).filter(Boolean))];
-        const contacts         = [...new Set(orders.map((x) => x.contact).filter(Boolean))];
-        const altContacts      = [...new Set(orders.map((x) => x.alt_contact).filter(Boolean))];
-        const slots            = [...new Set(orders.map((x) => String(x.slot || "").trim()).filter(Boolean))].sort();
-        const riderIds         = uniqueRiderIdsFromOrders(orders);
-        const groupRiderId     = riderIds.length === 1 ? riderIds[0] : null;
-
-        const statuses = orders.map((o) => o.delivery_status || "Pending");
-        const allDelivered    = statuses.length > 0 && statuses.every((s) => s === "Delivered");
-        const anyReturned     = statuses.some((s) => s === "Returned to Farm");
-        const anyDispatched   = statuses.some((s) => s === "Dispatched");
-        const anyRiderAssigned = statuses.some((s) => s === "Rider Assigned");
-        let derivedStatus = "Pending";
-        if (allDelivered) derivedStatus = "Delivered";
-        else if (anyReturned) derivedStatus = "Returned to Farm";
-        else if (anyDispatched) derivedStatus = "Dispatched";
-        else if (anyRiderAssigned) derivedStatus = "Rider Assigned";
-
-        return {
-          group_key: `${c.challan_id}`,
-          challan_id: c.challan_id,
-          qr_token: c.qr_token,
-          rider_id: groupRiderId,
-          rider_count: riderIds.length,
-          day: c.day,
-          slots,
-          slot: c.slot,
-          address: c.address,
-          area: c.area,
-          description: c.description,
-          batch_label: c.batch_label,
-          hissa_count: Number(c.total_hissa || 0),
-          standard_hissa_count: Number(c.total_standard_hissa || 0),
-          premium_hissa_count: Number(c.total_premium_hissa || 0),
-          waqf_hissa_count: Number(c.total_waqf_hissa || 0),
-          goat_hissa_count: Number(c.total_goat_hissa || 0),
-          waqf_hissa_count: Number(c.total_waqf_hissa || 0),
-          customer_ids: customerIds,
-          booking_names: bookingNames,
-          contacts,
-          alt_contacts: altContacts,
-          shareholder_names: shareholderNames,
-          derived_status: derivedStatus,
-          orders,
-          challan: {
-            challan_id: c.challan_id,
-            qr_token: c.qr_token,
-            rider_id: groupRiderId,
-          rider_count: riderIds.length,
-            address: c.address,
-            area: c.area,
-            day: c.day,
-            slot: c.slot,
-            derived_status: derivedStatus,
-          },
-        };
-      });
-
-      res.json({ groups, batch_id: batchId });
+      const payload = await buildDeliveriesGroupsForBatch(db, batchId, dayFilter, null);
+      res.json(payload);
     } catch (error) {
       logError("OPERATIONS", "Deliveries groups error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // ── Rider supervisor: same shape as deliveries/groups, filtered by supervisor's riders ──
+  app.get("/api/operations/supervisor/deliveries/groups", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_rider_management_supervisor);
+      if (!flags) return;
+      const sup = await getSupervisorRecordForUser(db, req.userId);
+      if (!sup) return res.status(404).json({ message: "Supervisor profile not found" });
+
+      let batchId = req.query.batch_id ? Number(req.query.batch_id) : null;
+      if (!batchId) batchId = await resolveLatestBatchId(db);
+      if (!batchId) return res.json({ groups: [] });
+
+      const dayFilter = req.query.day ? String(req.query.day).trim() : null;
+      const payload = await buildDeliveriesGroupsForBatch(db, batchId, dayFilter, sup.supervisor_id);
+      res.json(payload);
+    } catch (error) {
+      logError("OPERATIONS", "Supervisor deliveries groups error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -857,6 +970,134 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
     }
   });
 
+  // ── Rider supervisors (admin riders) ─────────────────────────
+  app.get("/api/operations/supervisors/user-candidates", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_rider_management);
+      if (!flags) return;
+      const [users] = await db.execute(
+        `SELECT u.user_id, u.username, u.email, u.first_name, u.last_name
+         FROM users u
+         LEFT JOIN rider_supervisors rs ON rs.user_id = u.user_id
+         WHERE rs.supervisor_id IS NULL AND (u.status = 'active' OR u.status IS NULL)
+         ORDER BY u.username`
+      );
+      res.json({ users });
+    } catch (error) {
+      logError("OPERATIONS", "Supervisor user candidates error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.get("/api/operations/supervisors", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_rider_management);
+      if (!flags) return;
+      const [rows] = await db.execute(
+        `SELECT s.supervisor_id, s.supervisor_code, s.supervisor_name, s.phone, s.user_id, s.created_at,
+                u.username, u.email,
+                (SELECT COUNT(*) FROM riders r
+                 WHERE r.supervisor_id = s.supervisor_id AND (r.status = 'active' OR r.status IS NULL)) AS rider_count
+         FROM rider_supervisors s
+         INNER JOIN users u ON u.user_id = s.user_id
+         ORDER BY s.supervisor_id`
+      );
+      res.json({ supervisors: rows });
+    } catch (error) {
+      logError("OPERATIONS", "List supervisors error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.post("/api/operations/supervisors", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_rider_management);
+      if (!flags) return;
+      const { supervisor_name, phone, user_id } = req.body || {};
+      if (!supervisor_name || typeof supervisor_name !== "string" || !String(supervisor_name).trim()) {
+        return res.status(400).json({ message: "supervisor_name is required" });
+      }
+      const uid = Number(user_id);
+      if (!Number.isFinite(uid) || uid <= 0) return res.status(400).json({ message: "user_id is required" });
+      const [taken] = await db.execute(`SELECT supervisor_id FROM rider_supervisors WHERE user_id = ?`, [uid]);
+      if (taken.length > 0) return res.status(400).json({ message: "User is already assigned to a supervisor" });
+      const code = await nextSupervisorCode(db);
+      const [ins] = await db.execute(
+        `INSERT INTO rider_supervisors (supervisor_code, supervisor_name, phone, user_id) VALUES (?, ?, ?, ?)`,
+        [code, String(supervisor_name).trim(), phone ? String(phone).trim() : null, uid]
+      );
+      log("OPERATIONS", "Supervisor created", { supervisor_id: ins.insertId, code });
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "SUPERVISOR_CREATE",
+        entity_type: "rider_supervisor",
+        entity_id: String(ins.insertId),
+        new_values: { supervisor_code: code, supervisor_name: String(supervisor_name).trim(), phone, user_id: uid },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      emitOperationsChanged(io, "supervisors:changed", { action: "created", supervisor_id: ins.insertId });
+      res.status(201).json({ supervisor_id: ins.insertId, supervisor_code: code });
+    } catch (error) {
+      logError("OPERATIONS", "Create supervisor error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.get("/api/operations/supervisors/:id/riders", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_rider_management);
+      if (!flags) return;
+      const sid = Number(req.params.id);
+      if (!Number.isFinite(sid) || sid <= 0) return res.status(400).json({ message: "Invalid supervisor id" });
+      const [sup] = await db.execute(
+        `SELECT supervisor_id, supervisor_code, supervisor_name, phone, user_id FROM rider_supervisors WHERE supervisor_id = ?`,
+        [sid]
+      );
+      if (sup.length === 0) return res.status(404).json({ message: "Supervisor not found" });
+      const [riders] = await db.execute(
+        `SELECT rider_id, rider_name, contact, vehicle, number_plate, availability, status
+         FROM riders WHERE supervisor_id = ? AND (status = 'active' OR status IS NULL) ORDER BY rider_name`,
+        [sid]
+      );
+      res.json({ supervisor: sup[0], riders });
+    } catch (error) {
+      logError("OPERATIONS", "Supervisor riders error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.get("/api/operations/supervisor/me", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_rider_management_supervisor);
+      if (!flags) return;
+      const sup = await getSupervisorRecordForUser(db, req.userId);
+      if (!sup) return res.status(404).json({ message: "Supervisor profile not found" });
+      res.json({ supervisor: sup });
+    } catch (error) {
+      logError("OPERATIONS", "Supervisor me error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.get("/api/operations/supervisor/riders", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_rider_management_supervisor);
+      if (!flags) return;
+      const sup = await getSupervisorRecordForUser(db, req.userId);
+      if (!sup) return res.status(404).json({ message: "Supervisor profile not found" });
+      const [riders] = await db.execute(
+        `SELECT rider_id, rider_name, contact, vehicle, number_plate, availability, status
+         FROM riders WHERE supervisor_id = ? AND (status = 'active' OR status IS NULL) ORDER BY rider_name`,
+        [sup.supervisor_id]
+      );
+      res.json(riders);
+    } catch (error) {
+      logError("OPERATIONS", "Supervisor riders list error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
   // ── Rider routes ────────────────────────────────────────────
   app.get("/api/operations/riders/details", verifyToken, async (req, res) => {
     try {
@@ -864,11 +1105,14 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       if (!flags) return;
       const day = req.query.day ? String(req.query.day).trim() : "";
       const [riders] = await db.execute(
-        `SELECT r.rider_id, r.rider_name, r.contact, r.vehicle, r.cnic, r.number_plate,
+        `SELECT r.rider_id, r.supervisor_id, r.rider_name, r.contact, r.vehicle, r.cnic, r.number_plate,
                 r.amount_per_delivery, r.total_paid,
                 COALESCE(NULLIF(TRIM(r.availability), ''), 'Available') AS availability,
-                COALESCE(NULLIF(TRIM(r.status), ''), 'active') AS status
-         FROM riders r WHERE r.status = 'active' OR r.status IS NULL ORDER BY r.rider_name`
+                COALESCE(NULLIF(TRIM(r.status), ''), 'active') AS status,
+                rs.supervisor_code, rs.supervisor_name AS supervisor_name, rs.phone AS supervisor_phone
+         FROM riders r
+         LEFT JOIN rider_supervisors rs ON rs.supervisor_id = r.supervisor_id
+         WHERE r.status = 'active' OR r.status IS NULL ORDER BY r.rider_name`
       );
       const challanParams = [];
       let challanWhere = `WHERE o.rider_id IS NOT NULL AND o.booking_date IS NOT NULL AND YEAR(o.booking_date) = ${OPERATIONS_YEAR} AND ${nonWaqfOrder('o')}`;
@@ -949,13 +1193,13 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       const riderId = Number(req.params.id);
       if (!Number.isFinite(riderId) || riderId <= 0) return res.status(400).json({ message: "Invalid rider id" });
       const [existing] = await db.execute(
-        `SELECT rider_id, rider_name, contact, vehicle, cnic, number_plate, availability, amount_per_delivery, total_paid, status
+        `SELECT rider_id, rider_name, contact, vehicle, cnic, number_plate, availability, amount_per_delivery, total_paid, status, supervisor_id
          FROM riders WHERE rider_id = ? AND (status = 'active' OR status IS NULL)`,
         [riderId]
       );
       if (existing.length === 0) return res.status(404).json({ message: "Rider not found" });
       const updates = [], values = [];
-      const { rider_name, contact, vehicle, cnic, number_plate, availability, amount_per_delivery, total_paid } = req.body || {};
+      const { rider_name, contact, vehicle, cnic, number_plate, availability, amount_per_delivery, total_paid, supervisor_id } = req.body || {};
       if (rider_name !== undefined) {
         if (!String(rider_name).trim()) return res.status(400).json({ message: "rider_name cannot be empty" });
         updates.push("rider_name = ?"); values.push(String(rider_name).trim());
@@ -975,16 +1219,43 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
         if (!Number.isFinite(n) || n < 0) return res.status(400).json({ message: "total_paid must be a valid non-negative number" });
         updates.push("total_paid = ?"); values.push(n);
       }
+      if (supervisor_id !== undefined) {
+        if (supervisor_id === null || supervisor_id === "") {
+          updates.push("supervisor_id = ?");
+          values.push(null);
+        } else {
+          const sid = Number(supervisor_id);
+          if (!Number.isFinite(sid) || sid <= 0) return res.status(400).json({ message: "Invalid supervisor_id" });
+          const [srows] = await db.execute(`SELECT supervisor_id FROM rider_supervisors WHERE supervisor_id = ?`, [sid]);
+          if (srows.length === 0) return res.status(404).json({ message: "Supervisor not found" });
+          updates.push("supervisor_id = ?");
+          values.push(sid);
+        }
+      }
       if (updates.length === 0) return res.status(400).json({ message: "No valid fields provided for update" });
       values.push(riderId);
       await db.execute(`UPDATE riders SET ${updates.join(", ")} WHERE rider_id = ?`, values);
+
+      const oldForAudit = { ...existing[0] };
+      const prevSupervisorId = oldForAudit.supervisor_id;
+      delete oldForAudit.supervisor_id;
+      oldForAudit.supervisor = await supervisorLabelForAudit(db, prevSupervisorId);
+
+      const body = req.body || {};
+      const newForAudit = { ...body };
+      if (Object.prototype.hasOwnProperty.call(newForAudit, "supervisor_id")) {
+        const supIn = newForAudit.supervisor_id;
+        delete newForAudit.supervisor_id;
+        newForAudit.supervisor = await supervisorLabelForAudit(db, supIn === "" ? null : supIn);
+      }
+
       await writeAuditLog(db, {
         user_id: req.userId,
         action: "RIDER_UPDATE",
         entity_type: "rider",
         entity_id: String(riderId),
-        old_values: existing[0],
-        new_values: req.body || {},
+        old_values: oldForAudit,
+        new_values: newForAudit,
         ip_address: req.ip,
         user_agent: req.get("user-agent")
       });
@@ -1006,11 +1277,16 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       if (!Number.isFinite(riderId) || riderId <= 0) return res.status(400).json({ message: "Invalid rider id" });
 
       const [existing] = await db.execute(
-        `SELECT rider_id, rider_name, contact, vehicle, cnic, number_plate, availability, amount_per_delivery, total_paid, status
+        `SELECT rider_id, rider_name, contact, vehicle, cnic, number_plate, availability, amount_per_delivery, total_paid, status, supervisor_id
          FROM riders WHERE rider_id = ? AND (status = 'active' OR status IS NULL)`,
         [riderId]
       );
       if (existing.length === 0) return res.status(404).json({ message: "Rider not found" });
+
+      const oldForAudit = { ...existing[0] };
+      const prevSupervisorId = oldForAudit.supervisor_id;
+      delete oldForAudit.supervisor_id;
+      oldForAudit.supervisor = await supervisorLabelForAudit(db, prevSupervisorId);
 
       const conn = await db.getConnection();
       try {
@@ -1041,7 +1317,7 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
         action: "RIDER_DELETE",
         entity_type: "rider",
         entity_id: String(riderId),
-        old_values: existing[0],
+        old_values: oldForAudit,
         new_values: { status: "deleted", availability: "Suspended" },
         ip_address: req.ip,
         user_agent: req.get("user-agent"),

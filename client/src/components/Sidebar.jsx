@@ -105,6 +105,10 @@ const BOOKING_MENU_ITEMS = [
   { id: 'bm-transactions', label: 'Transactions', iconDefault: '/icons/transactions_default.png', iconActive: '/icons/transactions_active.png', path: '/bookings/transactions', permission: 'booking_management' },
   { id: 'bm-expenses', label: 'Expenses', iconDefault: '/icons/expenses_default.png', iconActive: '/icons/expenses_active.png', path: '/bookings/expenses', permission: 'booking_management' },
 ];
+const OPERATIONS_MENU_ITEMS = [
+  { id: 'op-riders', label: 'Rider Management', iconDefault: '/icons/order_management_default.png', iconActive: '/icons/order_management_active.png', path: '/operations/riders', permissionAny: ['operation_rider_management', 'operation_rider_management_supervisor'] },
+  { id: 'op-supervisors', label: 'Supervisor Management', iconDefault: '/icons/query_management_default.png', iconActive: '/icons/query_management_active.png', path: '/operations/riders/supervisors', permission: 'operation_rider_management' },
+];
 
 const STAFF_BOOKINGS_ROLE = 'Staff - Bookings';
 const CO_MANAGER_BOOKINGS_ROLE = 'Co-Manager - Bookings';
@@ -149,7 +153,9 @@ function readSidebarExpanded() {
 function Sidebar() {
   const [isExpanded, setIsExpanded] = useState(readSidebarExpanded);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 768
+  );
   const drawerRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -159,6 +165,11 @@ function Sidebar() {
   const roleId = user?.role_id;
   const isManager = [3, 5, 7].includes(roleId);
   const isBookingContext = location.pathname.startsWith('/bookings');
+  const isOperationsContext = location.pathname.startsWith('/operations');
+  const isOperationsRidersContext = location.pathname.startsWith('/operations/riders');
+  /** Supervisor-only rider screen keeps compact header; rider admin / manager gets avatar + logout. */
+  const minimalRiderSidebarChrome =
+    isOperationsRidersContext && !permissions.operation_rider_management;
   const isPerformanceContext = location.pathname.startsWith('/performance');
   const isFarmContext = location.pathname.startsWith('/farm');
   const isProcurementContext = location.pathname.startsWith('/procurement');
@@ -168,10 +179,12 @@ function Sidebar() {
 
   const moduleSidebarChrome =
     location.pathname === '/dashboard' ||
-    /^\/(bookings|farm|procurement|accounting|performance)(\/|$)/.test(location.pathname);
+    /^\/(bookings|operations|farm|procurement|accounting|performance)(\/|$)/.test(location.pathname);
 
   const items = isBookingContext
     ? BOOKING_MENU_ITEMS
+    : isOperationsContext
+    ? OPERATIONS_MENU_ITEMS
     : isPerformanceContext
     ? PERFORMANCE_MENU_ITEMS
     : isFarmContext
@@ -190,6 +203,7 @@ function Sidebar() {
 
   const visibleItems = roleVisibleItems.filter((item) => {
     if (item.managersOnly) return (isBookingContext || isFarmContext) ? isAdminOrManager : isManager;
+    if (item.permissionAny?.length) return item.permissionAny.some((perm) => !!permissions[perm]);
     if (item.permission) return !!permissions[item.permission];
     return true;
   });
@@ -208,7 +222,15 @@ function Sidebar() {
     }
   }, [location.pathname, navigate]);
 
-  const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
+  const isActive = (path) => {
+    if (path === '/operations/riders') {
+      return location.pathname === '/operations/riders';
+    }
+    if (path === '/operations/riders/supervisors') {
+      return location.pathname === '/operations/riders/supervisors';
+    }
+    return location.pathname === path || location.pathname.startsWith(path + '/');
+  };
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
@@ -259,6 +281,8 @@ function Sidebar() {
 
   const sectionLabel = isBookingContext
     ? 'BOOKING MANAGEMENT'
+    : isOperationsContext
+    ? 'OPERATIONS MANAGEMENT'
     : isPerformanceContext
     ? 'PERFORMANCE'
     : isFarmContext
@@ -290,16 +314,18 @@ function Sidebar() {
         {/* Drawer */}
         <aside ref={drawerRef} className={`mobile-drawer ${mobileOpen ? 'open' : ''}`}>
           {/* Drawer Header */}
-          <div className="drawer-header">
-            <div className="drawer-profile">
-              <div className="drawer-avatar">
-                <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face" alt="Profile" />
+          <div className={`drawer-header${minimalRiderSidebarChrome ? ' drawer-header--rider-minimal' : ''}`}>
+            {!minimalRiderSidebarChrome && (
+              <div className="drawer-profile">
+                <div className="drawer-avatar">
+                  <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face" alt="Profile" />
+                </div>
+                <div className="drawer-user-info">
+                  <span className="drawer-role">{user?.role || 'USER'}</span>
+                  <span className="drawer-name">{user?.username || 'User'}</span>
+                </div>
               </div>
-              <div className="drawer-user-info">
-                <span className="drawer-role">{user?.role || 'USER'}</span>
-                <span className="drawer-name">{user?.username || 'User'}</span>
-              </div>
-            </div>
+            )}
             <button className="drawer-close" onClick={() => setMobileOpen(false)} aria-label="Close menu">
               <HamburgerIcon isOpen={true} />
             </button>
@@ -334,9 +360,13 @@ function Sidebar() {
 
           {/* Drawer Footer */}
           <div className="drawer-footer">
-            <button type="button" className="drawer-back-btn" onClick={() => handleNavigate('/')}>
+            <button
+              type="button"
+              className="drawer-back-btn"
+              onClick={() => handleNavigate(isOperationsRidersContext ? '/operations' : '/')}
+            >
               <img src="/icons/select_system.png" alt="" style={{ width: '20px', height: '20px' }} />
-              <span>Select Management</span>
+              <span>{isOperationsRidersContext ? 'Select Operation' : 'Select Management'}</span>
             </button>
             <button type="button" className="drawer-logout-btn" onClick={handleLogout}>
               <LogoutIcon />
@@ -351,29 +381,37 @@ function Sidebar() {
   /* ── Desktop Layout (original sidebar) ── */
   return (
     <aside className={`sidebar ${isExpanded ? 'expanded' : 'collapsed'}${moduleSidebarChrome ? ' sidebar--module' : ''}`}>
-      <div className="sidebar-profile">
-        <div className="profile-avatar">
-          <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face" alt="Profile" />
-        </div>
-        {isExpanded && (
-          <div className="profile-info">
-            <span className="profile-role">{user?.role || 'USER'}</span>
-            <span className="profile-name">{user?.username || 'User'}</span>
-            <button type="button" className="logout-btn" onClick={handleLogout}>
-              <LogoutIcon />
-              <span>Logout</span>
-            </button>
-          </div>
-        )}
-        {!isExpanded && (
-          <button type="button" className="logout-btn-collapsed" onClick={handleLogout} title="Logout">
-            <LogoutIcon />
+      {minimalRiderSidebarChrome ? (
+        <div className="sidebar-profile sidebar-profile--rider-minimal">
+          <button type="button" className="toggle-btn" onClick={() => setIsExpanded(!isExpanded)} aria-label={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}>
+            <ChevronIcon direction={isExpanded ? 'left' : 'right'} />
           </button>
-        )}
-        <button type="button" className="toggle-btn" onClick={() => setIsExpanded(!isExpanded)} aria-label={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}>
-          <ChevronIcon direction={isExpanded ? 'left' : 'right'} />
-        </button>
-      </div>
+        </div>
+      ) : (
+        <div className="sidebar-profile">
+          <div className="profile-avatar">
+            <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face" alt="Profile" />
+          </div>
+          {isExpanded && (
+            <div className="profile-info">
+              <span className="profile-role">{user?.role || 'USER'}</span>
+              <span className="profile-name">{user?.username || 'User'}</span>
+              <button type="button" className="logout-btn" onClick={handleLogout}>
+                <LogoutIcon />
+                <span>Logout</span>
+              </button>
+            </div>
+          )}
+          {!isExpanded && (
+            <button type="button" className="logout-btn-collapsed" onClick={handleLogout} title="Logout">
+              <LogoutIcon />
+            </button>
+          )}
+          <button type="button" className="toggle-btn" onClick={() => setIsExpanded(!isExpanded)} aria-label={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}>
+            <ChevronIcon direction={isExpanded ? 'left' : 'right'} />
+          </button>
+        </div>
+      )}
 
       <nav className="sidebar-nav">
         <span className="nav-section-label">{isExpanded ? sectionLabel : ''}</span>
@@ -401,13 +439,13 @@ function Sidebar() {
         <button
           type="button"
           className="nav-link sidebar-back-btn"
-          onClick={() => navigate('/')}
-          title="Back to Select Management"
+          onClick={() => navigate(isOperationsRidersContext ? '/operations' : '/')}
+          title={isOperationsRidersContext ? 'Back to operation modules' : 'Back to Select Management'}
         >
           <span className="nav-icon nav-icon-main">
             <img src="/icons/select_system.png" alt="" style={{ width: '20px', height: '20px', display: 'block' }} />
           </span>
-          {isExpanded && <span className="nav-label">Select Management</span>}
+          {isExpanded && <span className="nav-label">{isOperationsRidersContext ? 'Select Operation' : 'Select Management'}</span>}
         </button>
       </div>
     </aside>

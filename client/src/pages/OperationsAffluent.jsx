@@ -488,7 +488,7 @@ function getGroupOrderTypes(g) {
   return inferred;
 }
 
-export default function OperationsDeliveries() {
+export default function OperationsAffluent() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { authFetch } = useAuth();
 
@@ -604,10 +604,16 @@ export default function OperationsDeliveries() {
   // ── filter + sort ────────────────────────────────────────────
   // All string comparisons go through normalizeForCompare so that
   // "DAY 1" / "Day 1" / "day 1" and "SLOT 1" / "Slot 1" all match.
-  const displayGroups = useMemo(() => {
+  /** All affluent groups in the batch (no table filters) — for empty state and “X of Y” denominator. */
+  const affluentGroups = useMemo(() => groups.filter((g) => isAffluentOrder(g)), [groups]);
+
+  /**
+   * Same filter + sort pipeline as Deliveries: start from all groups in the batch.
+   * Summary totals use this list so amounts match Deliveries for the same batch/filters (includes non-affluent).
+   */
+  const filteredSortedAllGroups = useMemo(() => {
     let list = groups;
 
-    // general search
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter((g) =>
@@ -616,33 +622,25 @@ export default function OperationsDeliveries() {
       );
     }
 
-    // challan no search
     const challanQ = challanSearch.trim().toLowerCase();
     if (challanQ) {
       list = list.filter((g) => String(g.challan_id || '').toLowerCase().includes(challanQ));
     }
 
-    // day filter — case-insensitive comparison
     if (filterDay) list = list.filter((g) => groupMatchesDay(g, filterDay));
-
-    // slot filter — case-insensitive, also checks g.orders for coverage
     if (filterSlots.length) list = list.filter((g) => groupMatchesSlots(g, filterSlots));
-
     if (filterStatus.length) list = list.filter((g) => filterStatus.includes(g.derived_status || 'Pending'));
-    if (filterRider)  list = list.filter((g) => String(g.rider_id || '') === filterRider);
+    if (filterRider) list = list.filter((g) => String(g.rider_id || '') === filterRider);
     if (filterOrderType.length) list = list.filter((g) => groupMatchesOrderType(g, filterOrderType));
     if (scanMatchToken) list = list.filter((g) => g.qr_token === scanMatchToken);
 
-    // sort: day (normalised) → first slot (normalised) → address
     list = [...list].sort((a, b) => {
       const dayA = normalizeForCompare(a.day);
       const dayB = normalizeForCompare(b.day);
       if (dayA !== dayB) return dayA.localeCompare(dayB);
-
       const slotA = normalizeForCompare(getGroupSlots(a)[0] || '');
       const slotB = normalizeForCompare(getGroupSlots(b)[0] || '');
       if (slotA !== slotB) return slotA.localeCompare(slotB, undefined, { numeric: true });
-
       return String(a.address || '').trim().toLowerCase()
         .localeCompare(String(b.address || '').trim().toLowerCase());
     });
@@ -650,6 +648,13 @@ export default function OperationsDeliveries() {
     return list;
   }, [groups, search, challanSearch, filterDay, filterSlots, filterStatus, filterRider, filterOrderType, scanMatchToken]);
 
+  /** Table rows: affluent only, same filters as above. */
+  const displayGroups = useMemo(
+    () => filteredSortedAllGroups.filter((g) => isAffluentOrder(g)),
+    [filteredSortedAllGroups]
+  );
+
+  /** Amounts/totals in Affluent must use affluent rows only (with active filters). */
   const summary = useMemo(() => {
     let tp = 0, ts = 0, tw = 0, tg = 0;
     for (const g of displayGroups) {
@@ -869,9 +874,9 @@ export default function OperationsDeliveries() {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>Deliveries Management</h2>
+            <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>Affluent Management</h2>
             <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#888', fontWeight: '500', lineHeight: 1.45, maxWidth: '720px' }}>
-              Challan-based delivery groups. Assign riders and update status. Click a row for full details.
+              Delivery groups marked affluent (description present or total hissa minus waqf is 3+). Assign riders and update status.
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -1024,14 +1029,14 @@ export default function OperationsDeliveries() {
           </div>
         )}
         {err && <div style={{ padding:'10px', background:'#FFF5F2', color:'#C62828', borderRadius:'6px', marginBottom:'13px', flexShrink:0, fontSize:'10px', fontWeight:'600' }}>{err}</div>}
-        {!loading && <div style={{ fontSize:'10px', color:'#999', marginBottom:'8px', flexShrink:0 }}>Showing {displayGroups.length} of {groups.length} groups</div>}
+        {!loading && <div style={{ fontSize:'10px', color:'#999', marginBottom:'8px', flexShrink:0 }}>Showing {displayGroups.length} of {affluentGroups.length} affluent groups</div>}
 
         {/* Table */}
         <div className="om-table-wrap" style={{ flex:1, minHeight:0, overflow:'auto', borderRadius:'10px', border:'1px solid #ececec' }}>
           {loading ? (
             <div style={{ padding:'40px', textAlign:'center', color:'#666', fontSize:'11px' }}>Loading…</div>
           ) : displayGroups.length === 0 ? (
-            <div style={{ padding:'40px', textAlign:'center', color:'#666', fontSize:'11px' }}>{groups.length===0 ? 'No challans for this batch.' : 'No rows match the current filters.'}</div>
+            <div style={{ padding:'40px', textAlign:'center', color:'#666', fontSize:'11px' }}>{affluentGroups.length===0 ? 'No affluent challans for this batch.' : 'No affluent rows match the current filters.'}</div>
           ) : (
             <table className="ops-data-table" style={{ width:'100%', borderCollapse:'collapse', fontSize:'11px', tableLayout:'auto' }}>
               

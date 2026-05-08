@@ -126,8 +126,10 @@ const Control = () => {
     operation_general_dashboard: false,
     operation_customer_support: false,
     operation_rider_management: false,
+    operation_rider_management_supervisor: false,
     operation_deliveries_management: false,
     operation_challan_management: false,
+    operation_affluent_management: false,
     farm_management: false,
     procurement_management: false,
     accounting_and_finance: false,
@@ -142,8 +144,10 @@ const Control = () => {
     operation_general_dashboard: false,
     operation_customer_support: false,
     operation_rider_management: false,
+    operation_rider_management_supervisor: false,
     operation_deliveries_management: false,
     operation_challan_management: false,
+    operation_affluent_management: false,
     farm_management: false,
     procurement_management: false,
     accounting_and_finance: false,
@@ -351,8 +355,10 @@ const Control = () => {
         operation_general_dashboard: role.operation_general_dashboard || false,
         operation_customer_support: role.operation_customer_support || false,
         operation_rider_management: role.operation_rider_management || false,
+        operation_rider_management_supervisor: role.operation_rider_management_supervisor || false,
         operation_deliveries_management: role.operation_deliveries_management || false,
         operation_challan_management: role.operation_challan_management || false,
+        operation_affluent_management: role.operation_affluent_management || false,
         farm_management: role.farm_management || false,
         procurement_management: role.procurement_management || false,
         accounting_and_finance: role.accounting_and_finance || false,
@@ -717,8 +723,10 @@ const Control = () => {
                       permissions.push('Operation');
                       if (r.operation_general_dashboard) permissions.push('Op · Dashboard');
                       if (r.operation_customer_support) permissions.push('Op · Support');
-                      if (r.operation_rider_management) permissions.push('Op · Riders');
+                      if (r.operation_rider_management_supervisor) permissions.push('Op · Riders (Supervisor)');
+                      else if (r.operation_rider_management) permissions.push('Op · Riders');
                       if (r.operation_deliveries_management) permissions.push('Op · Deliveries');
+                      if (r.operation_affluent_management) permissions.push('Op · Affluent');
                       if (r.operation_challan_management) permissions.push('Op · Challan');
                     }
                     if (r.farm_management) permissions.push('Farm');
@@ -1055,8 +1063,10 @@ const Control = () => {
                       operation_general_dashboard: false,
                       operation_customer_support: false,
                       operation_rider_management: false,
+                      operation_rider_management_supervisor: false,
                       operation_deliveries_management: false,
                       operation_challan_management: false,
+                      operation_affluent_management: false,
                     }),
                   });
                 }} style={{ marginRight: '10px', width: '18px', height: '18px', cursor: 'pointer' }} />
@@ -1068,15 +1078,28 @@ const Control = () => {
                   {[
                     { key: 'operation_general_dashboard', label: 'General Dashboard' },
                     { key: 'operation_customer_support', label: 'Customer Support' },
-                    { key: 'operation_rider_management', label: 'Rider Management' },
                     { key: 'operation_deliveries_management', label: 'Deliveries Management' },
                     { key: 'operation_challan_management', label: 'Challan Management' },
+                    { key: 'operation_affluent_management', label: 'Affluent Management' },
                   ].map(perm => (
                     <div key={perm.key} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center' }}>
                       <input type="checkbox" id={perm.key} checked={roleFormData[perm.key]} onChange={(e) => setRoleFormData({ ...roleFormData, [perm.key]: e.target.checked })} style={{ marginRight: '10px', width: '16px', height: '16px', cursor: 'pointer' }} />
                       <label htmlFor={perm.key} style={{ fontSize: '12px', color: '#333', cursor: 'pointer' }}>{perm.label}</label>
                     </div>
                   ))}
+                  <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #eee' }}>
+                    <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px' }}>Rider access (choose one)</div>
+                    {[
+                      { id: 'rider_mode_none', label: 'No rider screen', checked: !roleFormData.operation_rider_management && !roleFormData.operation_rider_management_supervisor, onChange: () => setRoleFormData({ ...roleFormData, operation_rider_management: false, operation_rider_management_supervisor: false }) },
+                      { id: 'rider_mode_admin', label: 'Rider Management (Admin)', checked: roleFormData.operation_rider_management, onChange: () => setRoleFormData({ ...roleFormData, operation_rider_management: true, operation_rider_management_supervisor: false }) },
+                      { id: 'rider_mode_sup', label: 'Rider Management (Supervisor)', checked: roleFormData.operation_rider_management_supervisor, onChange: () => setRoleFormData({ ...roleFormData, operation_rider_management: false, operation_rider_management_supervisor: true }) },
+                    ].map((opt) => (
+                      <div key={opt.id} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center' }}>
+                        <input type="radio" id={opt.id} name="rider_ops_mode" checked={opt.checked} onChange={opt.onChange} style={{ marginRight: '10px', width: '16px', height: '16px', cursor: 'pointer' }} />
+                        <label htmlFor={opt.id} style={{ fontSize: '12px', color: '#333', cursor: 'pointer' }}>{opt.label}</label>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
