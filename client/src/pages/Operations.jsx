@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { OPERATION_MODULES, operationModuleHasAccess } from './operationModules';
@@ -10,14 +10,8 @@ export default function Operations() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const perms = user?.permissions || {};
-  const [mounted, setMounted] = useState(false);
   const [pressedId, setPressedId] = useState(null);
   const [accessBlocked, setAccessBlocked] = useState(null);
-
-  useEffect(() => {
-    const t = setTimeout(() => setMounted(true), 50);
-    return () => clearTimeout(t);
-  }, []);
 
   const hasAccess = (module) => operationModuleHasAccess(module, perms);
   const accessibleCount = OPERATION_MODULES.filter((m) => hasAccess(m)).length;
@@ -51,7 +45,7 @@ export default function Operations() {
             <button
               key={m.id}
               type="button"
-              className={`mob-card ${!accessible ? 'locked' : ''} ${isLastOdd ? 'wide' : ''} ${mounted ? 'ready' : ''}`}
+              className={`mob-card ${!accessible ? 'locked' : ''} ${isLastOdd ? 'wide' : ''}`}
               style={{
                 animationDelay: `${idx * 55}ms`,
                 borderColor: pressedId === m.id ? m.accent : undefined,

@@ -8,19 +8,24 @@ import QRCode from 'qrcode';
 
 const REGENERATE_EMAIL = 'hanzalamawahab@gmail.com';
 
-const ALLOWED_ORDER_TYPES = ['Hissa - Standard', 'Hissa Premium', 'Hissa - Waqf', 'Goat(Hissa)'];
+const GOAT_HISSA_SUPER = 'Super Goat(Hissa)';
+const GOAT_HISSA_PREMIUM = 'Premium Goat(Hissa)';
+const ALLOWED_ORDER_TYPES = ['Hissa - Standard', 'Hissa Premium', 'Hissa - Waqf', GOAT_HISSA_SUPER, GOAT_HISSA_PREMIUM];
 const ORDER_TYPE_FILTERS = [
   { value: 'Hissa - Standard', label: 'Hissa Standard' },
   { value: 'Hissa Premium', label: 'Premium' },
   { value: 'Hissa - Waqf', label: 'Waqf' },
-  { value: 'Goat(Hissa)', label: 'Goat' },
+  { value: GOAT_HISSA_SUPER, label: 'Super Goat' },
+  { value: GOAT_HISSA_PREMIUM, label: 'Premium Goat' },
 ];
 function normalizeOrderType(value) {
   const lower = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
   if (lower === 'hissa - standard' || lower === 'hissa standard') return 'Hissa - Standard';
   if (lower === 'hissa premium' || lower === 'hissa - premium') return 'Hissa Premium';
   if (lower === 'hissa - waqf' || lower === 'hissa waqf') return 'Hissa - Waqf';
-  if (lower === 'goat(hissa)' || lower === 'goat (hissa)' || lower === 'goat hissa') return 'Goat(Hissa)';
+  if (lower === 'super goat(hissa)' || lower === 'super goat (hissa)') return GOAT_HISSA_SUPER;
+  if (lower === 'premium goat(hissa)' || lower === 'premium goat (hissa)') return GOAT_HISSA_PREMIUM;
+  if (lower === 'goat(hissa)' || lower === 'goat (hissa)' || lower === 'goat hissa') return GOAT_HISSA_SUPER;
   return '';
 }
 function getChallanOrderTypes(row) {
@@ -31,18 +36,31 @@ function getChallanOrderTypes(row) {
   if (Number(row.total_standard_hissa || row.standard_hissa_count || 0) > 0) inferred.push('Hissa - Standard');
   if (Number(row.total_premium_hissa || row.premium_hissa_count || 0) > 0) inferred.push('Hissa Premium');
   if (Number(row.total_waqf_hissa || row.waqf_hissa_count || 0) > 0) inferred.push('Hissa - Waqf');
-  if (Number(row.total_goat_hissa || row.goat_hissa_count || 0) > 0) inferred.push('Goat(Hissa)');
+  let sg = Number(row.total_super_goat_hissa ?? 0);
+  let pg = Number(row.total_premium_goat_hissa ?? 0);
+  const leg = Number(row.total_goat_hissa || row.goat_hissa_count || 0);
+  if (sg === 0 && pg === 0 && leg > 0) sg = leg;
+  if (sg > 0) inferred.push(GOAT_HISSA_SUPER);
+  if (pg > 0) inferred.push(GOAT_HISSA_PREMIUM);
   return inferred;
 }
 
 function formatTotalHissa(total, opts = {}) {
-  const premium = Number(opts.premium || 0), standard = Number(opts.standard || 0), goat = Number(opts.goat || 0);
-  const cleanTotal = Number(total ?? (premium + standard + goat));
+  const premium = Number(opts.premium || 0);
+  const standard = Number(opts.standard || 0);
+  const waqf = Number(opts.waqf || 0);
+  let superGoat = Number(opts.superGoat ?? opts.super_goat ?? 0);
+  let premiumGoat = Number(opts.premiumGoat ?? opts.premium_goat ?? 0);
+  const legacyGoat = Number(opts.goat || 0);
+  if (superGoat === 0 && premiumGoat === 0 && legacyGoat > 0) superGoat = legacyGoat;
+  const cleanTotal = Number(total ?? (premium + standard + waqf + superGoat + premiumGoat));
   const parts = [];
-  if (premium > 0) parts.push(premium + ' Premium');
-  if (standard > 0) parts.push(standard + ' Standard');
-  if (goat > 0) parts.push(goat + ' Goat');
-  return parts.length ? cleanTotal + ' (' + parts.join(', ') + ')' : String(cleanTotal || 0);
+  if (premium > 0) parts.push(`${premium} Premium`);
+  if (standard > 0) parts.push(`${standard} Standard`);
+  if (waqf > 0) parts.push(`${waqf} Waqf`);
+  if (superGoat > 0) parts.push(`${superGoat} Super Goat`);
+  if (premiumGoat > 0) parts.push(`${premiumGoat} Premium Goat`);
+  return parts.length ? `${cleanTotal} (${parts.join(', ')})` : String(cleanTotal || 0);
 }
 function formatRiderCompact(rider, fallbackName = 'Unassigned') {
   if (!rider) return fallbackName;
@@ -136,7 +154,7 @@ function isAffluentOrder(source, totalField = 'total_hissa', waqfField = 'total_
 
 function NoBadge({ number }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: '700', background: '#FFF3E0', color: '#E65100', whiteSpace: 'nowrap' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: '700', background: '#F5F5F5', color: '#666', whiteSpace: 'nowrap' }}>
       {number || '—'}
     </span>
   );
@@ -231,11 +249,13 @@ function short(v, n = 64) {
   
       const premium = Number(c.total_premium_hissa || 0);
       const standard = Number(c.total_standard_hissa || 0);
-      const goat = Number(c.total_goat_hissa || 0);
-      const totalHissa = Number(c.total_hissa || c.order_count || premium + standard + goat || 0);
-  
       const waqf = Number(c.total_waqf_hissa || 0);
-      const totalHissaText = formatTotalHissa(totalHissa, { premium, standard, goat, waqf });
+      let superGoat = Number(c.total_super_goat_hissa || 0);
+      let premiumGoat = Number(c.total_premium_goat_hissa || 0);
+      const legacyGoat = Number(c.total_goat_hissa || 0);
+      if (superGoat === 0 && premiumGoat === 0 && legacyGoat > 0) superGoat = legacyGoat;
+      const totalHissa = Number(c.total_hissa || c.order_count || premium + standard + waqf + superGoat + premiumGoat || 0);
+      const totalHissaText = formatTotalHissa(totalHissa, { premium, standard, waqf, superGoat, premiumGoat });
   
       const uniqueJoin = (arr) =>
         [...new Set(arr.map((v) => String(v || '').trim()).filter(Boolean))].join(', ');
@@ -868,20 +888,20 @@ export default function OperationsChallan() {
               
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                 <tr style={{ background: '#fafafa' }}>
-                  <th style={{ textAlign: 'left', padding: '10px 10px', borderBottom: '1px solid #e0e0e0', color: '#555', fontWeight: '600', whiteSpace: 'nowrap', fontSize: '10px' }}>
-                    No.
-                  </th>
                   <th style={{ padding: '10px 10px', borderBottom: '1px solid #e0e0e0' }}>
                     <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} />
                   </th>
-                  {['Description', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Waqf', 'Goat (Hissa)', 'Total Hissa', 'Shareholders'].map((h) => (
+                  <th style={{ textAlign: 'left', padding: '10px 10px', borderBottom: '1px solid #e0e0e0', color: '#555', fontWeight: '600', whiteSpace: 'nowrap', fontSize: '10px' }}>
+                    No.
+                  </th>
+                  {['Description', 'Booking Name', 'Standard', 'Premium', 'Waqf', 'Super Goat', 'Premium Goat', 'Total Hissa', 'Day / Slot', 'Area', 'Contact', 'Address', 'Customer ID', 'Shareholders'].map((h) => (
                     <th key={h} style={{ textAlign: 'left', padding: '10px 10px', borderBottom: '1px solid #e0e0e0', color: '#555', fontWeight: '600', whiteSpace: 'nowrap', fontSize: '10px' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {pagedRows.length === 0 ? (
-                  <tr><td colSpan={15} style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>No rows found.</td></tr>
+                  <tr><td colSpan={16} style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>No rows found.</td></tr>
                 ) : pagedRows.map((c, idx) => {
                   const st          = challanDerivedStatus(c);
                   const descriptionText = getDescriptionText(c);
@@ -891,6 +911,10 @@ export default function OperationsChallan() {
                   const contacts    = c.contacts_csv      || '—';
                   const altContacts = c.alt_contacts_csv  || '';
                   const customerIds = c.customer_ids_csv  || '—';
+                  let rowSuperGoat = Number(c.total_super_goat_hissa ?? 0);
+                  let rowPremiumGoat = Number(c.total_premium_goat_hissa ?? 0);
+                  const rowLegacyGoat = Number(c.total_goat_hissa ?? 0);
+                  if (rowSuperGoat === 0 && rowPremiumGoat === 0 && rowLegacyGoat > 0) rowSuperGoat = rowLegacyGoat;
                   return (
                     <tr key={c.challan_id}
                       style={{ borderBottom: '1px solid #f3f3f3', background: rowIsAffluent ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'), borderLeft: rowIsAffluent ? '3px solid #D32F2F' : '3px solid transparent', cursor: c.qr_token ? 'pointer' : 'default' }}
@@ -898,33 +922,34 @@ export default function OperationsChallan() {
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#f5f9ff'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = rowIsAffluent ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'); }}
                     >
-                      <td style={{ padding: '9px 10px' }}>
-                        <NoBadge number={c.challan_id} />
-                      </td>
                       <td style={{ padding: '9px 10px' }} onClick={(e) => e.stopPropagation()}>
                         <input type="checkbox" checked={selectedIds.has(c.challan_id)} onChange={() => toggleOne(c.challan_id)} />
+                      </td>
+                      <td style={{ padding: '9px 10px' }}>
+                        <NoBadge number={c.challan_id} />
                       </td>
                       <td style={{ padding: '9px 10px', color: '#555', verticalAlign:'top' }}>
                         {rowHasDescription ? (
                           <div style={{ whiteSpace:'pre-line', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45, color:'#333', fontWeight:500 }}>{descriptionText}</div>
                         ) : <span style={{ color: '#ccc' }}>—</span>}
                       </td>
-                      <td style={{ padding: '9px 10px', color: '#777', fontWeight: '500' }}><MultiLineCell values={customerIds} /></td>
                       <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{c.booking_name || '—'}</td>
-                      <td style={{ padding: '9px 10px', color: '#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>
-                        <div>{formatAddress(c.address) || '—'}</div>
-                      </td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}><MultiLineCell values={[contacts, altContacts]} /></td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_standard_hissa || 0}</td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_premium_hissa || 0}</td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_waqf_hissa || 0}</td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}>{rowSuperGoat}</td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}>{rowPremiumGoat}</td>
+                      <td style={{ padding: '9px 10px', color: '#555', fontWeight: '600' }}>{Number(c.total_hissa ?? c.order_count ?? 0)}</td>
                       <td style={{ padding: '9px 10px', color: '#555', whiteSpace: 'nowrap' }}>
                         <div>{c.day || '—'}</div>
                         {c.slot && <div style={{ fontSize: '9px', color: '#aaa' }}>{c.slot}</div>}
                       </td>
                       <td style={{ padding: '9px 10px', color: '#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{c.area || '—'}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_standard_hissa || 0}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_premium_hissa || 0}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_waqf_hissa || 0}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_goat_hissa || 0}</td>
-                      <td style={{ padding: '9px 10px', color: '#555', fontWeight: '600' }}>{Number(c.total_hissa ?? c.order_count ?? 0)}</td>
+                      <td style={{ padding: '9px 10px', color: '#555' }}><MultiLineCell values={[contacts, altContacts]} /></td>
+                      <td style={{ padding: '9px 10px', color: '#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>
+                        <div>{formatAddress(c.address) || '—'}</div>
+                      </td>
+                      <td style={{ padding: '9px 10px', color: '#777', fontWeight: '500' }}><MultiLineCell values={customerIds} /></td>
                       <td style={{ padding: '9px 10px', color: '#666', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }} title={names}>
                         {names}
                       </td>
@@ -1067,7 +1092,14 @@ export default function OperationsChallan() {
             ['Day', modal.challan?.day || '—'],
             ['Slot', modal.challan?.slot || '—'],
             ['Rider', modalRiderDetails.name],
-                        ['Total Hissa', formatTotalHissa(modal.challan?.total_hissa ?? modal.challan?.order_count ?? 0, { premium: modal.challan?.total_premium_hissa, standard: modal.challan?.total_standard_hissa, goat: modal.challan?.total_goat_hissa })],
+                        ['Total Hissa', formatTotalHissa(modal.challan?.total_hissa ?? modal.challan?.order_count ?? 0, {
+                          premium: modal.challan?.total_premium_hissa,
+                          standard: modal.challan?.total_standard_hissa,
+                          waqf: modal.challan?.total_waqf_hissa,
+                          superGoat: modal.challan?.total_super_goat_hissa,
+                          premiumGoat: modal.challan?.total_premium_goat_hissa,
+                          goat: modal.challan?.total_goat_hissa,
+                        })],
           ]}
           orders={(modal.orders || []).filter((o) => ALLOWED_ORDER_TYPES.includes(normalizeOrderType(o.order_type)))}
           renderOrderStatus={(o) => <StatusBadge status={o.delivery_status} />}

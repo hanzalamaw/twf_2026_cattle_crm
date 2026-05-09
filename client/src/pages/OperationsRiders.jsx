@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE } from '../config/api';
 import { getOperationsSocket } from '../utils/operationsSocket';
 import { useAuth } from '../context/AuthContext';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 const RIDER_STATUSES = ['Available', 'On Delivery', 'Off Duty', 'Suspended'];
 
@@ -42,6 +42,34 @@ function money(n) {
   })}`;
 }
 
+function formatDurationSeconds(sec) {
+  const s = Number(sec);
+  if (!Number.isFinite(s) || s < 0) return '—';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = Math.floor(s % 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return r > 0 ? `${m}m ${r}s` : `${m}m`;
+  return `${r}s`;
+}
+
+function formatAvgDispatchToDeliver(r) {
+  const delivered = Number(r.deliveries_completed || 0);
+  if (delivered <= 0) return '—';
+  const avg = r.avg_dispatch_to_deliver_seconds;
+  if (avg == null || !Number.isFinite(avg)) {
+    return 'No timing data yet';
+  }
+  return formatDurationSeconds(Math.round(avg));
+}
+
+function normalizedSupervisorId(rider) {
+  const v = rider?.supervisor_id;
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 const inputStyle = {
   width: '100%',
   boxSizing: 'border-box',
@@ -63,6 +91,224 @@ const compactSelectStyle = {
   color: '#333',
 };
 
+const GOAT_HISSA_SUPER = 'Super Goat(Hissa)';
+const GOAT_HISSA_PREMIUM = 'Premium Goat(Hissa)';
+
+function normalizeOrderType(value) {
+  const lower = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (lower === 'hissa - standard' || lower === 'hissa standard') return 'Hissa - Standard';
+  if (lower === 'hissa premium' || lower === 'hissa - premium') return 'Hissa Premium';
+  if (lower === 'hissa - waqf' || lower === 'hissa waqf') return 'Hissa - Waqf';
+  if (lower === 'super goat(hissa)' || lower === 'super goat (hissa)') return GOAT_HISSA_SUPER;
+  if (lower === 'premium goat(hissa)' || lower === 'premium goat (hissa)') return GOAT_HISSA_PREMIUM;
+  if (lower === 'goat(hissa)' || lower === 'goat (hissa)' || lower === 'goat hissa') return GOAT_HISSA_SUPER;
+  return '';
+}
+
+const CHALLAN_STATUS_STYLES = {
+  Pending: { bg: '#F5F5F5', fg: '#666' },
+  'Rider Assigned': { bg: '#FFF8E1', fg: '#F57C00' },
+  Dispatched: { bg: '#E3F2FD', fg: '#1565C0' },
+  Delivered: { bg: '#E8F5E9', fg: '#2E7D32' },
+  'Returned to Farm': { bg: '#FFEBEE', fg: '#C62828' },
+};
+
+function ChallanDeliveryStatusBadge({ status }) {
+  const st = status || 'Pending';
+  const { bg, fg } = CHALLAN_STATUS_STYLES[st] || CHALLAN_STATUS_STYLES.Pending;
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '3px 9px',
+        borderRadius: '999px',
+        fontSize: '10px',
+        fontWeight: '600',
+        background: bg,
+        color: fg,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {st}
+    </span>
+  );
+}
+
+function NoBadge({ value }) {
+  const text = value != null && value !== '' ? String(value) : '—';
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '3px 9px',
+        borderRadius: '999px',
+        fontSize: '10px',
+        fontWeight: '700',
+        background: '#F5F5F5',
+        color: '#666',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
+function splitUniqueCsvValues(values) {
+  return [
+    ...new Set(
+      (Array.isArray(values) ? values : [values])
+        .flatMap((v) => (Array.isArray(v) ? v : String(v || '').split(',')))
+        .map((v) => String(v || '').trim())
+        .filter(Boolean)
+    ),
+  ];
+}
+
+function MultiLineCell({ values, empty = '—' }) {
+  const list = splitUniqueCsvValues(values);
+  return list.length ? (
+    <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', lineHeight: 1.45 }}>
+      {list.map((v, i) => (
+        <div key={`${v}-${i}`}>{v}</div>
+      ))}
+    </div>
+  ) : (
+    <span style={{ color: '#ccc' }}>{empty}</span>
+  );
+}
+
+function getDescriptionText(source) {
+  if (!source) return '';
+  const normalize = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const originalMap = new Map();
+  const addValue = (val) => {
+    const norm = normalize(val);
+    if (!norm) return;
+    if (!originalMap.has(norm)) originalMap.set(norm, String(val).trim());
+  };
+  [
+    source.description,
+    source.descriptions,
+    source.description_csv,
+    source.descriptions_csv,
+    source.special_request,
+    source.specialRequest,
+    source.request,
+    source.remarks,
+    source.notes,
+    source.note,
+  ].forEach(addValue);
+  (source.orders || []).forEach((o) => {
+    if (o && typeof o === 'object') addValue(o.description);
+  });
+  return Array.from(originalMap.values()).join(' | ');
+}
+
+function hasDescription(source) {
+  return getDescriptionText(source).length > 0;
+}
+
+function isAffluentOrder(source, totalField = 'hissa_count', waqfField = 'waqf_hissa_count') {
+  const totalHissa = Number(source?.[totalField] || 0);
+  const waqfHissa = Number(source?.[waqfField] || 0);
+  return hasDescription(source) || totalHissa - waqfHissa >= 3;
+}
+
+function deriveChallanStatusFromOrders(orders) {
+  const statuses = (orders || [])
+    .filter((o) => o && typeof o === 'object')
+    .map((o) => o.delivery_status || 'Pending');
+  const allDelivered = statuses.length > 0 && statuses.every((s) => s === 'Delivered');
+  const anyReturned = statuses.some((s) => s === 'Returned to Farm');
+  const anyDispatched = statuses.some((s) => s === 'Dispatched');
+  const anyRiderAssigned = statuses.some((s) => s === 'Rider Assigned');
+  let derivedStatus = 'Pending';
+  if (allDelivered) derivedStatus = 'Delivered';
+  else if (anyReturned) derivedStatus = 'Returned to Farm';
+  else if (anyDispatched) derivedStatus = 'Dispatched';
+  else if (anyRiderAssigned) derivedStatus = 'Rider Assigned';
+  return derivedStatus;
+}
+
+function groupRiderAssignedOrdersByChallan(flatOrders) {
+  if (!Array.isArray(flatOrders) || flatOrders.length === 0) return [];
+  const rows = flatOrders.filter((o) => o && typeof o === 'object');
+  if (rows.length === 0) return [];
+  const byC = new Map();
+  for (const o of rows) {
+    const cid = o.challan_id;
+    if (!byC.has(cid)) byC.set(cid, []);
+    byC.get(cid).push(o);
+  }
+  const groups = [];
+  for (const [, orders] of byC) {
+    const first = orders[0];
+    let std = 0;
+    let prem = 0;
+    let waqf = 0;
+    let sg = 0;
+    let pg = 0;
+    for (const o of orders) {
+      const t = normalizeOrderType(o.order_type);
+      if (t === 'Hissa - Standard') std += 1;
+      else if (t === 'Hissa Premium') prem += 1;
+      else if (t === 'Hissa - Waqf') waqf += 1;
+      else if (t === GOAT_HISSA_SUPER) sg += 1;
+      else if (t === GOAT_HISSA_PREMIUM) pg += 1;
+    }
+    const bookingNames = [...new Set(orders.map((x) => x.booking_name).filter(Boolean))];
+    const customerIds = [...new Set(orders.map((x) => x.customer_id).filter(Boolean))];
+    const contacts = [...new Set(orders.map((x) => x.contact).filter(Boolean))];
+    const altContacts = [...new Set(orders.map((x) => x.alt_contact).filter(Boolean))];
+    const slots = new Set();
+    for (const o of orders) {
+      String(o.slot || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .forEach((s) => slots.add(s));
+    }
+    const slotsArr = [...slots].sort();
+    const gid = first.challan_id != null ? String(first.challan_id) : `unknown-${groups.length}`;
+    groups.push({
+      group_key: gid,
+      challan_id: first.challan_id,
+      derived_status: deriveChallanStatusFromOrders(orders),
+      booking_names: bookingNames,
+      standard_hissa_count: std,
+      premium_hissa_count: prem,
+      waqf_hissa_count: waqf,
+      super_goat_hissa_count: sg,
+      premium_goat_hissa_count: pg,
+      goat_hissa_count: 0,
+      hissa_count: orders.length,
+      day: first.day,
+      slots: slotsArr,
+      slot: first.slot,
+      area: first.area,
+      address: first.address,
+      contacts,
+      alt_contacts: altContacts,
+      customer_ids: customerIds,
+      description: first.challan_description ?? null,
+      orders,
+    });
+  }
+  groups.sort((a, b) => {
+    const da = String(a.day || '');
+    const db = String(b.day || '');
+    if (da !== db) return da.localeCompare(db);
+    const na = Number(a.challan_id);
+    const nb = Number(b.challan_id);
+    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+    return String(a.challan_id ?? '').localeCompare(String(b.challan_id ?? ''));
+  });
+  return groups;
+}
+
 export default function OperationsRiders() {
   const { authFetch } = useAuth();
   const location = useLocation();
@@ -75,6 +321,7 @@ export default function OperationsRiders() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [dayFilter, setDayFilter] = useState('');
+  const [supervisorFilter, setSupervisorFilter] = useState('');
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
@@ -104,6 +351,11 @@ export default function OperationsRiders() {
   const [supDetail, setSupDetail] = useState(null);
   const [supDetailLoading, setSupDetailLoading] = useState(false);
   const [supervisorOptions, setSupervisorOptions] = useState([]);
+  const [editSupOpen, setEditSupOpen] = useState(false);
+  const [editSupSaving, setEditSupSaving] = useState(false);
+  const [editSupId, setEditSupId] = useState(null);
+  const [editSupForm, setEditSupForm] = useState({ supervisor_name: '', phone: '', user_id: '' });
+  const [editSupUserList, setEditSupUserList] = useState([]);
 
   const [form, setForm] = useState({
     rider_name: '',
@@ -113,6 +365,15 @@ export default function OperationsRiders() {
     number_plate: '',
     amount_per_delivery: '',
   });
+
+  const assignedOrderGroups = useMemo(() => {
+    try {
+      return groupRiderAssignedOrdersByChallan(ordersModal?.orders);
+    } catch (e) {
+      console.error('[OperationsRiders] group assigned orders', e);
+      return [];
+    }
+  }, [ordersModal?.orders]);
 
   const load = useCallback(async () => {
     setErr('');
@@ -212,13 +473,23 @@ export default function OperationsRiders() {
       list = list.filter((r) => (r.availability || 'Available') === statusFilter);
     }
 
+    if (supervisorFilter === '__unassigned__') {
+      list = list.filter((r) => normalizedSupervisorId(r) == null);
+    } else if (supervisorFilter) {
+      const want = Number(supervisorFilter);
+      if (Number.isFinite(want) && want > 0) {
+        list = list.filter((r) => normalizedSupervisorId(r) === want);
+      }
+    }
+
     return list;
-  }, [riders, search, statusFilter]);
+  }, [riders, search, statusFilter, supervisorFilter]);
 
   const resetFilters = () => {
     setSearch('');
     setStatusFilter('');
     setDayFilter('');
+    setSupervisorFilter('');
   };
 
   const patchRider = async (riderId, payload) => {
@@ -314,7 +585,7 @@ export default function OperationsRiders() {
   };
 
   const openOrders = async (rider) => {
-    setOrdersModal({ rider, orders: [] });
+    setOrdersModal({ rider, orders: [], loadError: null });
     setOrdersLoading(true);
     setErr('');
     try {
@@ -329,10 +600,13 @@ export default function OperationsRiders() {
 
       setOrdersModal({
         rider: data.rider || rider,
-        orders: data.orders || [],
+        orders: Array.isArray(data.orders) ? data.orders : [],
+        loadError: null,
       });
     } catch (e) {
-      setErr(e.message || 'Failed to load rider orders');
+      const msg = e.message || 'Failed to load rider orders';
+      setErr(msg);
+      setOrdersModal((prev) => (prev ? { ...prev, orders: [], loadError: msg } : prev));
     } finally {
       setOrdersLoading(false);
     }
@@ -379,6 +653,85 @@ export default function OperationsRiders() {
     }
   };
 
+  const openEditSupervisor = async (s, e) => {
+    e?.stopPropagation?.();
+    setErr('');
+    setEditSupId(s.supervisor_id);
+    setEditSupForm({
+      supervisor_name: s.supervisor_name || '',
+      phone: s.phone || '',
+      user_id: s.user_id != null ? String(s.user_id) : '',
+    });
+    setEditSupOpen(true);
+    try {
+      const res = await authFetch(
+        `${API_BASE}/operations/supervisors/user-candidates?for_supervisor_id=${encodeURIComponent(s.supervisor_id)}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setEditSupUserList(data.users || []);
+      else setEditSupUserList([]);
+    } catch {
+      setEditSupUserList([]);
+    }
+  };
+
+  const submitEditSupervisor = async (e) => {
+    e.preventDefault();
+    if (!editSupId) return;
+    const patchedId = editSupId;
+    setEditSupSaving(true);
+    setErr('');
+    try {
+      const res = await authFetch(`${API_BASE}/operations/supervisors/${patchedId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          supervisor_name: editSupForm.supervisor_name.trim(),
+          phone: editSupForm.phone.trim() || null,
+          user_id: Number(editSupForm.user_id),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Update failed');
+      setEditSupOpen(false);
+      setEditSupId(null);
+      setEditSupForm({ supervisor_name: '', phone: '', user_id: '' });
+      await loadSupervisors();
+      await load();
+      if (supDetailOpen && Number(supDetail?.supervisor?.supervisor_id) === Number(patchedId)) {
+        setSupDetailOpen(false);
+        setSupDetail(null);
+      }
+    } catch (e2) {
+      setErr(e2.message || 'Update failed');
+    } finally {
+      setEditSupSaving(false);
+    }
+  };
+
+  const deleteSupervisor = async (s, e) => {
+    e?.stopPropagation?.();
+    const label = `${s.supervisor_name || '—'} (${s.supervisor_code || s.supervisor_id})`;
+    const ok = window.confirm(
+      `Delete supervisor "${label}"?\n\nRiders assigned to this supervisor will be unassigned (supervisor cleared). This cannot be undone.`
+    );
+    if (!ok) return;
+    setErr('');
+    try {
+      const res = await authFetch(`${API_BASE}/operations/supervisors/${s.supervisor_id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Delete failed');
+      await loadSupervisors();
+      await load();
+      if (supDetailOpen && supDetail?.supervisor?.supervisor_id === s.supervisor_id) {
+        setSupDetailOpen(false);
+        setSupDetail(null);
+      }
+    } catch (e2) {
+      setErr(e2.message || 'Delete failed');
+    }
+  };
+
   const submitAddRider = async (e) => {
     e.preventDefault();
     setErr('');
@@ -416,6 +769,10 @@ export default function OperationsRiders() {
   return (
     <>
       <style>{`
+        .or-back-to-ops,
+        .or-back-to-ops:visited {
+          color: #000;
+        }
         @media (max-width: 767px) {
           .or-root { padding: 16px 12px 24px !important; overflow: auto !important; }
           .or-header { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; margin-bottom: 12px !important; }
@@ -464,6 +821,20 @@ export default function OperationsRiders() {
           }}
         >
           <div>
+            <Link
+              to="/operations"
+              className="or-back-to-ops"
+              style={{
+                display: 'inline-block',
+                marginBottom: '8px',
+                fontSize: '12px',
+                fontWeight: 600,
+                textDecoration: 'underline',
+                textUnderlineOffset: '3px',
+              }}
+            >
+              ← Operations modules
+            </Link>
             <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333', whiteSpace: 'nowrap' }}>
               Rider Management
             </h2>
@@ -607,6 +978,26 @@ export default function OperationsRiders() {
             </select>
           </div>
 
+          <div style={{ flex: '1 1 200px', minWidth: 160, maxWidth: 280 }}>
+            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>
+              Supervisor
+            </label>
+            <select
+              value={supervisorFilter}
+              onChange={(e) => setSupervisorFilter(e.target.value)}
+              style={{ ...inputStyle, padding: '6px 10px', fontSize: '11px' }}
+            >
+              <option value="">All supervisors</option>
+              <option value="__unassigned__">Unassigned</option>
+              {supervisorOptions.map((s) => (
+                <option key={s.supervisor_id} value={String(s.supervisor_id)}>
+                  {s.supervisor_name || '—'}
+                  {s.supervisor_code ? ` (${s.supervisor_code})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button
               type="button"
@@ -675,6 +1066,20 @@ export default function OperationsRiders() {
                   <option value="Day 1">Day 1</option>
                   <option value="Day 2">Day 2</option>
                   <option value="Day 3">Day 3</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Supervisor</label>
+                <select value={supervisorFilter} onChange={(e) => setSupervisorFilter(e.target.value)} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }}>
+                  <option value="">All supervisors</option>
+                  <option value="__unassigned__">Unassigned</option>
+                  {supervisorOptions.map((s) => (
+                    <option key={s.supervisor_id} value={String(s.supervisor_id)}>
+                      {s.supervisor_name || '—'}
+                      {s.supervisor_code ? ` (${s.supervisor_code})` : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -747,6 +1152,10 @@ export default function OperationsRiders() {
                             : '—'}
                         </span>
                       </p>
+                      <p style={{ margin: '6px 0 0', fontSize: '10px', color: '#999', lineHeight: 1.45 }}>
+                        Average delivery time:{' '}
+                        <span style={{ color: '#1565C0', fontWeight: 600 }}>{formatAvgDispatchToDeliver(r)}</span>
+                      </p>
                     </div>
                     {riderStatusBadge(r.availability)}
                   </div>
@@ -762,12 +1171,12 @@ export default function OperationsRiders() {
                     }}
                   >
                     <div>
-                      <div style={{ fontSize: '10px', color: '#888', marginBottom: '3px' }}>Delivered</div>
+                      <div style={{ fontSize: '10px', color: '#888', marginBottom: '3px' }}>Delivered hissa</div>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#333' }}>{r.deliveries_completed || 0}</div>
                     </div>
                     <div>
-                      <div style={{ fontSize: '10px', color: '#888', marginBottom: '3px' }}>Pending</div>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#333' }}>{r.pending_deliveries || 0}</div>
+                      <div style={{ fontSize: '10px', color: '#888', marginBottom: '3px' }}>Pending hissa</div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#333' }}>{r.pending_hissa_count ?? r.pending_deliveries ?? 0}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: '10px', color: '#888', marginBottom: '3px' }}>Per delivery</div>
@@ -883,8 +1292,8 @@ export default function OperationsRiders() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
                   <thead>
                     <tr style={{ background: '#FAFAFA' }}>
-                      {['Code', 'Name', 'Phone', 'User', 'Riders', ''].map((h) => (
-                        <th key={h} style={{ textAlign: 'left', padding: '10px', borderBottom: '1px solid #eee', color: '#555', fontWeight: 600 }}>{h}</th>
+                      {['Code', 'Name', 'Phone', 'User', 'Riders', 'Actions'].map((h) => (
+                        <th key={h} style={{ textAlign: h === 'Actions' ? 'right' : 'left', padding: '10px', borderBottom: '1px solid #eee', color: '#555', fontWeight: 600 }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -909,7 +1318,61 @@ export default function OperationsRiders() {
                           <td style={{ padding: '10px' }}>{s.phone || '—'}</td>
                           <td style={{ padding: '10px' }}>{s.username || s.email || '—'}</td>
                           <td style={{ padding: '10px', fontWeight: 600 }}>{s.rider_count ?? 0}</td>
-                          <td style={{ padding: '10px', color: '#FF5722', fontWeight: 600 }}>View</td>
+                          <td
+                            style={{ padding: '10px', textAlign: 'right', whiteSpace: 'nowrap' }}
+                            onClick={(ev) => ev.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => openSupervisorDetail(s)}
+                              style={{
+                                marginRight: 6,
+                                padding: '4px 10px',
+                                fontSize: '10px',
+                                fontWeight: 600,
+                                border: '1px solid #e0e0e0',
+                                borderRadius: '6px',
+                                background: '#fff',
+                                color: '#FF5722',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(ev) => openEditSupervisor(s, ev)}
+                              style={{
+                                marginRight: 6,
+                                padding: '4px 10px',
+                                fontSize: '10px',
+                                fontWeight: 600,
+                                border: '1px solid #e0e0e0',
+                                borderRadius: '6px',
+                                background: '#fff',
+                                color: '#333',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(ev) => deleteSupervisor(s, ev)}
+                              style={{
+                                padding: '4px 10px',
+                                fontSize: '10px',
+                                fontWeight: 600,
+                                border: '1px solid #FFCDD2',
+                                borderRadius: '6px',
+                                background: '#FFEBEE',
+                                color: '#C62828',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </td>
                         </tr>
                       ))
                     )}
@@ -921,6 +1384,107 @@ export default function OperationsRiders() {
         )}
 
       </div>
+
+      {editSupOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1040,
+            padding: '16px',
+          }}
+          onClick={() => { if (!editSupSaving) { setEditSupOpen(false); setEditSupId(null); } }}
+          role="presentation"
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '16px',
+              border: '1px solid #eee',
+              padding: '18px',
+              width: '100%',
+              maxWidth: '480px',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.15)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Edit supervisor"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#333' }}>Edit supervisor</h3>
+              <button
+                type="button"
+                disabled={editSupSaving}
+                onClick={() => { setEditSupOpen(false); setEditSupId(null); }}
+                style={{ background: 'none', border: 'none', fontSize: '22px', color: '#888', cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={submitEditSupervisor}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Supervisor name</label>
+                  <input
+                    required
+                    value={editSupForm.supervisor_name}
+                    onChange={(e) => setEditSupForm((p) => ({ ...p, supervisor_name: e.target.value }))}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Phone</label>
+                  <input
+                    value={editSupForm.phone}
+                    onChange={(e) => setEditSupForm((p) => ({ ...p, phone: e.target.value }))}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>User account</label>
+                  <select
+                    required
+                    value={editSupForm.user_id}
+                    onChange={(e) => setEditSupForm((p) => ({ ...p, user_id: e.target.value }))}
+                    style={inputStyle}
+                  >
+                    <option value="">Select user…</option>
+                    {editSupUserList.map((u) => (
+                      <option key={u.user_id} value={String(u.user_id)}>
+                        {u.username} {u.email ? `(${u.email})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p style={{ margin: '6px 0 0', fontSize: '10px', color: '#999' }}>
+                    Users already linked to another supervisor are hidden. Current login stays available.
+                  </p>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+                <button
+                  type="button"
+                  disabled={editSupSaving}
+                  onClick={() => { setEditSupOpen(false); setEditSupId(null); }}
+                  style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '12px', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSupSaving}
+                  style={{ padding: '10px 14px', borderRadius: '8px', border: 'none', background: '#FF5722', color: '#fff', fontSize: '12px', fontWeight: '600', cursor: 'pointer', opacity: editSupSaving ? 0.7 : 1 }}
+                >
+                  {editSupSaving ? 'Saving…' : 'Save changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {addSupOpen && (
         <div
@@ -1390,7 +1954,7 @@ export default function OperationsRiders() {
               border: '1px solid #eee',
               padding: '18px',
               width: '100%',
-              maxWidth: '900px',
+              maxWidth: '1200px',
               maxHeight: '88vh',
               overflow: 'auto',
               boxShadow: '0 12px 40px rgba(0,0,0,0.15)',
@@ -1419,34 +1983,75 @@ export default function OperationsRiders() {
 
             {ordersLoading ? (
               <div style={{ padding: '24px', textAlign: 'center', color: '#666', fontSize: '12px' }}>Loading…</div>
-            ) : ordersModal.orders?.length ? (
+            ) : ordersModal.loadError ? (
+              <div style={{ padding: '16px', background: '#FFF5F2', color: '#C62828', borderRadius: '8px', fontSize: '12px', fontWeight: '600' }}>
+                {ordersModal.loadError}
+              </div>
+            ) : assignedOrderGroups.length ? (
               <div style={{ border: '1px solid #ececec', borderRadius: '10px', overflow: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-                  <thead>
+                <table className="ops-data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', tableLayout: 'auto' }}>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                     <tr style={{ background: '#fafafa' }}>
-                      {['Challan', 'Day', 'Slot', 'Address', 'Order', 'Contact', 'Shareholder', 'Type / Hissa', 'Status'].map((h) => (
-                        <th key={h} style={{ textAlign: 'left', padding: '10px 8px', borderBottom: '1px solid #e0e0e0', color: '#555', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                      {['No.', 'Status', 'Booking Name', 'Standard', 'Premium', 'Waqf', 'Super Goat', 'Premium Goat', 'Total Hissa', 'Day / Slot', 'Area', 'Contact', 'Address', 'Customer ID'].map((h) => (
+                        <th key={h} style={{ textAlign: 'left', padding: '10px 10px', borderBottom: '1px solid #e0e0e0', color: '#555', fontWeight: '600', whiteSpace: 'nowrap', fontSize: '10px' }}>
                           {h}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {ordersModal.orders.map((o, idx) => (
-                      <tr key={`${o.challan_id}-${o.order_id}-${idx}`} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                        <td style={{ padding: '9px 8px' }}>#{o.challan_id}</td>
-                        <td style={{ padding: '9px 8px' }}>{o.day || '—'}</td>
-                        <td style={{ padding: '9px 8px' }}>{o.slot || '—'}</td>
-                        <td style={{ padding: '9px 8px', maxWidth: '220px' }}>{o.address || '—'}</td>
-                        <td style={{ padding: '9px 8px' }}>{o.order_id}</td>
-                        <td style={{ padding: '9px 8px' }}>{o.contact || o.alt_contact || '—'}</td>
-                        <td style={{ padding: '9px 8px' }}>{o.shareholder_name || o.booking_name || '—'}</td>
-                        <td style={{ padding: '9px 8px' }}>
-                          {o.order_type || '—'} / {o.hissa_number || '—'}
-                        </td>
-                        <td style={{ padding: '9px 8px' }}>{o.delivery_status || 'Pending'}</td>
-                      </tr>
-                    ))}
+                    {assignedOrderGroups.map((g, idx) => {
+                      const st = g.derived_status || 'Pending';
+                      const rowIsAffluent = isAffluentOrder(g);
+                      let rowSuperGoat = Number(g.super_goat_hissa_count ?? 0);
+                      let rowPremiumGoat = Number(g.premium_goat_hissa_count ?? 0);
+                      const rowLegacyGoat = Number(g.goat_hissa_count ?? 0);
+                      if (rowSuperGoat === 0 && rowPremiumGoat === 0 && rowLegacyGoat > 0) rowSuperGoat = rowLegacyGoat;
+                      return (
+                        <tr
+                          key={g.group_key || g.challan_id}
+                          style={{
+                            borderBottom: '1px solid #f3f3f3',
+                            background: rowIsAffluent ? '#FFF7F7' : idx % 2 === 0 ? '#fff' : '#FAFAFA',
+                            borderLeft: rowIsAffluent ? '3px solid #D32F2F' : '3px solid transparent',
+                          }}
+                        >
+                          <td style={{ padding: '9px 10px' }}>
+                            <NoBadge value={g.challan_id} />
+                          </td>
+                          <td style={{ padding: '9px 10px' }}>
+                            <ChallanDeliveryStatusBadge status={st} />
+                          </td>
+                          <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top' }}>
+                            {(g.booking_names || []).filter(Boolean).map(String).join(', ') || '—'}
+                          </td>
+                          <td style={{ padding: '9px 10px', color: '#555' }}>{g.standard_hissa_count || 0}</td>
+                          <td style={{ padding: '9px 10px', color: '#555' }}>{g.premium_hissa_count || 0}</td>
+                          <td style={{ padding: '9px 10px', color: '#555' }}>{g.waqf_hissa_count || 0}</td>
+                          <td style={{ padding: '9px 10px', color: '#555' }}>{rowSuperGoat}</td>
+                          <td style={{ padding: '9px 10px', color: '#555' }}>{rowPremiumGoat}</td>
+                          <td style={{ padding: '9px 10px', color: '#555', fontWeight: '600' }}>{Number(g.hissa_count || 0)}</td>
+                          <td style={{ padding: '9px 10px', color: '#555', whiteSpace: 'nowrap' }}>
+                            <div>{g.day != null && g.day !== '' ? String(g.day) : '—'}</div>
+                            {Array.isArray(g.slots) && g.slots.length > 0 && (
+                              <div style={{ fontSize: '9px', color: '#aaa' }}>{g.slots.map(String).join(', ')}</div>
+                            )}
+                          </td>
+                          <td style={{ padding: '9px 10px', color: '#555', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top' }}>
+                            {g.area != null && g.area !== '' ? String(g.area) : '—'}
+                          </td>
+                          <td style={{ padding: '9px 10px', color: '#555' }}>
+                            <MultiLineCell values={[g.contacts || [], g.alt_contacts || []]} />
+                          </td>
+                          <td style={{ padding: '9px 10px', color: '#555', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top' }}>
+                            <div>{g.address != null && g.address !== '' ? String(g.address) : '—'}</div>
+                          </td>
+                          <td style={{ padding: '9px 10px', color: '#777', fontWeight: '500' }}>
+                            <MultiLineCell values={g.customer_ids || []} />
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -5,7 +5,10 @@ import { writeAuditLog } from "../utils/auditLog.js";
 const ALLOWED_STATUSES = ["Pending", "Rider Assigned", "Dispatched", "Delivered", "Returned to Farm"];
 const REGENERATE_ALLOWED_EMAIL = "hanzalamawahab@gmail.com";
 const OPERATIONS_YEAR = 2026;
-const ALLOWED_ORDER_TYPE_SQL = "'hissa - standard', 'hissa standard', 'hissa premium', 'hissa - premium', 'hissa - waqf', 'hissa waqf', 'goat(hissa)', 'goat (hissa)', 'goat hissa'";
+const ALLOWED_ORDER_TYPE_SQL =
+  "'hissa - standard', 'hissa standard', 'hissa premium', 'hissa - premium', 'hissa - waqf', 'hissa waqf', " +
+  "'super goat(hissa)', 'super goat (hissa)', 'premium goat(hissa)', 'premium goat (hissa)', " +
+  "'goat(hissa)', 'goat (hissa)', 'goat hissa'";
 const allowedOrderType = (alias = "o") => `LOWER(TRIM(COALESCE(${alias}.order_type, ''))) IN (${ALLOWED_ORDER_TYPE_SQL})`;
 const nonWaqfOrder = allowedOrderType;
 
@@ -42,8 +45,10 @@ function normalizeDay(d) {
 }
 
 function classifyHissa(orderType) {
-  const t = String(orderType || "").trim().toLowerCase().replace(/\s+/g, " " );
-  if (t === "goat(hissa)" || t === "goat (hissa)") return "goat";
+  const t = String(orderType || "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (t === "super goat(hissa)" || t === "super goat (hissa)") return "super_goat";
+  if (t === "premium goat(hissa)" || t === "premium goat (hissa)") return "premium_goat";
+  if (t === "goat(hissa)" || t === "goat (hissa)") return "super_goat";
   if (t === "hissa - waqf" || t === "hissa waqf") return "waqf";
   if (t === "hissa premium" || t === "hissa - premium") return "premium";
   if (t === "hissa - standard" || t === "hissa standard") return "standard";
@@ -53,12 +58,16 @@ function classifyHissa(orderType) {
 const GSEP = "\x1F";
 
 function groupKeyForOrder(row) {
-  // Waqf challans are grouped by customer id only. Other order types keep the existing day + address grouping.
+  // Non-waqf: day + slot + address (same address, different slot → separate challans).
+  // Waqf: customer (or address fallback) + day only — same customer splits per day; slots on that day share one waqf challan.
+  const dayPart = normalizeDay(row.day);
+  const slotPart = normalizeSlot(row.slot);
+  const addrPart = normalizeAddr(row.address);
   if (classifyHissa(row.order_type) === "waqf") {
     const customerId = String(row.customer_id || "").trim().toLowerCase();
-    return `waqf${GSEP}${customerId || normalizeAddr(row.address)}`;
+    return `waqf${GSEP}${customerId || addrPart}${GSEP}${dayPart}`;
   }
-  return `${normalizeDay(row.day)}${GSEP}${normalizeAddr(row.address)}`;
+  return `${dayPart}${GSEP}${slotPart}${GSEP}${addrPart}`;
 }
 
 function uniqueRiderIdsFromOrders(orders = []) {
@@ -158,6 +167,34 @@ async function getSupervisorRecordForUser(db, userId) {
   return rows[0] || null;
 }
 
+/** Full supervisor row + login identity for audit_logs (old/new snapshots). */
+async function fetchSupervisorAuditSnapshot(db, supervisorId) {
+  const sid = Number(supervisorId);
+  if (!Number.isFinite(sid) || sid <= 0) return null;
+  const [rows] = await db.execute(
+    `SELECT s.supervisor_id, s.supervisor_code, s.supervisor_name, s.phone, s.user_id,
+            u.username AS login_username, u.email AS login_email
+     FROM rider_supervisors s
+     INNER JOIN users u ON u.user_id = s.user_id
+     WHERE s.supervisor_id = ?`,
+    [sid]
+  );
+  if (!rows.length) return null;
+  const r = rows[0];
+  const code = r.supervisor_code != null ? String(r.supervisor_code).trim() : "";
+  const name = r.supervisor_name != null ? String(r.supervisor_name).trim() : "";
+  return {
+    supervisor_id: r.supervisor_id,
+    supervisor_code: code,
+    supervisor_name: name,
+    phone: r.phone,
+    user_id: r.user_id,
+    login_username: r.login_username,
+    login_email: r.login_email,
+    label: code && name ? `${code} — ${name}` : (name || code || `Supervisor #${r.supervisor_id}`),
+  };
+}
+
 /** If user only has rider-supervisor ops access, challan must include an order rider under that supervisor. */
 async function assertChallanVisibleToScopedSupervisor(db, userId, flags, challanId) {
   const broad =
@@ -191,10 +228,51 @@ async function nextSupervisorCode(db) {
   return `SUP-${String(n).padStart(4, "0")}`;
 }
 
+/** One row per order (hissa line); updated when challan bulk status → Dispatched / Delivered. */
+async function applyRiderDeliveryTimingForChallan(db, challanId, deliveryStatus) {
+  if (deliveryStatus !== "Dispatched" && deliveryStatus !== "Delivered") return;
+  const cid = Number(challanId);
+  if (!Number.isFinite(cid) || cid <= 0) return;
+  const [orderRows] = await db.execute(
+    `SELECT o.order_id, o.rider_id
+     FROM orders o
+     INNER JOIN challan_orders co ON co.order_id = o.order_id
+     WHERE co.challan_id = ? AND o.rider_id IS NOT NULL AND ${nonWaqfOrder("o")}`,
+    [cid]
+  );
+  for (const row of orderRows) {
+    const orderId = row.order_id != null ? String(row.order_id).trim() : "";
+    const riderId = Number(row.rider_id);
+    if (!orderId || !Number.isFinite(riderId) || riderId <= 0) continue;
+    if (deliveryStatus === "Dispatched") {
+      await db.execute(
+        `INSERT INTO rider_delivery_timing (order_id, rider_id, challan_id, dispatched_at)
+         VALUES (?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE
+           rider_id = VALUES(rider_id),
+           challan_id = VALUES(challan_id),
+           dispatched_at = NOW()`,
+        [orderId, riderId, cid]
+      );
+    } else if (deliveryStatus === "Delivered") {
+      await db.execute(
+        `INSERT INTO rider_delivery_timing (order_id, rider_id, challan_id, delivered_at)
+         VALUES (?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE
+           rider_id = VALUES(rider_id),
+           challan_id = VALUES(challan_id),
+           delivered_at = NOW()`,
+        [orderId, riderId, cid]
+      );
+    }
+  }
+}
+
 async function buildDeliveriesGroupsForBatch(db, batchId, dayFilter, supervisorId = null) {
   let challanSql = `SELECT c.challan_id, c.qr_token, c.booking_name, c.address, c.area,
                 c.description, c.slot, c.day, c.challan_date,
-                c.total_hissa, c.total_premium_hissa, c.total_standard_hissa, c.total_waqf_hissa, c.total_goat_hissa,
+                c.total_hissa, c.total_premium_hissa, c.total_standard_hissa, c.total_waqf_hissa,
+                c.total_super_goat_hissa, c.total_premium_goat_hissa, c.total_goat_hissa,
                 cb.label AS batch_label
          FROM challan c
          LEFT JOIN challan_batch cb ON cb.batch_id = c.batch_id
@@ -269,6 +347,12 @@ async function buildDeliveriesGroupsForBatch(db, batchId, dayFilter, supervisorI
     else if (anyDispatched) derivedStatus = "Dispatched";
     else if (anyRiderAssigned) derivedStatus = "Rider Assigned";
 
+    let superGoat = Number(c.total_super_goat_hissa ?? 0);
+    let premiumGoat = Number(c.total_premium_goat_hissa ?? 0);
+    const legacyGoat = Number(c.total_goat_hissa ?? 0);
+    if (superGoat === 0 && premiumGoat === 0 && legacyGoat > 0) superGoat = legacyGoat;
+    const goatSum = superGoat + premiumGoat;
+
     return {
       group_key: `${c.challan_id}`,
       challan_id: c.challan_id,
@@ -286,7 +370,9 @@ async function buildDeliveriesGroupsForBatch(db, batchId, dayFilter, supervisorI
       standard_hissa_count: Number(c.total_standard_hissa || 0),
       premium_hissa_count: Number(c.total_premium_hissa || 0),
       waqf_hissa_count: Number(c.total_waqf_hissa || 0),
-      goat_hissa_count: Number(c.total_goat_hissa || 0),
+      super_goat_hissa_count: superGoat,
+      premium_goat_hissa_count: premiumGoat,
+      goat_hissa_count: goatSum,
       customer_ids: customerIds,
       booking_names: bookingNames,
       contacts,
@@ -613,6 +699,11 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
          WHERE co.challan_id = ?`,
         [delivery_status, id]
       );
+      try {
+        await applyRiderDeliveryTimingForChallan(db, id, delivery_status);
+      } catch (timingErr) {
+        logError("OPERATIONS", "rider_delivery_timing (challan status)", timingErr);
+      }
       await writeAuditLog(db, {
         user_id: req.userId, action: "CHALLAN_STATUS_UPDATE",
         entity_type: "challan", entity_id: String(id),
@@ -740,14 +831,16 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
         for (const [, list] of grouped.entries()) {
           const first = list[0];
           const qrToken = crypto.randomBytes(24).toString("hex");
-          let tp = 0, ts = 0, tw = 0, tg = 0;
+          let tp = 0, ts = 0, tw = 0, tsg = 0, tpg = 0;
           for (const row of list) {
             const c = classifyHissa(row.order_type);
             if (c === "premium") tp++;
             else if (c === "standard") ts++;
             else if (c === "waqf") tw++;
-            else if (c === "goat") tg++;
+            else if (c === "super_goat") tsg++;
+            else if (c === "premium_goat") tpg++;
           }
+          const tg = tsg + tpg;
           const totalHissa = tp + ts + tw + tg;
           const bookingNames = [...new Set(list.map((x) => x.booking_name).filter(Boolean))];
           const descParts = [...new Set(list.map((x) => x.description).filter(Boolean))];
@@ -756,9 +849,10 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
           const [ins] = await conn.execute(
             `INSERT INTO challan (
                batch_id, qr_token, booking_name, address, area, description, slot, day,
-               total_premium_hissa, total_standard_hissa, total_waqf_hissa, total_goat_hissa, total_hissa,
+               total_premium_hissa, total_standard_hissa, total_waqf_hissa,
+               total_super_goat_hissa, total_premium_goat_hissa, total_goat_hissa, total_hissa,
                challan_date
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               batchId, qrToken,
               bookingNames.join(", ") || null,
@@ -767,7 +861,7 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
               descParts.join("\n") || null,
               allSlots.length ? allSlots.join(", ") : null,
               normalizeDay(first.day) === "_none_" ? null : first.day,
-              tp, ts, tw, tg, totalHissa, challanDate
+              tp, ts, tw, tsg, tpg, tg, totalHissa, challanDate
             ]
           );
           const challanId = ins.insertId;
@@ -975,13 +1069,27 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
     try {
       const flags = await assertSub(req, res, (f) => f.operation_rider_management);
       if (!flags) return;
-      const [users] = await db.execute(
-        `SELECT u.user_id, u.username, u.email, u.first_name, u.last_name
-         FROM users u
-         LEFT JOIN rider_supervisors rs ON rs.user_id = u.user_id
-         WHERE rs.supervisor_id IS NULL AND (u.status = 'active' OR u.status IS NULL)
-         ORDER BY u.username`
-      );
+      const forSidRaw = req.query.for_supervisor_id;
+      const forSid =
+        forSidRaw != null && String(forSidRaw).trim() !== ""
+          ? Number(forSidRaw)
+          : null;
+      const includeCurrent = Number.isFinite(forSid) && forSid > 0;
+
+      const sql = includeCurrent
+        ? `SELECT u.user_id, u.username, u.email, u.first_name, u.last_name
+           FROM users u
+           LEFT JOIN rider_supervisors rs ON rs.user_id = u.user_id
+           WHERE (u.status = 'active' OR u.status IS NULL)
+             AND (rs.supervisor_id IS NULL OR rs.supervisor_id = ?)
+           ORDER BY u.username`
+        : `SELECT u.user_id, u.username, u.email, u.first_name, u.last_name
+           FROM users u
+           LEFT JOIN rider_supervisors rs ON rs.user_id = u.user_id
+           WHERE rs.supervisor_id IS NULL AND (u.status = 'active' OR u.status IS NULL)
+           ORDER BY u.username`;
+      const params = includeCurrent ? [forSid] : [];
+      const [users] = await db.execute(sql, params);
       res.json({ users });
     } catch (error) {
       logError("OPERATIONS", "Supervisor user candidates error", error);
@@ -1040,6 +1148,101 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       res.status(201).json({ supervisor_id: ins.insertId, supervisor_code: code });
     } catch (error) {
       logError("OPERATIONS", "Create supervisor error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.patch("/api/operations/supervisors/:id", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_rider_management);
+      if (!flags) return;
+      const sid = Number(req.params.id);
+      if (!Number.isFinite(sid) || sid <= 0) return res.status(400).json({ message: "Invalid supervisor id" });
+
+      const oldSnap = await fetchSupervisorAuditSnapshot(db, sid);
+      if (!oldSnap) return res.status(404).json({ message: "Supervisor not found" });
+
+      const { supervisor_name, phone, user_id } = req.body || {};
+      const updates = [];
+      const params = [];
+
+      if (supervisor_name !== undefined) {
+        if (typeof supervisor_name !== "string" || !String(supervisor_name).trim()) {
+          return res.status(400).json({ message: "supervisor_name cannot be empty" });
+        }
+        updates.push("supervisor_name = ?");
+        params.push(String(supervisor_name).trim());
+      }
+      if (phone !== undefined) {
+        const p = phone === null || phone === "" ? null : String(phone).trim();
+        updates.push("phone = ?");
+        params.push(p);
+      }
+      if (user_id !== undefined) {
+        const uid = Number(user_id);
+        if (!Number.isFinite(uid) || uid <= 0) return res.status(400).json({ message: "Invalid user_id" });
+        const [taken] = await db.execute(
+          `SELECT supervisor_id FROM rider_supervisors WHERE user_id = ? AND supervisor_id != ?`,
+          [uid, sid]
+        );
+        if (taken.length > 0) {
+          return res.status(400).json({ message: "User is already assigned to another supervisor" });
+        }
+        updates.push("user_id = ?");
+        params.push(uid);
+      }
+
+      if (updates.length === 0) return res.status(400).json({ message: "No fields to update" });
+
+      params.push(sid);
+      await db.execute(`UPDATE rider_supervisors SET ${updates.join(", ")} WHERE supervisor_id = ?`, params);
+
+      const newSnap = await fetchSupervisorAuditSnapshot(db, sid);
+
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "SUPERVISOR_UPDATE",
+        entity_type: "rider_supervisor",
+        entity_id: String(sid),
+        old_values: oldSnap,
+        new_values: newSnap,
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      emitOperationsChanged(io, "supervisors:changed", { action: "updated", supervisor_id: sid });
+      res.json({ ok: true, supervisor: newSnap });
+    } catch (error) {
+      logError("OPERATIONS", "Update supervisor error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.delete("/api/operations/supervisors/:id", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) => f.operation_rider_management);
+      if (!flags) return;
+      const sid = Number(req.params.id);
+      if (!Number.isFinite(sid) || sid <= 0) return res.status(400).json({ message: "Invalid supervisor id" });
+
+      const oldSnap = await fetchSupervisorAuditSnapshot(db, sid);
+      if (!oldSnap) return res.status(404).json({ message: "Supervisor not found" });
+
+      await db.execute(`DELETE FROM rider_supervisors WHERE supervisor_id = ?`, [sid]);
+
+      await writeAuditLog(db, {
+        user_id: req.userId,
+        action: "SUPERVISOR_DELETE",
+        entity_type: "rider_supervisor",
+        entity_id: String(sid),
+        old_values: oldSnap,
+        new_values: { deleted: true },
+        ip_address: req.ip,
+        user_agent: req.get("user-agent"),
+      });
+      emitOperationsChanged(io, "supervisors:changed", { action: "deleted", supervisor_id: sid });
+      res.json({ ok: true });
+    } catch (error) {
+      logError("OPERATIONS", "Delete supervisor error", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -1114,37 +1317,75 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
          LEFT JOIN rider_supervisors rs ON rs.supervisor_id = r.supervisor_id
          WHERE r.status = 'active' OR r.status IS NULL ORDER BY r.rider_name`
       );
-      const challanParams = [];
-      let challanWhere = `WHERE o.rider_id IS NOT NULL AND o.booking_date IS NOT NULL AND YEAR(o.booking_date) = ${OPERATIONS_YEAR} AND ${nonWaqfOrder('o')}`;
-      if (day) { challanWhere += ` AND LOWER(TRIM(COALESCE(c.day, ''))) = LOWER(TRIM(?))`; challanParams.push(day); }
-      const [challanStats] = await db.execute(
-        `SELECT o.rider_id,
-                COUNT(DISTINCT c.challan_id) AS challan_count,
-                SUM(o.delivery_status = 'Delivered') AS delivered_hissa_count,
-                COUNT(o.order_id) AS total_assigned_hissa
-         FROM challan c
-         INNER JOIN challan_orders co ON co.challan_id = c.challan_id
-         INNER JOIN orders o ON o.order_id = co.order_id
-         ${challanWhere}
-         GROUP BY o.rider_id`,
-        challanParams
-      );
+      let batchId = req.query.batch_id ? Number(req.query.batch_id) : null;
+      if (!batchId) batchId = await resolveLatestBatchId(db);
+      let challanStats = [];
+      if (batchId) {
+        const challanParams = [batchId];
+        let challanWhere = `WHERE o.rider_id IS NOT NULL AND c.batch_id = ? AND COALESCE(c.total_hissa, 0) > 0 AND ${nonWaqfOrder("o")}`;
+        if (day) {
+          challanWhere += ` AND LOWER(TRIM(COALESCE(c.day, ''))) = LOWER(TRIM(?))`;
+          challanParams.push(day);
+        }
+        const [rows] = await db.execute(
+          `SELECT o.rider_id,
+                  COUNT(DISTINCT c.challan_id) AS challan_count,
+                  SUM(o.delivery_status = 'Delivered') AS delivered_hissa_count,
+                  COUNT(o.order_id) - SUM(o.delivery_status = 'Delivered') AS pending_hissa_count,
+                  COUNT(o.order_id) AS total_assigned_hissa
+           FROM challan c
+           INNER JOIN challan_orders co ON co.challan_id = c.challan_id
+           INNER JOIN orders o ON o.order_id = co.order_id
+           ${challanWhere}
+           GROUP BY o.rider_id`,
+          challanParams
+        );
+        challanStats = rows;
+      }
       const statsMap = new Map();
       for (const row of challanStats) statsMap.set(Number(row.rider_id), row);
+
+      let timingMap = new Map();
+      try {
+        const [timingRows] = await db.execute(
+          `SELECT rider_id,
+                  COALESCE(SUM(
+                    CASE
+                      WHEN dispatched_at IS NOT NULL AND delivered_at IS NOT NULL
+                      THEN TIMESTAMPDIFF(SECOND, dispatched_at, delivered_at)
+                      ELSE 0
+                    END
+                  ), 0) AS timing_sum_seconds
+           FROM rider_delivery_timing
+           GROUP BY rider_id`
+        );
+        for (const tr of timingRows || []) timingMap.set(Number(tr.rider_id), Number(tr.timing_sum_seconds || 0));
+      } catch (timingAggErr) {
+        logError("OPERATIONS", "rider_delivery_timing aggregate (run migrate_rider_delivery_timing.sql?)", timingAggErr);
+      }
+
       const items = riders.map((r) => {
         const s = statsMap.get(Number(r.rider_id)) || {};
         const amountPerDelivery = Number(r.amount_per_delivery || 0);
         const deliveredCount = Number(s.delivered_hissa_count || 0);
         const totalAssigned = Number(s.total_assigned_hissa || 0);
+        const pendingHissa = Number(s.pending_hissa_count ?? Math.max(0, totalAssigned - deliveredCount));
         const totalPaid = Number(r.total_paid || 0);
         const totalAmountMade = deliveredCount * amountPerDelivery;
+        const timingSumSec = timingMap.get(Number(r.rider_id)) || 0;
+        const avgDispatchToDeliverSec =
+          deliveredCount > 0 && timingSumSec > 0 ? timingSumSec / deliveredCount : null;
         return {
           ...r,
           deliveries_completed: deliveredCount,
+          pending_hissa_count: pendingHissa,
           total_assigned_hissa: totalAssigned,
           challan_count: Number(s.challan_count || 0),
           total_amount_made: Number(totalAmountMade.toFixed(2)),
           balance_due: Number((totalAmountMade - totalPaid).toFixed(2)),
+          delivery_timing_sum_seconds: timingSumSec,
+          avg_dispatch_to_deliver_seconds:
+            avgDispatchToDeliverSec != null ? Math.round(avgDispatchToDeliverSec * 10) / 10 : null,
         };
       });
       res.json({ riders: items });
@@ -1168,15 +1409,24 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
         [riderId]
       );
       if (rv.length === 0) return res.status(404).json({ message: "Rider not found" });
-      const params = [riderId];
+      let batchId = req.query.batch_id ? Number(req.query.batch_id) : null;
+      if (!batchId) batchId = await resolveLatestBatchId(db);
+      if (!batchId) return res.json({ rider: rv[0], orders: [] });
+
+      const params = [riderId, batchId];
       let sql = `SELECT c.challan_id, c.qr_token, c.day, c.slot, c.address, c.area,
+                        c.description AS challan_description,
                         o.order_id, o.booking_name, o.shareholder_name, o.contact, o.alt_contact,
+                        o.customer_id, o.description,
                         o.order_type, o.cow_number, o.hissa_number, o.delivery_status
                  FROM challan c
                  INNER JOIN challan_orders co ON co.challan_id = c.challan_id
                  INNER JOIN orders o ON o.order_id = co.order_id
-                 WHERE o.rider_id = ? AND o.booking_date IS NOT NULL AND YEAR(o.booking_date) = ${OPERATIONS_YEAR} AND ${nonWaqfOrder('o')}`;
-      if (day) { sql += ` AND LOWER(TRIM(COALESCE(c.day, ''))) = LOWER(TRIM(?))`; params.push(day); }
+                 WHERE o.rider_id = ? AND c.batch_id = ? AND COALESCE(c.total_hissa, 0) > 0 AND ${nonWaqfOrder("o")}`;
+      if (day) {
+        sql += ` AND LOWER(TRIM(COALESCE(c.day, ''))) = LOWER(TRIM(?))`;
+        params.push(day);
+      }
       sql += ` ORDER BY c.day, c.slot, c.challan_id, o.order_id`;
       const [rows] = await db.execute(sql, params);
       res.json({ rider: rv[0], orders: rows });

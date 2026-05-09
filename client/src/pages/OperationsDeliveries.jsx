@@ -3,24 +3,30 @@ import { useSearchParams } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useAuth } from '../context/AuthContext';
 import SharedChallanModal from '../components/SharedChallanModal';
+import SearchableRiderFilter from '../components/SearchableRiderFilter';
 import { API_BASE } from '../config/api';
 import { getOperationsSocket } from '../utils/operationsSocket';
 
 const STATUSES = ['Pending', 'Rider Assigned', 'Dispatched', 'Delivered', 'Returned to Farm'];
 
-const ALLOWED_ORDER_TYPES = ['Hissa - Standard', 'Hissa Premium', 'Hissa - Waqf', 'Goat(Hissa)'];
+const GOAT_HISSA_SUPER = 'Super Goat(Hissa)';
+const GOAT_HISSA_PREMIUM = 'Premium Goat(Hissa)';
+const ALLOWED_ORDER_TYPES = ['Hissa - Standard', 'Hissa Premium', 'Hissa - Waqf', GOAT_HISSA_SUPER, GOAT_HISSA_PREMIUM];
 const ORDER_TYPE_FILTERS = [
   { value: 'Hissa - Standard', label: 'Hissa Standard' },
   { value: 'Hissa Premium', label: 'Premium' },
   { value: 'Hissa - Waqf', label: 'Waqf' },
-  { value: 'Goat(Hissa)', label: 'Goat' },
+  { value: GOAT_HISSA_SUPER, label: 'Super Goat' },
+  { value: GOAT_HISSA_PREMIUM, label: 'Premium Goat' },
 ];
 function normalizeOrderType(value) {
   const lower = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
   if (lower === 'hissa - standard' || lower === 'hissa standard') return 'Hissa - Standard';
   if (lower === 'hissa premium' || lower === 'hissa - premium') return 'Hissa Premium';
   if (lower === 'hissa - waqf' || lower === 'hissa waqf') return 'Hissa - Waqf';
-  if (lower === 'goat(hissa)' || lower === 'goat (hissa)' || lower === 'goat hissa') return 'Goat(Hissa)';
+  if (lower === 'super goat(hissa)' || lower === 'super goat (hissa)') return GOAT_HISSA_SUPER;
+  if (lower === 'premium goat(hissa)' || lower === 'premium goat (hissa)') return GOAT_HISSA_PREMIUM;
+  if (lower === 'goat(hissa)' || lower === 'goat (hissa)' || lower === 'goat hissa') return GOAT_HISSA_SUPER;
   return '';
 }
 function groupMatchesOrderType(g, filterOrderType) {
@@ -30,13 +36,21 @@ function groupMatchesOrderType(g, filterOrderType) {
 }
 
 function formatTotalHissa(total, opts = {}) {
-  const premium = Number(opts.premium || 0), standard = Number(opts.standard || 0), goat = Number(opts.goat || 0);
-  const cleanTotal = Number(total ?? (premium + standard + goat));
+  const premium = Number(opts.premium || 0);
+  const standard = Number(opts.standard || 0);
+  const waqf = Number(opts.waqf || 0);
+  let superGoat = Number(opts.superGoat ?? opts.super_goat ?? 0);
+  let premiumGoat = Number(opts.premiumGoat ?? opts.premium_goat ?? 0);
+  const legacyGoat = Number(opts.goat || 0);
+  if (superGoat === 0 && premiumGoat === 0 && legacyGoat > 0) superGoat = legacyGoat;
+  const cleanTotal = Number(total ?? (premium + standard + waqf + superGoat + premiumGoat));
   const parts = [];
-  if (premium > 0) parts.push(premium + ' Premium');
-  if (standard > 0) parts.push(standard + ' Standard');
-  if (goat > 0) parts.push(goat + ' Goat');
-  return parts.length ? cleanTotal + ' (' + parts.join(', ') + ')' : String(cleanTotal || 0);
+  if (premium > 0) parts.push(`${premium} Premium`);
+  if (standard > 0) parts.push(`${standard} Standard`);
+  if (waqf > 0) parts.push(`${waqf} Waqf`);
+  if (superGoat > 0) parts.push(`${superGoat} Super Goat`);
+  if (premiumGoat > 0) parts.push(`${premiumGoat} Premium Goat`);
+  return parts.length ? `${cleanTotal} (${parts.join(', ')})` : String(cleanTotal || 0);
 }
 function formatRiderCompact(rider, fallbackName = 'Unassigned') {
   if (!rider) return fallbackName;
@@ -127,7 +141,7 @@ function isAffluentOrder(source, totalField = 'hissa_count', waqfField = 'waqf_h
 
 function NoBadge({ number }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: '700', background: '#FFF3E0', color: '#E65100', whiteSpace: 'nowrap' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: '700', background: '#F5F5F5', color: '#666', whiteSpace: 'nowrap' }}>
       {number || '—'}
     </span>
   );
@@ -484,7 +498,12 @@ function getGroupOrderTypes(g) {
   if (Number(g.standard_hissa_count || 0) > 0) inferred.push('Hissa - Standard');
   if (Number(g.premium_hissa_count || 0) > 0) inferred.push('Hissa Premium');
   if (Number(g.waqf_hissa_count || 0) > 0) inferred.push('Hissa - Waqf');
-  if (Number(g.goat_hissa_count || 0) > 0) inferred.push('Goat(Hissa)');
+  const sg = Number(g.super_goat_hissa_count ?? 0);
+  const pg = Number(g.premium_goat_hissa_count ?? 0);
+  const leg = Number(g.goat_hissa_count ?? 0);
+  if (sg > 0) inferred.push(GOAT_HISSA_SUPER);
+  if (pg > 0) inferred.push(GOAT_HISSA_PREMIUM);
+  if (sg === 0 && pg === 0 && leg > 0) inferred.push(GOAT_HISSA_SUPER);
   return inferred;
 }
 
@@ -597,7 +616,6 @@ export default function OperationsDeliveries() {
     return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   }, [groups]);
 
-  const riderOptions = useMemo(() => riders.map((r) => ({ id: String(r.rider_id), label: formatRiderCompact(r) })), [riders]);
   const orderTypeOptions = ORDER_TYPE_FILTERS;
   const statusOptions = useMemo(() => STATUSES.map((s) => ({ value: s, label: s })), []);
 
@@ -651,14 +669,26 @@ export default function OperationsDeliveries() {
   }, [groups, search, challanSearch, filterDay, filterSlots, filterStatus, filterRider, filterOrderType, scanMatchToken]);
 
   const summary = useMemo(() => {
-    let tp = 0, ts = 0, tw = 0, tg = 0;
+    let tp = 0, ts = 0, tw = 0, tsg = 0, tpg = 0;
     for (const g of displayGroups) {
       tp += Number(g.premium_hissa_count || 0);
       ts += Number(g.standard_hissa_count || 0);
       tw += Number(g.waqf_hissa_count || 0);
-      tg += Number(g.goat_hissa_count || 0);
+      let sg = Number(g.super_goat_hissa_count ?? 0);
+      let pg = Number(g.premium_goat_hissa_count ?? 0);
+      const leg = Number(g.goat_hissa_count || 0);
+      if (sg === 0 && pg === 0 && leg > 0) sg = leg;
+      tsg += sg;
+      tpg += pg;
     }
-    return { totalHissa: tp + ts + tw + tg, totalPremium: tp, totalStandard: ts, totalWaqf: tw, totalGoat: tg };
+    return {
+      totalHissa: tp + ts + tw + tsg + tpg,
+      totalPremium: tp,
+      totalStandard: ts,
+      totalWaqf: tw,
+      totalSuperGoat: tsg,
+      totalPremiumGoat: tpg,
+    };
   }, [displayGroups]);
 
   const totalPages  = Math.max(1, Math.ceil(displayGroups.length / PAGE_SIZE));
@@ -714,9 +744,13 @@ export default function OperationsDeliveries() {
     const orders = modal?.orders || [];
     const standard = Number(c.total_standard_hissa ?? c.standard_hissa_count ?? sumOrders(orders, 'standard_hissa_count') ?? 0);
     const premium = Number(c.total_premium_hissa ?? c.premium_hissa_count ?? sumOrders(orders, 'premium_hissa_count') ?? 0);
-    const goat = Number(c.total_goat_hissa ?? c.goat_hissa_count ?? sumOrders(orders, 'goat_hissa_count') ?? 0);
-    const total = Number(c.total_hissa ?? c.hissa_count ?? c.order_count ?? (standard + premium + goat) ?? 0);
-    return { standard, premium, goat, total };
+    const waqf = Number(c.total_waqf_hissa ?? c.waqf_hissa_count ?? sumOrders(orders, 'waqf_hissa_count') ?? 0);
+    let superGoat = Number(c.total_super_goat_hissa ?? 0);
+    let premiumGoat = Number(c.total_premium_goat_hissa ?? 0);
+    const legacyGoat = Number(c.total_goat_hissa ?? c.goat_hissa_count ?? sumOrders(orders, 'goat_hissa_count') ?? 0);
+    if (superGoat === 0 && premiumGoat === 0 && legacyGoat > 0) superGoat = legacyGoat;
+    const total = Number(c.total_hissa ?? c.hissa_count ?? c.order_count ?? (standard + premium + waqf + superGoat + premiumGoat) ?? 0);
+    return { standard, premium, waqf, superGoat, premiumGoat, total };
   }, [modal]);
 
   const stopScanner = useCallback(async () => {
@@ -894,8 +928,8 @@ export default function OperationsDeliveries() {
         </div>
 
         {/* Summary cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '8px', marginBottom: '12px' }}>
-          {[['Total Hissa', summary.totalHissa], ['Premium', summary.totalPremium], ['Standard', summary.totalStandard], ['Waqf', summary.totalWaqf], ['Goat (Hissa)', summary.totalGoat]].map(([k, v]) => (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+          {[['Total Hissa', summary.totalHissa], ['Premium', summary.totalPremium], ['Standard', summary.totalStandard], ['Waqf', summary.totalWaqf], ['Super Goat', summary.totalSuperGoat], ['Premium Goat', summary.totalPremiumGoat]].map(([k, v]) => (
             <div key={k} style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: '8px', padding: '10px' }}>
               <div style={{ fontSize: '10px', color: '#777' }}>{k}</div>
               <div style={{ fontSize: '16px', fontWeight: 700 }}>{v}</div>
@@ -976,12 +1010,7 @@ export default function OperationsDeliveries() {
 
           <MultiSelectDropdown label="Status" options={statusOptions} values={filterStatus} onChange={setFilterStatus} placeholder="All status" width={150} />
           <MultiSelectDropdown label="Order Type" options={orderTypeOptions} values={filterOrderType} onChange={setFilterOrderType} placeholder="All types" width={160} />
-          <div style={{ width: 230 }}>
-            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Rider</label>
-            <select value={filterRider} onChange={(e) => setFilterRider(e.target.value)} style={inputStyle}>
-              <option value="">All</option>{riderOptions.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-            </select>
-          </div>
+          <SearchableRiderFilter value={filterRider} onChange={setFilterRider} riders={riders} inputStyle={inputStyle} width={230} />
           <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap' }}>
             <button type="button" onClick={() => setScanOpen(true)} style={{ padding: '6px 13px', height: '29px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Scan QR</button>
             <button type="button" onClick={load} style={{ padding: '6px 13px', height: '29px', background: '#fff', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>Refresh</button>
@@ -1002,13 +1031,7 @@ export default function OperationsDeliveries() {
                 <label style={{ display:'block', fontSize:'11px', color:'#666', marginBottom:'4px' }}>Challan No.</label>
                 <input type="text" value={challanSearch} onChange={(e)=>setChallanSearch(e.target.value)} placeholder="Search challan no…" style={{ width:'100%', padding:'9px 12px', borderRadius:'8px', border:'1px solid #e0e0e0', fontSize:'13px' }} />
               </div>
-              {[{ label:'Rider', value:filterRider, set:setFilterRider, opts:riderOptions.map(r=>({v:r.id,l:r.label})) }].map(({ label, value, set, opts }) => (
-                <div key={label}><label style={{ display:'block', fontSize:'11px', color:'#666', marginBottom:'4px' }}>{label}</label>
-                  <select value={value} onChange={(e)=>set(e.target.value)} style={{ width:'100%', padding:'9px 12px', borderRadius:'8px', border:'1px solid #e0e0e0', fontSize:'13px' }}>
-                    <option value="">All</option>{opts.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
-                  </select>
-                </div>
-              ))}
+              <SearchableRiderFilter value={filterRider} onChange={setFilterRider} riders={riders} width={280} inputStyle={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px', background: '#fff' }} />
               <div style={{ display:'flex', gap:'8px' }}>
                 <button type="button" onClick={()=>setMobileFiltersOpen(false)} style={{ flex:1, padding:'10px', background:'#FF5722', color:'#fff', border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:'600', cursor:'pointer' }}>Done</button>
                 <button type="button" onClick={()=>{ resetFilters(); setMobileFiltersOpen(false); }} style={{ flex:1, padding:'10px', background:'#fff', border:'1px solid #e0e0e0', borderRadius:'8px', fontSize:'13px', cursor:'pointer' }}>Reset</button>
@@ -1037,7 +1060,7 @@ export default function OperationsDeliveries() {
               
               <thead style={{ position:'sticky', top:0, zIndex:1 }}>
                 <tr style={{ background:'#fafafa' }}>
-                  {['No.', 'Status', 'Rider', 'Description', 'Customer ID', 'Booking Name', 'Address', 'Phone', 'Day / Slot', 'Area', 'Standard', 'Premium', 'Waqf', 'Goat (Hissa)', 'Total Hissa'].map((h) => (
+                  {['No.', 'Status', 'Rider', 'Description', 'Booking Name', 'Standard', 'Premium', 'Waqf', 'Super Goat', 'Premium Goat', 'Total Hissa', 'Day / Slot', 'Area', 'Contact', 'Address', 'Customer ID'].map((h) => (
                     <th key={h} style={{ textAlign:'left', padding:'10px 10px', borderBottom:'1px solid #e0e0e0', color:'#555', fontWeight:'600', whiteSpace:'nowrap', fontSize:'10px' }}>{h}</th>
                   ))}
                 </tr>
@@ -1048,6 +1071,10 @@ export default function OperationsDeliveries() {
                   const descriptionText = getDescriptionText(g);
                   const rowHasDescription = Boolean(descriptionText);
                   const rowIsAffluent = isAffluentOrder(g);
+                  let rowSuperGoat = Number(g.super_goat_hissa_count ?? 0);
+                  let rowPremiumGoat = Number(g.premium_goat_hissa_count ?? 0);
+                  const rowLegacyGoat = Number(g.goat_hissa_count ?? 0);
+                  if (rowSuperGoat === 0 && rowPremiumGoat === 0 && rowLegacyGoat > 0) rowSuperGoat = rowLegacyGoat;
 
                   const isScanHit = scanMatchToken && g.qr_token === scanMatchToken;
                   return (
@@ -1075,22 +1102,23 @@ export default function OperationsDeliveries() {
                           <div style={{ whiteSpace:'pre-line', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45, color:'#333', fontWeight:'500' }}>{descriptionText}</div>
                         ) : <span style={{ color:'#ccc' }}>—</span>}
                       </td>
-                      <td style={{ padding:'9px 10px', color:'#777', fontWeight:'500' }}><MultiLineCell values={g.customer_ids || []} /></td>
                       <td style={{ padding:'9px 10px', fontWeight:'500', color:'#333', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{(g.booking_names||[]).join(', ')||'—'}</td>
-                      <td style={{ padding:'9px 10px', color:'#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>
-                        <div>{g.address||'—'}</div>
-                      </td>
-                      <td style={{ padding:'9px 10px', color:'#555' }}><MultiLineCell values={[g.contacts || [], g.alt_contacts || []]} /></td>
+                      <td style={{ padding:'9px 10px', color:'#555' }}>{g.standard_hissa_count||0}</td>
+                      <td style={{ padding:'9px 10px', color:'#555' }}>{g.premium_hissa_count||0}</td>
+                      <td style={{ padding:'9px 10px', color:'#555' }}>{g.waqf_hissa_count||0}</td>
+                      <td style={{ padding:'9px 10px', color:'#555' }}>{rowSuperGoat}</td>
+                      <td style={{ padding:'9px 10px', color:'#555' }}>{rowPremiumGoat}</td>
+                      <td style={{ padding:'9px 10px', color:'#555', fontWeight:'600' }}>{Number(g.hissa_count || 0)}</td>
                       <td style={{ padding:'9px 10px', color:'#555', whiteSpace:'nowrap' }}>
                         <div>{g.day||'—'}</div>
                         {getGroupSlots(g).length > 0 && <div style={{ fontSize:'9px', color:'#aaa' }}>{getGroupSlots(g).join(', ')}</div>}
                       </td>
                       <td style={{ padding:'9px 10px', color:'#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{g.area||'—'}</td>
-                      <td style={{ padding:'9px 10px', color:'#555' }}>{g.standard_hissa_count||0}</td>
-                      <td style={{ padding:'9px 10px', color:'#555' }}>{g.premium_hissa_count||0}</td>
-                      <td style={{ padding:'9px 10px', color:'#555' }}>{g.waqf_hissa_count||0}</td>
-                      <td style={{ padding:'9px 10px', color:'#555' }}>{g.goat_hissa_count||0}</td>
-                      <td style={{ padding:'9px 10px', color:'#555', fontWeight:'600' }}>{Number(g.hissa_count || 0)}</td>
+                      <td style={{ padding:'9px 10px', color:'#555' }}><MultiLineCell values={[g.contacts || [], g.alt_contacts || []]} /></td>
+                      <td style={{ padding:'9px 10px', color:'#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>
+                        <div>{g.address||'—'}</div>
+                      </td>
+                      <td style={{ padding:'9px 10px', color:'#777', fontWeight:'500' }}><MultiLineCell values={g.customer_ids || []} /></td>
 
                     </tr>
                   );
@@ -1231,7 +1259,7 @@ export default function OperationsDeliveries() {
             ['Day', modal.challan?.day || '—'],
             ['Slot', modal.challan?.slot || '—'],
             ['Rider', modalRiderDetails.name],
-                        ['Total Hissa', formatTotalHissa(modalTotals.total || 0, { premium: modalTotals.premium, standard: modalTotals.standard, goat: modalTotals.goat })],
+                        ['Total Hissa', formatTotalHissa(modalTotals.total || 0, { premium: modalTotals.premium, standard: modalTotals.standard, waqf: modalTotals.waqf, superGoat: modalTotals.superGoat, premiumGoat: modalTotals.premiumGoat })],
           ]}
           orders={(modal.orders || []).filter((o) => ALLOWED_ORDER_TYPES.includes(normalizeOrderType(o.order_type)))}
           renderOrderStatus={(o) => <StatusBadge status={o.delivery_status} />}

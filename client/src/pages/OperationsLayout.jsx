@@ -181,12 +181,20 @@ export default function OperationsLayout() {
           align-self: start;
           opacity: 0;
           transform: translateY(16px);
-          animation: cardReveal 0.4s ease forwards;
+          animation: cardReveal 0.45s ease forwards;
         }
-        .mob-card.ready { opacity: 1; transform: translateY(0); }
 
         @keyframes cardReveal {
+          from { opacity: 0; transform: translateY(16px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .mob-card {
+            animation: none;
+            opacity: 1;
+            transform: none;
+          }
         }
 
         .mob-card:active {
