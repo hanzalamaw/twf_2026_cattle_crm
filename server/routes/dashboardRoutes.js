@@ -57,6 +57,44 @@ const DAY_KEY_SQL = `
   END
 `;
 
+/** Maps booking slot strings to slot1 | slot2 | slot3 (matches booking.js normalizeSlot). */
+const SLOT_KEY_SQL = `
+  CASE
+    WHEN REPLACE(UPPER(TRIM(IFNULL(o.slot,''))), ' ', '') IN ('SLOT1','1') THEN 'slot1'
+    WHEN REPLACE(UPPER(TRIM(IFNULL(o.slot,''))), ' ', '') IN ('SLOT2','2') THEN 'slot2'
+    WHEN REPLACE(UPPER(TRIM(IFNULL(o.slot,''))), ' ', '') IN ('SLOT3','3') THEN 'slot3'
+    ELSE NULL
+  END
+`;
+
+/** 3×3×4 grid: column aliases d1s1_std … d3s3_pg for area-wise tooltip (order type only). */
+const AREA_TYPE_GRID_META = (() => {
+  const dayKeys = ["day1", "day2", "day3"];
+  const slotKeys = ["slot1", "slot2", "slot3"];
+  const typeKeys = [
+    { key: "standard", as: "std" },
+    { key: "premium", as: "prm" },
+    { key: "super_goat", as: "sg" },
+    { key: "premium_goat", as: "pg" },
+  ];
+  const dayCode = { day1: "d1", day2: "d2", day3: "d3" };
+  const slotCode = { slot1: "s1", slot2: "s2", slot3: "s3" };
+  const sqlParts = [];
+  const aliases = [];
+  for (const dk of dayKeys) {
+    for (const sk of slotKeys) {
+      for (const { key: tk, as: tas } of typeKeys) {
+        const al = `${dayCode[dk]}${slotCode[sk]}_${tas}`;
+        aliases.push(al);
+        sqlParts.push(
+          `SUM(CASE WHEN ${DAY_KEY_SQL} = '${dk}' AND ${SLOT_KEY_SQL} = '${sk}' AND ${TYPE_KEY_SQL} = '${tk}' THEN 1 ELSE 0 END) AS ${al}`
+        );
+      }
+    }
+  }
+  return { sqlFragment: sqlParts.join(",\n        "), aliases };
+})();
+
 const LEAD_TYPE_KEY_SQL = `
   CASE
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('hissapremium') THEN 'premium'
@@ -93,9 +131,9 @@ function applyAreaOrderTypeFilter(orderType, conditions) {
   const list = getOrderTypeFilterList(orderType);
   const allowed = [];
 
-  // Area-wise exception: Waqf is never included in area calculation.
+  // Area-wise: Hissa = Standard + Premium only (no Waqf). Goat = Super + Premium goat only (not generic Goat (Hissa)).
   if (list.includes("hissa")) allowed.push("'standard'", "'premium'");
-  if (list.includes("goat")) allowed.push("'goat'", "'super_goat'", "'premium_goat'");
+  if (list.includes("goat")) allowed.push("'super_goat'", "'premium_goat'");
 
   conditions.push(`${TYPE_KEY_SQL} IN (${allowed.length ? allowed.join(",") : "'standard','premium'"})`);
 }
@@ -569,8 +607,8 @@ conditionsL.push("l.reference IS NOT NULL AND l.reference != ''");
 
 // -----------------------
 // GET: /api/dashboard/area-wise?year=...
-// Bar chart: order count per area, with all-days and Day 1/2/3 breakdown.
-// Area exception: Hissa mode includes Standard/Premium only; Waqf is never included.
+// Bar chart: order count per area, with day and SLOT 1/2/3 breakdown.
+// Types: Hissa → Standard+Premium only; Goat → Super Goat + Premium Goat only; both → all four. Waqf excluded.
 // -----------------------
 app.get("/api/dashboard/area-wise", verifyToken, async (req, res) => {
   try {
@@ -590,7 +628,24 @@ app.get("/api/dashboard/area-wise", verifyToken, async (req, res) => {
         COUNT(*) AS total,
         SUM(CASE WHEN ${DAY_KEY_SQL} = 'day1' THEN 1 ELSE 0 END) AS day1,
         SUM(CASE WHEN ${DAY_KEY_SQL} = 'day2' THEN 1 ELSE 0 END) AS day2,
-        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day3' THEN 1 ELSE 0 END) AS day3
+        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day3' THEN 1 ELSE 0 END) AS day3,
+        SUM(CASE WHEN ${SLOT_KEY_SQL} = 'slot1' THEN 1 ELSE 0 END) AS slot1,
+        SUM(CASE WHEN ${SLOT_KEY_SQL} = 'slot2' THEN 1 ELSE 0 END) AS slot2,
+        SUM(CASE WHEN ${SLOT_KEY_SQL} = 'slot3' THEN 1 ELSE 0 END) AS slot3,
+        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day1' AND ${SLOT_KEY_SQL} = 'slot1' THEN 1 ELSE 0 END) AS d1s1,
+        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day1' AND ${SLOT_KEY_SQL} = 'slot2' THEN 1 ELSE 0 END) AS d1s2,
+        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day1' AND ${SLOT_KEY_SQL} = 'slot3' THEN 1 ELSE 0 END) AS d1s3,
+        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day2' AND ${SLOT_KEY_SQL} = 'slot1' THEN 1 ELSE 0 END) AS d2s1,
+        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day2' AND ${SLOT_KEY_SQL} = 'slot2' THEN 1 ELSE 0 END) AS d2s2,
+        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day2' AND ${SLOT_KEY_SQL} = 'slot3' THEN 1 ELSE 0 END) AS d2s3,
+        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day3' AND ${SLOT_KEY_SQL} = 'slot1' THEN 1 ELSE 0 END) AS d3s1,
+        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day3' AND ${SLOT_KEY_SQL} = 'slot2' THEN 1 ELSE 0 END) AS d3s2,
+        SUM(CASE WHEN ${DAY_KEY_SQL} = 'day3' AND ${SLOT_KEY_SQL} = 'slot3' THEN 1 ELSE 0 END) AS d3s3,
+        SUM(CASE WHEN ${TYPE_KEY_SQL} = 'standard' THEN 1 ELSE 0 END) AS sum_std,
+        SUM(CASE WHEN ${TYPE_KEY_SQL} = 'premium' THEN 1 ELSE 0 END) AS sum_prm,
+        SUM(CASE WHEN ${TYPE_KEY_SQL} = 'super_goat' THEN 1 ELSE 0 END) AS sum_sg,
+        SUM(CASE WHEN ${TYPE_KEY_SQL} = 'premium_goat' THEN 1 ELSE 0 END) AS sum_pg,
+        ${AREA_TYPE_GRID_META.sqlFragment}
       FROM orders o
       ${where}
       GROUP BY TRIM(o.area)
@@ -599,13 +654,32 @@ app.get("/api/dashboard/area-wise", verifyToken, async (req, res) => {
       params
     );
 
-    const areas = (rows || []).map((r) => ({
-      area: r.area || "—",
-      total: Number(r.total || 0),
-      day1: Number(r.day1 || 0),
-      day2: Number(r.day2 || 0),
-      day3: Number(r.day3 || 0),
-    }));
+    const areas = (rows || []).map((r) => {
+      const base = {
+        area: r.area || "—",
+        total: Number(r.total || 0),
+        day1: Number(r.day1 || 0),
+        day2: Number(r.day2 || 0),
+        day3: Number(r.day3 || 0),
+        slot1: Number(r.slot1 || 0),
+        slot2: Number(r.slot2 || 0),
+        slot3: Number(r.slot3 || 0),
+        sum_std: Number(r.sum_std ?? r.SUM_STD ?? 0),
+        sum_prm: Number(r.sum_prm ?? r.SUM_PRM ?? 0),
+        sum_sg: Number(r.sum_sg ?? r.SUM_SG ?? 0),
+        sum_pg: Number(r.sum_pg ?? r.SUM_PG ?? 0),
+        slotsByDay: {
+          day1: { slot1: Number(r.d1s1 || 0), slot2: Number(r.d1s2 || 0), slot3: Number(r.d1s3 || 0) },
+          day2: { slot1: Number(r.d2s1 || 0), slot2: Number(r.d2s2 || 0), slot3: Number(r.d2s3 || 0) },
+          day3: { slot1: Number(r.d3s1 || 0), slot2: Number(r.d3s2 || 0), slot3: Number(r.d3s3 || 0) },
+        },
+      };
+      for (const al of AREA_TYPE_GRID_META.aliases) {
+        const v = r[al] ?? r[String(al).toLowerCase()];
+        base[al] = Number(v || 0);
+      }
+      return base;
+    });
 
     res.json({ areas });
   } catch (e) {

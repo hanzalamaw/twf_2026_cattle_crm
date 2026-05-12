@@ -499,11 +499,65 @@ const SourceWiseSummary = ({ sources }) => {
   );
 };
 
+const AREA_SLOT_COLORS = {
+  1: "#FF5722",
+  2: "#1976D2",
+  3: "#2E7D32",
+};
+
+const defaultSlotsByDay = () => ({
+  day1: { slot1: 0, slot2: 0, slot3: 0 },
+  day2: { slot1: 0, slot2: 0, slot3: 0 },
+  day3: { slot1: 0, slot2: 0, slot3: 0 },
+});
+
+const slotCountForDayFilter = (area, dayFilter, slotN) => {
+  const sk = `slot${slotN}`;
+  if (!area) return 0;
+  if (dayFilter === "total") return Number(area[sk] ?? 0);
+  const dayMap = area.slotsByDay?.[dayFilter] || defaultSlotsByDay()[dayFilter] || {};
+  return Number(dayMap[sk] ?? 0);
+};
+
+/** Order-type counts for area-wise tooltip (sum_* = all orders; d1s1_std … = day×slot×type grid). */
+const AREA_TYPE_SUFFIXES = [
+  { suf: "std", label: "Hissa - Standard", sumKey: "sum_std" },
+  { suf: "prm", label: "Hissa - Premium", sumKey: "sum_prm" },
+  { suf: "sg", label: "Super Goat (Hissa)", sumKey: "sum_sg" },
+  { suf: "pg", label: "Premium Goat (Hissa)", sumKey: "sum_pg" },
+];
+
+const DAY_FILTER_TO_DCODE = { day1: "d1", day2: "d2", day3: "d3" };
+
+function getOrderTypeBreakdownRows(area, dayFilter, slotWise, slotBlock) {
+  if (!area) return [];
+  const useGrid = dayFilter !== "total" || slotWise;
+  if (!useGrid) {
+    return AREA_TYPE_SUFFIXES.map(({ label, sumKey }) => ({
+      label,
+      n: Number(area[sumKey] || 0),
+    })).filter((x) => x.n > 0);
+  }
+  const get = (d, s, suf) => Number(area[`${d}${s}_${suf}`] || 0);
+  const dList = dayFilter === "total" ? ["d1", "d2", "d3"] : [DAY_FILTER_TO_DCODE[dayFilter] || "d1"];
+  const sList = slotWise && slotBlock != null ? [`s${slotBlock}`] : ["s1", "s2", "s3"];
+  return AREA_TYPE_SUFFIXES.map(({ suf, label }) => {
+    let n = 0;
+    for (const d of dList) {
+      for (const s of sList) {
+        n += get(d, s, suf);
+      }
+    }
+    return { label, n };
+  }).filter((x) => x.n > 0);
+}
+
 /* ── Area Wise Bar Chart ── */
 const AreaWiseChart = ({ areas }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [dayFilter, setDayFilter] = useState("total");
   const [activeArea, setActiveArea] = useState(null);
+  const [slotWiseDistribution, setSlotWiseDistribution] = useState(true);
 
   const wrapText = (text, maxChars = 10) => {
     const value = String(text || "");
@@ -523,13 +577,25 @@ const AreaWiseChart = ({ areas }) => {
   };
 
   const CustomXAxisTick = ({ x, y, payload }) => {
-    const lines = wrapText(payload.value, 12).slice(0, 3);
+    const raw = String(payload.value || "");
+    let main = raw;
+    let sub = null;
+    if (raw.includes("\n")) {
+      const parts = raw.split("\n", 2);
+      main = parts[0] || "";
+      sub = parts[1] || null;
+    }
+    const mainLines = wrapText(main, 12).slice(0, 2);
+    const lines = sub ? [...mainLines, sub] : mainLines.slice(0, 3);
     return (
       <g transform={`translate(${x},${y})`}>
-        <text x={0} y={0} textAnchor="middle" fill="#374151" fontSize={10} fontFamily="'Poppins','Inter',sans-serif">
-          {lines.map((line, index) => (
-            <tspan key={index} x={0} dy={index === 0 ? 12 : 12}>{line}</tspan>
-          ))}
+        <text x={0} y={0} textAnchor="middle" fontFamily="'Poppins','Inter',sans-serif">
+          {lines.map((line, index) => {
+            const isSub = Boolean(sub) && index === lines.length - 1;
+            return (
+              <tspan key={index} x={0} dy={index === 0 ? 12 : 11} fontSize={isSub ? 9 : 10} fill={isSub ? "#6b7280" : "#374151"}>{line}</tspan>
+            );
+          })}
         </text>
       </g>
     );
@@ -542,44 +608,115 @@ const AreaWiseChart = ({ areas }) => {
     { key: "day3", label: "Day 3" },
   ];
 
-  const data = useMemo(() => {
-    return (areas || [])
-      .map((a) => ({
+  const normalizedAreas = useMemo(
+    () =>
+      (areas || []).map((a) => ({
         ...a,
-        name: a.area,
+        area: a.area,
         total: Number(a.total || 0),
         day1: Number(a.day1 || 0),
         day2: Number(a.day2 || 0),
         day3: Number(a.day3 || 0),
-      }))
-      .sort((a, b) => {
-        const diff = Number(b[dayFilter] || 0) - Number(a[dayFilter] || 0);
-        if (diff !== 0) return diff;
-        return Number(b.total || 0) - Number(a.total || 0);
-      })
-      .slice(0, 20);
-  }, [areas, dayFilter]);
+        slot1: Number(a.slot1 || 0),
+        slot2: Number(a.slot2 || 0),
+        slot3: Number(a.slot3 || 0),
+        sum_std: Number(a.sum_std ?? 0),
+        sum_prm: Number(a.sum_prm ?? 0),
+        sum_sg: Number(a.sum_sg ?? 0),
+        sum_pg: Number(a.sum_pg ?? 0),
+        slotsByDay: a.slotsByDay || defaultSlotsByDay(),
+      })),
+    [areas]
+  );
 
-  const active = dayOptions.find((m) => m.key === dayFilter) || dayOptions[0];
+  const data = useMemo(() => {
+    if (!slotWiseDistribution) {
+      return normalizedAreas
+        .map((a) => ({
+          ...a,
+          name: a.area,
+          barKey: a.area,
+          hoverKey: a.area,
+          slotBlock: null,
+          barValue: Number(a[dayFilter] ?? 0),
+        }))
+        .sort((a, b) => {
+          const diff = Number(b[dayFilter] || 0) - Number(a[dayFilter] || 0);
+          if (diff !== 0) return diff;
+          return Number(b.total || 0) - Number(a.total || 0);
+        });
+    }
 
-  const CustomTooltip = ({ active: a, payload, label }) => {
-    if (!a || !payload?.length || !label) return null;
+    const rows = [];
+    for (let slotBlock = 1; slotBlock <= 3; slotBlock += 1) {
+      const blockRows = normalizedAreas
+        .map((a) => {
+          const barValue = slotCountForDayFilter(a, dayFilter, slotBlock);
+          return {
+            ...a,
+            slotBlock,
+            barValue,
+            name: `${a.area}\nSLOT ${slotBlock}`,
+            barKey: `${a.area}__slot${slotBlock}`,
+            hoverKey: `${a.area}__slot${slotBlock}`,
+          };
+        })
+        .filter((x) => x.barValue > 0)
+        .sort((a, b) => b.barValue - a.barValue);
+      rows.push(...blockRows);
+    }
+    return rows;
+  }, [normalizedAreas, dayFilter, slotWiseDistribution]);
+
+  const barDataKey = slotWiseDistribution ? "barValue" : dayFilter;
+
+  const CustomTooltip = ({ active: a, payload }) => {
+    if (!a || !payload?.length) return null;
     const p = payload[0]?.payload || {};
+    const rows = getOrderTypeBreakdownRows(p, dayFilter, slotWiseDistribution, p.slotBlock ?? null);
     return (
       <div className="chartTooltip">
-        <div className="chartTooltipTitle">{label}</div>
-        <div className="chartTooltipRow"><span>All Days:</span><span>{fmt(Number(p.total || 0))}</span></div>
-        <div className="chartTooltipRow"><span>Day 1:</span><span>{fmt(Number(p.day1 || 0))}</span></div>
-        <div className="chartTooltipRow"><span>Day 2:</span><span>{fmt(Number(p.day2 || 0))}</span></div>
-        <div className="chartTooltipRow"><span>Day 3:</span><span>{fmt(Number(p.day3 || 0))}</span></div>
+        <div className="chartTooltipTitle">{p.area}</div>
+        {rows.map((row) => (
+          <div key={row.label} className="chartTooltipRow">
+            <span>{row.label}</span>
+            <span>{fmt(row.n)}</span>
+          </div>
+        ))}
+        {rows.length === 0 && (
+          <div className="chartTooltipRow"><span>No typed orders in this slice</span><span>—</span></div>
+        )}
       </div>
     );
   };
 
-  if (!data.length) return (
+  if (!normalizedAreas.length) return (
     <div className="card animCard">
       <div className="cardTitleBig">AREA WISE ORDERS</div>
       <div className="chartPlaceholder">No area data for selected year</div>
+    </div>
+  );
+
+  if (!data.length) return (
+    <div className="card animCard">
+      <div className="salesOverviewHeader" style={{ marginBottom: 10 }}>
+        <div className="cardTitleBig">AREA WISE ORDERS</div>
+        <div className="salesOverviewHeaderRight" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#374151", cursor: "pointer", userSelect: "none", fontWeight: 500 }}>
+            <input
+              type="checkbox"
+              checked={slotWiseDistribution}
+              onChange={(e) => setSlotWiseDistribution(e.target.checked)}
+            />
+            Slot wise distribution
+          </label>
+        </div>
+      </div>
+      <div className="chartPlaceholder">
+        {slotWiseDistribution
+          ? "No orders with SLOT 1, 2, or 3 match the current day filter. Turn off slot wise distribution to see all orders combined, or assign slots on orders."
+          : "No area data for selected year"}
+      </div>
     </div>
   );
 
@@ -590,7 +727,15 @@ const AreaWiseChart = ({ areas }) => {
           AREA WISE ORDERS <span className="collapseChevron">{collapsed ? "▶" : "▼"}</span>
         </div>
         {!collapsed && (
-          <div className="salesOverviewHeaderRight">
+          <div className="salesOverviewHeaderRight" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#374151", cursor: "pointer", userSelect: "none", fontWeight: 500 }}>
+              <input
+                type="checkbox"
+                checked={slotWiseDistribution}
+                onChange={(e) => setSlotWiseDistribution(e.target.checked)}
+              />
+              Slot wise distribution
+            </label>
             <div className="viewToggle">
               {dayOptions.map((m) => (
                 <button
@@ -615,11 +760,16 @@ const AreaWiseChart = ({ areas }) => {
                 <XAxis dataKey="name" tick={<CustomXAxisTick />} stroke="#6b7280" interval={0} height={95} />
                 <YAxis tick={{ fontSize: 11, fontFamily: "'Poppins','Inter',sans-serif" }} stroke="#6b7280" tickFormatter={(v) => fmt(v)} allowDecimals={false} />
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,87,34,0.06)" }} />
-                <Bar dataKey={active.key} radius={[4, 4, 0, 0]} maxBarSize={36} onMouseEnter={(d) => setActiveArea(d.area)}>
-                  {data.map((entry) => (
-                    <Cell key={entry.area} fill={activeArea === null || activeArea === entry.area ? "#FF5722" : "#FF572255"} />
-                  ))}
-                  <LabelList dataKey={active.key} position="top" style={{ fontSize: 10, fontFamily: "'Poppins','Inter',sans-serif", fill: "#374151", fontWeight: 600 }} formatter={(v) => fmt(v)} />
+                <Bar dataKey={barDataKey} radius={[4, 4, 0, 0]} maxBarSize={36} onMouseEnter={(d) => setActiveArea(d.hoverKey ?? d.area)}>
+                  {data.map((entry) => {
+                    const base = slotWiseDistribution && entry.slotBlock
+                      ? AREA_SLOT_COLORS[entry.slotBlock] || "#FF5722"
+                      : "#FF5722";
+                    const dim = activeArea !== null && activeArea !== (entry.hoverKey ?? entry.area);
+                    const fill = dim ? `${base}55` : base;
+                    return <Cell key={entry.barKey} fill={fill} />;
+                  })}
+                  <LabelList dataKey={barDataKey} position="top" style={{ fontSize: 10, fontFamily: "'Poppins','Inter',sans-serif", fill: "#374151", fontWeight: 600 }} formatter={(v) => fmt(v)} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
