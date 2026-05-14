@@ -499,12 +499,6 @@ const SourceWiseSummary = ({ sources }) => {
   );
 };
 
-const AREA_SLOT_COLORS = {
-  1: "#FF5722",
-  2: "#1976D2",
-  3: "#2E7D32",
-};
-
 const defaultSlotsByDay = () => ({
   day1: { slot1: 0, slot2: 0, slot3: 0 },
   day2: { slot1: 0, slot2: 0, slot3: 0 },
@@ -529,9 +523,12 @@ const AREA_TYPE_SUFFIXES = [
 
 const DAY_FILTER_TO_DCODE = { day1: "d1", day2: "d2", day3: "d3" };
 
-function getOrderTypeBreakdownRows(area, dayFilter, slotWise, slotBlock) {
+function getOrderTypeBreakdownRows(area, dayFilter, selectedSlotNums) {
   if (!area) return [];
-  const useGrid = dayFilter !== "total" || slotWise;
+  const slots = Array.isArray(selectedSlotNums) && selectedSlotNums.length
+    ? [...selectedSlotNums].sort((a, b) => a - b)
+    : [1, 2, 3];
+  const useGrid = dayFilter !== "total" || slots.length < 3;
   if (!useGrid) {
     return AREA_TYPE_SUFFIXES.map(({ label, sumKey }) => ({
       label,
@@ -540,7 +537,7 @@ function getOrderTypeBreakdownRows(area, dayFilter, slotWise, slotBlock) {
   }
   const get = (d, s, suf) => Number(area[`${d}${s}_${suf}`] || 0);
   const dList = dayFilter === "total" ? ["d1", "d2", "d3"] : [DAY_FILTER_TO_DCODE[dayFilter] || "d1"];
-  const sList = slotWise && slotBlock != null ? [`s${slotBlock}`] : ["s1", "s2", "s3"];
+  const sList = slots.map((n) => `s${n}`);
   return AREA_TYPE_SUFFIXES.map(({ suf, label }) => {
     let n = 0;
     for (const d of dList) {
@@ -552,12 +549,29 @@ function getOrderTypeBreakdownRows(area, dayFilter, slotWise, slotBlock) {
   }).filter((x) => x.n > 0);
 }
 
+const areaBarValueForDayAndSlots = (area, dayFilter, selectedSlotNums) => {
+  if (!area) return 0;
+  const slots = Array.isArray(selectedSlotNums) && selectedSlotNums.length
+    ? [...selectedSlotNums].sort((a, b) => a - b)
+    : [1, 2, 3];
+  const allThree =
+    slots.length === 3 && slots[0] === 1 && slots[1] === 2 && slots[2] === 3;
+  if (allThree) {
+    if (dayFilter === "total") return Number(area.total ?? 0);
+    return Number(area[dayFilter] ?? 0);
+  }
+  return slots.reduce((acc, sn) => acc + slotCountForDayFilter(area, dayFilter, sn), 0);
+};
+
 /* ── Area Wise Bar Chart ── */
 const AreaWiseChart = ({ areas }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [dayFilter, setDayFilter] = useState("total");
   const [activeArea, setActiveArea] = useState(null);
-  const [slotWiseDistribution, setSlotWiseDistribution] = useState(true);
+  /** 1 | 2 | 3 — multi-select when not in all-slots mode; always non-empty */
+  const [selectedSlots, setSelectedSlots] = useState(() => new Set([1, 2, 3]));
+  /** When true: same as all slots selected, but only "All slots" is highlighted (not Slot 1–3). */
+  const [allSlotsMode, setAllSlotsMode] = useState(true);
 
   const wrapText = (text, maxChars = 10) => {
     const value = String(text || "");
@@ -629,51 +643,61 @@ const AreaWiseChart = ({ areas }) => {
     [areas]
   );
 
-  const data = useMemo(() => {
-    if (!slotWiseDistribution) {
-      return normalizedAreas
+  const slotNumsArr = useMemo(() => {
+    if (allSlotsMode) return [1, 2, 3];
+    const sorted = [...selectedSlots].sort((a, b) => a - b);
+    return sorted.length ? sorted : [1, 2, 3];
+  }, [allSlotsMode, selectedSlots]);
+
+  useEffect(() => {
+    if (allSlotsMode) return;
+    if (selectedSlots.size === 3 && [1, 2, 3].every((x) => selectedSlots.has(x))) {
+      setAllSlotsMode(true);
+    }
+  }, [allSlotsMode, selectedSlots]);
+
+  const toggleSlot = (n) => {
+    if (allSlotsMode) {
+      setAllSlotsMode(false);
+      setSelectedSlots(new Set([n]));
+      return;
+    }
+    setSelectedSlots((prev) => {
+      const next = new Set(prev);
+      if (next.has(n)) {
+        if (next.size <= 1) return prev;
+        next.delete(n);
+      } else {
+        next.add(n);
+      }
+      return next;
+    });
+  };
+
+  const data = useMemo(
+    () =>
+      normalizedAreas
         .map((a) => ({
           ...a,
           name: a.area,
           barKey: a.area,
           hoverKey: a.area,
-          slotBlock: null,
-          barValue: Number(a[dayFilter] ?? 0),
+          barValue: areaBarValueForDayAndSlots(a, dayFilter, slotNumsArr),
         }))
         .sort((a, b) => {
-          const diff = Number(b[dayFilter] || 0) - Number(a[dayFilter] || 0);
+          const diff = Number(b.barValue || 0) - Number(a.barValue || 0);
           if (diff !== 0) return diff;
           return Number(b.total || 0) - Number(a.total || 0);
-        });
-    }
+        }),
+    [normalizedAreas, dayFilter, slotNumsArr]
+  );
 
-    const rows = [];
-    for (let slotBlock = 1; slotBlock <= 3; slotBlock += 1) {
-      const blockRows = normalizedAreas
-        .map((a) => {
-          const barValue = slotCountForDayFilter(a, dayFilter, slotBlock);
-          return {
-            ...a,
-            slotBlock,
-            barValue,
-            name: `${a.area}\nSLOT ${slotBlock}`,
-            barKey: `${a.area}__slot${slotBlock}`,
-            hoverKey: `${a.area}__slot${slotBlock}`,
-          };
-        })
-        .filter((x) => x.barValue > 0)
-        .sort((a, b) => b.barValue - a.barValue);
-      rows.push(...blockRows);
-    }
-    return rows;
-  }, [normalizedAreas, dayFilter, slotWiseDistribution]);
-
-  const barDataKey = slotWiseDistribution ? "barValue" : dayFilter;
+  const barDataKey = "barValue";
 
   const CustomTooltip = ({ active: a, payload }) => {
     if (!a || !payload?.length) return null;
     const p = payload[0]?.payload || {};
-    const rows = getOrderTypeBreakdownRows(p, dayFilter, slotWiseDistribution, p.slotBlock ?? null);
+    const rows = getOrderTypeBreakdownRows(p, dayFilter, slotNumsArr);
     return (
       <div className="chartTooltip">
         <div className="chartTooltipTitle">{p.area}</div>
@@ -697,53 +721,45 @@ const AreaWiseChart = ({ areas }) => {
     </div>
   );
 
-  if (!data.length) return (
-    <div className="card animCard">
-      <div className="salesOverviewHeader" style={{ marginBottom: 10 }}>
-        <div className="cardTitleBig">AREA WISE ORDERS</div>
-        <div className="salesOverviewHeaderRight" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#374151", cursor: "pointer", userSelect: "none", fontWeight: 500 }}>
-            <input
-              type="checkbox"
-              checked={slotWiseDistribution}
-              onChange={(e) => setSlotWiseDistribution(e.target.checked)}
-            />
-            Slot wise distribution
-          </label>
-        </div>
-      </div>
-      <div className="chartPlaceholder">
-        {slotWiseDistribution
-          ? "No orders with SLOT 1, 2, or 3 match the current day filter. Turn off slot wise distribution to see all orders combined, or assign slots on orders."
-          : "No area data for selected year"}
-      </div>
-    </div>
-  );
-
   return (
     <div className="card animCard">
-      <div className="salesOverviewHeader" style={{ marginBottom: collapsed ? 0 : 10 }}>
+      <div className={`salesOverviewHeader areaWiseChartHeader${!collapsed ? " areaWiseChartHeaderExpanded" : ""}`} style={{ marginBottom: collapsed ? 0 : 10 }}>
         <div className="cardTitle cardTitleClickable salesOverviewTitle" onClick={() => setCollapsed((v) => !v)}>
           AREA WISE ORDERS <span className="collapseChevron">{collapsed ? "▶" : "▼"}</span>
         </div>
         {!collapsed && (
-          <div className="salesOverviewHeaderRight" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#374151", cursor: "pointer", userSelect: "none", fontWeight: 500 }}>
-              <input
-                type="checkbox"
-                checked={slotWiseDistribution}
-                onChange={(e) => setSlotWiseDistribution(e.target.checked)}
-              />
-              Slot wise distribution
-            </label>
-            <div className="viewToggle">
+          <div className="salesOverviewHeaderRight areaWiseOrdersFilters">
+            <div className="viewToggle areaWiseViewToggle" role="group" aria-label="Day filter">
               {dayOptions.map((m) => (
                 <button
                   key={m.key}
+                  type="button"
                   className={`viewToggleBtn ${dayFilter === m.key ? "viewToggleActive" : ""}`}
                   onClick={() => setDayFilter(m.key)}
                 >
                   {m.label}
+                </button>
+              ))}
+            </div>
+            <div className="viewToggle areaWiseViewToggle" role="group" aria-label="Slot filter">
+              <button
+                type="button"
+                className={`viewToggleBtn ${allSlotsMode ? "viewToggleActive" : ""}`}
+                onClick={() => {
+                  setAllSlotsMode(true);
+                  setSelectedSlots(new Set([1, 2, 3]));
+                }}
+              >
+                All slots
+              </button>
+              {[1, 2, 3].map((sn) => (
+                <button
+                  key={sn}
+                  type="button"
+                  className={`viewToggleBtn ${!allSlotsMode && selectedSlots.has(sn) ? "viewToggleActive" : ""}`}
+                  onClick={() => toggleSlot(sn)}
+                >
+                  Slot {sn}
                 </button>
               ))}
             </div>
@@ -762,9 +778,7 @@ const AreaWiseChart = ({ areas }) => {
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,87,34,0.06)" }} />
                 <Bar dataKey={barDataKey} radius={[4, 4, 0, 0]} maxBarSize={36} onMouseEnter={(d) => setActiveArea(d.hoverKey ?? d.area)}>
                   {data.map((entry) => {
-                    const base = slotWiseDistribution && entry.slotBlock
-                      ? AREA_SLOT_COLORS[entry.slotBlock] || "#FF5722"
-                      : "#FF5722";
+                    const base = "#FF5722";
                     const dim = activeArea !== null && activeArea !== (entry.hoverKey ?? entry.area);
                     const fill = dim ? `${base}55` : base;
                     return <Cell key={entry.barKey} fill={fill} />;
@@ -1210,6 +1224,10 @@ const Dashboard = () => {
         .viewToggleBtn { padding:6px 12px; border:none; background:#fff; font-size:12px; font-weight:500; color:#6b7280; cursor:pointer; transition:background .15s,color .15s; }
         .viewToggleBtn:hover { background:#f9f9f9; color:#374151; }
         .viewToggleActive { background:#FF5722 !important; color:#fff !important; }
+        .areaWiseChartHeader { flex-wrap:wrap; align-items:flex-start; gap:8px 12px; position:relative; }
+        .areaWiseChartHeaderExpanded { min-height:86px; align-items:flex-start; }
+        .areaWiseOrdersFilters { display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex:0 1 auto; min-width:0; }
+        .areaWiseViewToggle { flex-wrap:nowrap; flex-shrink:0; }
         .metricChips { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
         .metricChip { padding:5px 12px; border-radius:20px; border:1px solid #e5e7eb; background:#f9fafb; font-size:12px; font-weight:500; color:#6b7280; cursor:pointer; transition:all .15s; }
         .metricChip:hover { border-color:#FF5722; color:#FF5722; background:#fff4f0; }
@@ -1264,6 +1282,10 @@ const Dashboard = () => {
           .salesOverviewHeader { flex-direction:column; align-items:flex-start; gap:6px; }
           .salesOverviewTitle { position:static; transform:none; font-size:12px; }
           .salesOverviewHeaderRight { margin-left:0; }
+          .areaWiseChartHeader .salesOverviewTitle { width:100%; text-align:center; }
+          .areaWiseChartHeader .areaWiseOrdersFilters { width:100%; align-items:stretch; }
+          .areaWiseChartHeader .areaWiseViewToggle { width:100%; justify-content:stretch; }
+          .areaWiseChartHeader .areaWiseViewToggle .viewToggleBtn { flex:1; text-align:center; padding:8px 6px; font-size:11px; }
           .chartWrap { min-height:200px; }
 
           .mDayCard { background:#fafafa; border:1px solid #e5e7eb; border-radius:12px; padding:12px; margin-bottom:10px; }

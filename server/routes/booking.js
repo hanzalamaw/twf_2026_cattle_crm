@@ -2306,6 +2306,9 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
         const rowTotalAmount = Number(row.total_amount || 0);
         const isFarmAnimalOrder = normalizedRowType === "Fancy Cow" || normalizedRowType === "Cow" || normalizedRowType === "Goat";
         const isGoatHissaOrder = normalizedRowType === "Goat (Hissa)";
+        const isSuperGoatHissa = normalizedRowType === "Super Goat (Hissa)" || (isGoatHissaOrder && rowTotalAmount === 51000);
+        const isPremiumGoatHissa = normalizedRowType === "Premium Goat (Hissa)" || (isGoatHissaOrder && rowTotalAmount === 59000);
+        const isSuperOrPremiumGoatInvoice = isSuperGoatHissa || isPremiumGoatHissa;
 
         let displayType = normalizedRowType || "Hissa";
         if (normalizedRowType === "Hissa - Standard") {
@@ -2314,9 +2317,9 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
           displayType = "Cow";
         } else if (normalizedRowType === "Goat") {
           displayType = "Goat";
-        } else if (isGoatHissaOrder && rowTotalAmount === 51000) {
+        } else if (isSuperGoatHissa) {
           displayType = "Super Goat (Hissa)";
-        } else if (isGoatHissaOrder && rowTotalAmount === 59000) {
+        } else if (isPremiumGoatHissa) {
           displayType = "Premium Goat (Hissa)";
         }
 
@@ -2329,9 +2332,11 @@ if (Array.isArray(order_ids) && order_ids.length > 0) {
         );
         const itemSub = isFarmAnimalOrder
           ? ""
-          : isGoatHissaOrder
+          : isSuperOrPremiumGoatInvoice
             ? `Goat Number: ${row.cow || "—"}`
-            : `Cow: ${row.cow || "—"} | Hissa: ${row.hissa || "—"}`;
+            : isGoatHissaOrder
+              ? `Goat Number: ${row.cow || "—"}`
+              : `Cow: ${row.cow || "—"} | Hissa: ${row.hissa || "—"}`;
 
         if (isFarmAnimalOrder) {
           // Farm invoice rows show only the animal label, vertically centred in the gray row.
