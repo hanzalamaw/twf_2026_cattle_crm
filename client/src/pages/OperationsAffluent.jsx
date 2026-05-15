@@ -6,6 +6,9 @@ import SharedChallanModal from '../components/SharedChallanModal';
 import SearchableRiderFilter from '../components/SearchableRiderFilter';
 import { API_BASE } from '../config/api';
 import { getOperationsSocket } from '../utils/operationsSocket';
+import { getDescriptionText, isAffluentOrder } from '../utils/orderTags';
+import { useOperationsBatchDay } from '../utils/useOperationsBatchDay';
+import OrderDescriptionCell from '../components/OrderDescriptionCell';
 
 const STATUSES = ['Pending', 'Rider Assigned', 'Dispatched', 'Delivered', 'Returned to Farm'];
 
@@ -88,73 +91,10 @@ function getUniqueDescriptionValues(values) {
   return [...new Set((values || []).map((v) => String(v || '').trim()).filter(Boolean))];
 }
 
-function getDescriptionText(source) {
-  if (!source) return '';
-
-  const normalize = (v) =>
-    String(v || '')
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, ' ');
-
-  const originalMap = new Map();
-
-  const addValue = (val) => {
-    const norm = normalize(val);
-    if (!norm) return;
-    if (!originalMap.has(norm)) {
-      originalMap.set(norm, String(val).trim());
-    }
-  };
-
-  // from challan
-  [
-    source.description,
-    source.descriptions,
-    source.description_csv,
-    source.descriptions_csv,
-    source.special_request,
-    source.specialRequest,
-    source.request,
-    source.remarks,
-    source.notes,
-    source.note,
-  ].forEach(addValue);
-
-  // from orders
-  (source.orders || []).forEach((o) => {
-    addValue(o.description);
-  });
-
-  return Array.from(originalMap.values()).join(' | ');
-}
-
-function hasDescription(source) {
-  return getDescriptionText(source).length > 0;
-}
-
-function isAffluentOrder(source, totalField = 'hissa_count', waqfField = 'waqf_hissa_count') {
-  const totalHissa = Number(source?.[totalField] || 0);
-  const waqfHissa = Number(source?.[waqfField] || 0);
-  return hasDescription(source) || (totalHissa - waqfHissa >= 3);
-}
-
 function NoBadge({ number }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: '700', background: '#F5F5F5', color: '#666', whiteSpace: 'nowrap' }}>
       {number || '—'}
-    </span>
-  );
-}
-
-function RedDot() {
-  return <span title="Special request" style={{ display:'inline-block', width:'8px', height:'8px', borderRadius:'999px', background:'#D32F2F', flexShrink:0 }} />;
-}
-
-function SpecialRequestPatch() {
-  return (
-    <span style={{ display:'inline-flex', alignItems:'center', gap:'6px', padding:'4px 9px', borderRadius:'999px', background:'#FFEBEE', color:'#C62828', border:'1px solid #FFCDD2', fontSize:'10px', fontWeight:'700', whiteSpace:'nowrap', textTransform:'uppercase', letterSpacing:'0.2px' }}>
-      <RedDot /> Special Request
     </span>
   );
 }
@@ -511,10 +451,18 @@ export default function OperationsAffluent() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { authFetch } = useAuth();
 
+  const {
+    dayBatches,
+    selectedDay,
+    setSelectedDay,
+    selectedBatch,
+    setSelectedBatch,
+    loadBatches,
+    DAY_OPTIONS,
+  } = useOperationsBatchDay(authFetch);
+
   const [groups,        setGroups]        = useState([]);
   const [riders,        setRiders]        = useState([]);
-  const [batches,       setBatches]       = useState([]);
-  const [selectedBatch, setSelectedBatch] = useState(null);
   const [loading,       setLoading]       = useState(true);
   const [err,           setErr]           = useState('');
   const [modal,         setModal]         = useState(null);
@@ -554,15 +502,9 @@ export default function OperationsAffluent() {
     return () => document.removeEventListener('mousedown', handler);
   }, [slotDropdownOpen]);
 
-  const loadBatches = useCallback(async () => {
-    try {
-      const res = await authFetch(`${API_BASE}/operations/batches`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setBatches(data.batches || []);
-      if (data.batches?.length && selectedBatch === null) setSelectedBatch(data.batches[0].batch_id);
-    } catch { /* silent */ }
-  }, [authFetch, selectedBatch]);
+  useEffect(() => {
+    if (selectedDay) setFilterDay(selectedDay);
+  }, [selectedDay]);
 
   const load = useCallback(async () => {
     setErr(''); setLoading(true);
@@ -587,7 +529,6 @@ export default function OperationsAffluent() {
     }
   }, [authFetch, selectedBatch]);
 
-  useEffect(() => { loadBatches(); }, []);
   useEffect(() => { if (selectedBatch !== null) load(); }, [load, selectedBatch]);
 
   useEffect(() => {
@@ -910,12 +851,12 @@ export default function OperationsAffluent() {
           <div>
             <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>Affluent Management</h2>
             <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#888', fontWeight: '500', lineHeight: 1.45, maxWidth: '720px' }}>
-              Delivery groups marked affluent (description present or total hissa minus waqf is 3+). Assign riders and update status.
+              Delivery groups with a description and 3+ non-waqf hissa (total minus waqf). Assign riders and update status.
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             {saving && <span style={{ fontSize: '10px', color: '#999', fontWeight: '600' }}>Saving…</span>}
-            {batches.length > 0 && (
+            {dayBatches.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <label style={{ fontSize: '11px', color: '#666', whiteSpace: 'nowrap' }}>Batch:</label>
                 <select
@@ -923,7 +864,7 @@ export default function OperationsAffluent() {
                   onChange={(e) => setSelectedBatch(Number(e.target.value))}
                   style={{ padding: '6px 10px', borderRadius: '7px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '11px', fontWeight: '600', color: '#333', cursor: 'pointer' }}
                 >
-                  {batches.map((b) => (
+                  {dayBatches.map((b) => (
                     <option key={b.batch_id} value={b.batch_id}>{b.label}</option>
                   ))}
                 </select>
@@ -946,10 +887,10 @@ export default function OperationsAffluent() {
 
         {/* Day selector — toggleable, empty string = all days */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', width: '100%', gap: '8px', marginBottom: '12px' }}>
-          {['Day 1', 'Day 2', 'Day 3'].map((d) => (
+          {DAY_OPTIONS.map((d) => (
             <button key={d} type="button"
-              onClick={() => setFilterDay((prev) => normalizeForCompare(prev) === normalizeForCompare(d) ? '' : d)}
-              style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', background: normalizeForCompare(filterDay) === normalizeForCompare(d) ? '#FF5722' : '#fff', color: normalizeForCompare(filterDay) === normalizeForCompare(d) ? '#fff' : '#333', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}>{d}</button>
+              onClick={() => { setSelectedDay(d); setFilterDay(d); }}
+              style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', background: normalizeForCompare(selectedDay) === normalizeForCompare(d) ? '#FF5722' : '#fff', color: normalizeForCompare(selectedDay) === normalizeForCompare(d) ? '#fff' : '#333', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}>{d}</button>
           ))}
         </div>
 
@@ -1073,8 +1014,6 @@ export default function OperationsAffluent() {
               <tbody>
                 {pagedGroups.map((g, idx) => {
                   const st = g.derived_status || 'Pending';
-                  const descriptionText = getDescriptionText(g);
-                  const rowHasDescription = Boolean(descriptionText);
                   const rowIsAffluent = isAffluentOrder(g);
                   let rowSuperGoat = Number(g.super_goat_hissa_count ?? 0);
                   let rowPremiumGoat = Number(g.premium_goat_hissa_count ?? 0);
@@ -1103,9 +1042,7 @@ export default function OperationsAffluent() {
                         <SearchableRiderSelect value={g.rider_id??''} riders={riders} fallbackLabel={g.rider_count > 1 ? 'Multiple Riders' : undefined} onChange={(rid)=>patchGroupRider(g.challan_id, rid)} />
                       </td>
                       <td style={{ padding:'9px 10px', color:'#555', verticalAlign:'top' }}>
-                        {rowHasDescription ? (
-                          <div style={{ whiteSpace:'pre-line', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45, color:'#333', fontWeight:'500' }}>{descriptionText}</div>
-                        ) : <span style={{ color:'#ccc' }}>—</span>}
+                        <OrderDescriptionCell source={g} totalField="hissa_count" waqfField="waqf_hissa_count" />
                       </td>
                       <td style={{ padding:'9px 10px', fontWeight:'500', color:'#333', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{(g.booking_names||[]).join(', ')||'—'}</td>
                       <td style={{ padding:'9px 10px', color:'#555' }}>{g.standard_hissa_count||0}</td>

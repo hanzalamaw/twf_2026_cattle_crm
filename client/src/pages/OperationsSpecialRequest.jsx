@@ -453,7 +453,7 @@ function getGroupOrderTypes(g) {
   return inferred;
 }
 
-export default function OperationsDeliveries() {
+export default function OperationsSpecialRequest() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { authFetch } = useAuth();
 
@@ -535,6 +535,7 @@ export default function OperationsDeliveries() {
     }
   }, [authFetch, selectedBatch]);
 
+  useEffect(() => { loadBatches(); }, []);
   useEffect(() => { if (selectedBatch !== null) load(); }, [load, selectedBatch]);
 
   useEffect(() => {
@@ -569,10 +570,16 @@ export default function OperationsDeliveries() {
   // ── filter + sort ────────────────────────────────────────────
   // All string comparisons go through normalizeForCompare so that
   // "DAY 1" / "Day 1" / "day 1" and "SLOT 1" / "Slot 1" all match.
-  const displayGroups = useMemo(() => {
+  /** All special-request groups in the batch (no table filters). */
+  const specialRequestGroups = useMemo(() => groups.filter((g) => isSpecialRequestOrder(g)), [groups]);
+
+  /**
+   * Same filter + sort pipeline as Deliveries: start from all groups in the batch.
+   * Summary totals use this list so amounts match Deliveries for the same batch/filters (includes non-special request).
+   */
+  const filteredSortedAllGroups = useMemo(() => {
     let list = groups;
 
-    // general search
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter((g) =>
@@ -581,33 +588,25 @@ export default function OperationsDeliveries() {
       );
     }
 
-    // challan no search
     const challanQ = challanSearch.trim().toLowerCase();
     if (challanQ) {
       list = list.filter((g) => String(g.challan_id || '').toLowerCase().includes(challanQ));
     }
 
-    // day filter — case-insensitive comparison
     if (filterDay) list = list.filter((g) => groupMatchesDay(g, filterDay));
-
-    // slot filter — case-insensitive, also checks g.orders for coverage
     if (filterSlots.length) list = list.filter((g) => groupMatchesSlots(g, filterSlots));
-
     if (filterStatus.length) list = list.filter((g) => filterStatus.includes(g.derived_status || 'Pending'));
-    if (filterRider)  list = list.filter((g) => String(g.rider_id || '') === filterRider);
+    if (filterRider) list = list.filter((g) => String(g.rider_id || '') === filterRider);
     if (filterOrderType.length) list = list.filter((g) => groupMatchesOrderType(g, filterOrderType));
     if (scanMatchToken) list = list.filter((g) => g.qr_token === scanMatchToken);
 
-    // sort: day (normalised) → first slot (normalised) → address
     list = [...list].sort((a, b) => {
       const dayA = normalizeForCompare(a.day);
       const dayB = normalizeForCompare(b.day);
       if (dayA !== dayB) return dayA.localeCompare(dayB);
-
       const slotA = normalizeForCompare(getGroupSlots(a)[0] || '');
       const slotB = normalizeForCompare(getGroupSlots(b)[0] || '');
       if (slotA !== slotB) return slotA.localeCompare(slotB, undefined, { numeric: true });
-
       return String(a.address || '').trim().toLowerCase()
         .localeCompare(String(b.address || '').trim().toLowerCase());
     });
@@ -615,6 +614,13 @@ export default function OperationsDeliveries() {
     return list;
   }, [groups, search, challanSearch, filterDay, filterSlots, filterStatus, filterRider, filterOrderType, scanMatchToken]);
 
+  /** Table rows: special request only, same filters as above. */
+  const displayGroups = useMemo(
+    () => filteredSortedAllGroups.filter((g) => isSpecialRequestOrder(g)),
+    [filteredSortedAllGroups]
+  );
+
+  /** Amounts/totals in Affluent must use special request rows only (with active filters). */
   const summary = useMemo(() => {
     let tp = 0, ts = 0, tw = 0, tsg = 0, tpg = 0;
     for (const g of displayGroups) {
@@ -850,9 +856,9 @@ export default function OperationsDeliveries() {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>Deliveries Management</h2>
+            <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>Special Request Management</h2>
             <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#888', fontWeight: '500', lineHeight: 1.45, maxWidth: '720px' }}>
-              Challan-based delivery groups. Assign riders and update status. Click a row for full details.
+              Delivery groups with a description and 2 or fewer non-waqf hissa (total minus waqf). Assign riders and update status.
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -994,14 +1000,14 @@ export default function OperationsDeliveries() {
           </div>
         )}
         {err && <div style={{ padding:'10px', background:'#FFF5F2', color:'#C62828', borderRadius:'6px', marginBottom:'13px', flexShrink:0, fontSize:'10px', fontWeight:'600' }}>{err}</div>}
-        {!loading && <div style={{ fontSize:'10px', color:'#999', marginBottom:'8px', flexShrink:0 }}>Showing {displayGroups.length} of {groups.length} groups</div>}
+        {!loading && <div style={{ fontSize:'10px', color:'#999', marginBottom:'8px', flexShrink:0 }}>Showing {displayGroups.length} of {specialRequestGroups.length} special request groups</div>}
 
         {/* Table */}
         <div className="om-table-wrap" style={{ flex:1, minHeight:0, overflow:'auto', borderRadius:'10px', border:'1px solid #ececec' }}>
           {loading ? (
             <div style={{ padding:'40px', textAlign:'center', color:'#666', fontSize:'11px' }}>Loading…</div>
           ) : displayGroups.length === 0 ? (
-            <div style={{ padding:'40px', textAlign:'center', color:'#666', fontSize:'11px' }}>{groups.length===0 ? 'No challans for this batch.' : 'No rows match the current filters.'}</div>
+            <div style={{ padding:'40px', textAlign:'center', color:'#666', fontSize:'11px' }}>{specialRequestGroups.length===0 ? 'No special request challans for this batch.' : 'No special request rows match the current filters.'}</div>
           ) : (
             <table className="ops-data-table" style={{ width:'100%', borderCollapse:'collapse', fontSize:'11px', tableLayout:'auto' }}>
               
@@ -1023,15 +1029,15 @@ export default function OperationsDeliveries() {
                   if (rowSuperGoat === 0 && rowPremiumGoat === 0 && rowLegacyGoat > 0) rowSuperGoat = rowLegacyGoat;
 
                   const isScanHit = scanMatchToken && g.qr_token === scanMatchToken;
-                  const baseBg = isScanHit ? '#FFF8E1' : (rowHighlight.background || (idx % 2 === 0 ? '#fff' : '#FAFAFA'));
+                  const baseBg = rowHighlight.background || (idx % 2 === 0 ? '#fff' : '#FAFAFA');
                   return (
                     <tr
                       key={g.group_key || g.challan_id}
                       id={rowDomId(g)}
-                      style={{ borderBottom:'1px solid #f3f3f3', background: baseBg, borderLeft: rowHighlight.borderLeft, cursor:'pointer' }}
+                      style={{ borderBottom:'1px solid #f3f3f3', background: isScanHit ? '#FFF8E1' : baseBg, borderLeft: rowHighlight.borderLeft, cursor:'pointer' }}
                       onClick={() => g.qr_token && openChallanModal(g.qr_token)}
                       onMouseEnter={(e)=>{ if(!isScanHit) e.currentTarget.style.background='#f5f9ff'; }}
-                      onMouseLeave={(e)=>{ e.currentTarget.style.background = baseBg; }}
+                      onMouseLeave={(e)=>{ e.currentTarget.style.background = isScanHit ? '#FFF8E1' : baseBg; }}
                     >
                       <td style={{ padding:'9px 10px' }}>
                         <NoBadge number={g.challan_id} />
@@ -1045,7 +1051,7 @@ export default function OperationsDeliveries() {
                         <SearchableRiderSelect value={g.rider_id??''} riders={riders} fallbackLabel={g.rider_count > 1 ? 'Multiple Riders' : undefined} onChange={(rid)=>patchGroupRider(g.challan_id, rid)} />
                       </td>
                       <td style={{ padding:'9px 10px', color:'#555', verticalAlign:'top' }}>
-                        <OrderDescriptionCell source={g} />
+                        <OrderDescriptionCell source={g} totalField="hissa_count" waqfField="waqf_hissa_count" />
                       </td>
                       <td style={{ padding:'9px 10px', fontWeight:'500', color:'#333', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{(g.booking_names||[]).join(', ')||'—'}</td>
                       <td style={{ padding:'9px 10px', color:'#555' }}>{g.standard_hissa_count||0}</td>
@@ -1193,8 +1199,8 @@ export default function OperationsDeliveries() {
           challanId={modal.challan?.challan_id}
           customerId={modalCustomerIds.length ? modalCustomerIds.join(', ') : '—'}
           description={modalDescription}
-          affluent={isAffluentOrder({ ...(modal?.challan || {}), orders: modal?.orders || [] }, 'total_hissa', 'total_waqf_hissa')}
           specialRequest={isSpecialRequestOrder({ ...(modal?.challan || {}), orders: modal?.orders || [] }, 'total_hissa', 'total_waqf_hissa')}
+          affluent={isAffluentOrder({ ...(modal?.challan || {}), orders: modal?.orders || [] }, 'total_hissa', 'total_waqf_hissa')}
           statusBadge={<StatusBadge status={modal.challan?.derived_status} />}
           onClose={closeModal}
           maxWidth="1240px"

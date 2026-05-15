@@ -21,6 +21,7 @@ export function buildPermissionsFromRoleRow(row) {
     operation_deliveries_management: op && !!row.operation_deliveries_management,
     operation_challan_management: op && !!row.operation_challan_management,
     operation_affluent_management: op && !!row.operation_affluent_management,
+    operation_special_request_management: op && !!row.operation_special_request_management,
     farm_management: !!row.farm_management,
     procurement_management: !!row.procurement_management,
     accounting_and_finance: !!row.accounting_and_finance,

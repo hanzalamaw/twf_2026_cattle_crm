@@ -19,6 +19,7 @@ import OperationsSupport from './pages/OperationsSupport';
 import OperationsRiders from './pages/OperationsRiders';
 import OperationsRiderSupervisorView from './pages/OperationsRiderSupervisorView';
 import OperationsAffluent from './pages/OperationsAffluent';
+import OperationsSpecialRequest from './pages/OperationsSpecialRequest';
 import OperationPlaceholder from './pages/OperationPlaceholder';
 import ProcurementDashboard from './pages/ProcurementDashboard';
 import NewProcurement from './pages/NewProcurement';
@@ -142,6 +143,14 @@ const RequireAffluentOnly = ({ children }) => {
   return children;
 };
 
+const RequireSpecialRequestOnly = ({ children }) => {
+  const { user } = useAuth();
+  const p = user?.permissions || {};
+  if (!hasOperationsShellAccess(p)) return <Navigate to="/" replace />;
+  if (!p.operation_special_request_management) return <Navigate to="/operations" replace />;
+  return children;
+};
+
 /** Admin rider UI vs supervisor-only rider view */
 const OperationsRidersEntry = () => {
   const { user } = useAuth();
@@ -204,6 +213,7 @@ const ROUTE_TITLES = {
   '/operations/riders/supervisors': 'Operations — Riders',
   '/operations/deliveries': 'Deliveries Management',
   '/operations/affluent': 'Affluent Management',
+  '/operations/special-request': 'Special Request',
   '/operations/challan': 'Challan Management',
   '/farm': 'Farm Management',
   '/farm/dashboard': 'Farm Dashboard',
@@ -345,6 +355,7 @@ function App() {
               <Route path="riders/supervisors" element={<OperationsRidersEntry />} />
               <Route path="deliveries" element={<RequireDeliveriesOnly><OperationsDeliveries /></RequireDeliveriesOnly>} />
               <Route path="affluent" element={<RequireAffluentOnly><OperationsAffluent /></RequireAffluentOnly>} />
+              <Route path="special-request" element={<RequireSpecialRequestOnly><OperationsSpecialRequest /></RequireSpecialRequestOnly>} />
               <Route path="challan" element={<RequireChallanOnly><OperationsChallan /></RequireChallanOnly>} />
             </Route>
           </Route>

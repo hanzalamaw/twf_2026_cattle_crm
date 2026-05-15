@@ -44,6 +44,47 @@ function normalizeDay(d) {
   return String(d).trim();
 }
 
+function normalizeDayLabel(d) {
+  const n = String(d || "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (n === "day 1" || n === "day1" || n === "1") return "Day 1";
+  if (n === "day 2" || n === "day2" || n === "2") return "Day 2";
+  if (n === "day 3" || n === "day3" || n === "3") return "Day 3";
+  return String(d || "").trim();
+}
+
+const ALLOWED_OPERATION_DAYS = ["Day 1", "Day 2", "Day 3"];
+
+async function inferActiveOperationsDay(db) {
+  try {
+    const [[orderRow]] = await db.execute(
+      `SELECT o.day, COUNT(*) AS c
+       FROM orders o
+       WHERE o.booking_date IS NOT NULL AND YEAR(o.booking_date) = ?
+         AND DATE(o.booking_date) = CURDATE()
+         AND TRIM(COALESCE(o.day, '')) != ''
+       GROUP BY o.day
+       ORDER BY c DESC
+       LIMIT 1`,
+      [OPERATIONS_YEAR]
+    );
+    if (orderRow?.day) return normalizeDayLabel(orderRow.day);
+  } catch { /* ignore */ }
+
+  try {
+    const [[batchRow]] = await db.execute(
+      `SELECT COALESCE(NULLIF(TRIM(cb.day), ''),
+              (SELECT MIN(c.day) FROM challan c
+               WHERE c.batch_id = cb.batch_id AND TRIM(COALESCE(c.day, '')) != '')) AS day
+       FROM challan_batch cb
+       ORDER BY cb.created_at DESC, cb.batch_id DESC
+       LIMIT 1`
+    );
+    if (batchRow?.day) return normalizeDayLabel(batchRow.day);
+  } catch { /* ignore */ }
+
+  return "Day 1";
+}
+
 function classifyHissa(orderType) {
   const t = String(orderType || "").trim().toLowerCase().replace(/\s+/g, " ");
   if (t === "super goat(hissa)" || t === "super goat (hissa)") return "super_goat";
@@ -416,6 +457,25 @@ async function resolveLatestBatchId(db) {
   return rows[0]?.batch_id ?? null;
 }
 
+async function resolveLatestBatchIdForDay(db, day) {
+  const dayLabel = normalizeDayLabel(day);
+  if (!dayLabel) return resolveLatestBatchId(db);
+  const [rows] = await db.execute(
+    `SELECT cb.batch_id
+     FROM challan_batch cb
+     WHERE LOWER(TRIM(COALESCE(cb.day, ''))) = LOWER(TRIM(?))
+        OR cb.batch_id IN (
+          SELECT DISTINCT c.batch_id FROM challan c
+          WHERE c.batch_id IS NOT NULL
+            AND LOWER(TRIM(COALESCE(c.day, ''))) = LOWER(TRIM(?))
+        )
+     ORDER BY cb.created_at DESC, cb.batch_id DESC
+     LIMIT 1`,
+    [dayLabel, dayLabel]
+  );
+  return rows[0]?.batch_id ?? null;
+}
+
 /**
  * @param {object} app
  * @param {import("mysql2/promise").Pool} db
@@ -432,20 +492,55 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
     return flags;
   };
 
+  // ── Active operations day (calendar / today's orders) ───────
+  app.get("/api/operations/active-day", verifyToken, async (req, res) => {
+    try {
+      const flags = await assertSub(req, res, (f) =>
+        f.operation_challan_management ||
+        f.operation_deliveries_management ||
+        f.operation_affluent_management ||
+        f.operation_special_request_management ||
+        f.operation_customer_support ||
+        f.operation_rider_management_supervisor
+      );
+      if (!flags) return;
+      const day = await inferActiveOperationsDay(db);
+      res.json({ day });
+    } catch (error) {
+      logError("OPERATIONS", "Active day error", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
   // ── Batches list ────────────────────────────────────────────
   app.get("/api/operations/batches", verifyToken, async (req, res) => {
     try {
       const flags = await assertSub(req, res, (f) =>
         f.operation_challan_management ||
         f.operation_deliveries_management ||
+        f.operation_affluent_management ||
+        f.operation_special_request_management ||
         f.operation_customer_support ||
         f.operation_rider_management_supervisor
       );
       if (!flags) return;
+      const filterDay = normalizeDayLabel(req.query.day);
       const [rows] = await db.execute(
-        `SELECT batch_id, label, created_at FROM challan_batch ORDER BY created_at DESC, batch_id DESC`
+        `SELECT cb.batch_id, cb.label, cb.created_at,
+                COALESCE(NULLIF(TRIM(cb.day), ''),
+                  (SELECT MIN(c.day) FROM challan c
+                   WHERE c.batch_id = cb.batch_id AND TRIM(COALESCE(c.day, '')) != '')) AS day
+         FROM challan_batch cb
+         ORDER BY cb.created_at DESC, cb.batch_id DESC`
       );
-      res.json({ batches: rows });
+      const batches = rows.map((r) => ({
+        ...r,
+        day: normalizeDayLabel(r.day) || r.day || null,
+      }));
+      const filtered = filterDay && ALLOWED_OPERATION_DAYS.includes(filterDay)
+        ? batches.filter((b) => normalizeDayLabel(b.day) === filterDay)
+        : batches;
+      res.json({ batches: filtered });
     } catch (error) {
       logError("OPERATIONS", "List batches error", error);
       res.status(500).json({ message: "Server error" });
@@ -791,12 +886,19 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
         return res.status(403).json({ message: "Only the designated operations lead can regenerate challan data." });
       }
 
+      const genDay = normalizeDayLabel(req.body?.day);
+      if (!genDay || !ALLOWED_OPERATION_DAYS.includes(genDay)) {
+        return res.status(400).json({ message: "day is required (Day 1, Day 2, or Day 3)" });
+      }
+
       const [orders] = await db.execute(
         `SELECT order_id, order_type, booking_name, shareholder_name, cow_number, hissa_number, contact, alt_contact,
                 address, area, day, slot, description, customer_id
          FROM orders
-         WHERE booking_date IS NOT NULL AND YEAR(booking_date) = ? AND ${nonWaqfOrder('orders')}`,
-        [OPERATIONS_YEAR]
+         WHERE booking_date IS NOT NULL AND YEAR(booking_date) = ?
+           AND LOWER(TRIM(COALESCE(day, ''))) = LOWER(TRIM(?))
+           AND ${nonWaqfOrder('orders')}`,
+        [OPERATIONS_YEAR, genDay]
       );
 
       const grouped = new Map();
@@ -810,15 +912,15 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       }
 
       const [[{ cnt }]] = await db.execute(`SELECT COUNT(*) AS cnt FROM challan_batch`);
-      const batchLabel = `Batch ${Number(cnt) + 1} (${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })})`;
+      const batchLabel = `Batch ${Number(cnt) + 1} (${genDay}, ${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })})`;
 
       const conn = await db.getConnection();
       try {
         await conn.beginTransaction();
 
         const [batchResult] = await conn.execute(
-          `INSERT INTO challan_batch (label, created_at) VALUES (?, NOW())`,
-          [batchLabel]
+          `INSERT INTO challan_batch (label, day, created_at) VALUES (?, ?, NOW())`,
+          [batchLabel, genDay]
         );
         const batchId = batchResult.insertId;
 
@@ -920,11 +1022,15 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       const sup = await getSupervisorRecordForUser(db, req.userId);
       if (!sup) return res.status(404).json({ message: "Supervisor profile not found" });
 
+      const dayFilter = req.query.day ? normalizeDayLabel(req.query.day) : null;
       let batchId = req.query.batch_id ? Number(req.query.batch_id) : null;
-      if (!batchId) batchId = await resolveLatestBatchId(db);
+      if (!batchId) {
+        batchId = dayFilter
+          ? await resolveLatestBatchIdForDay(db, dayFilter)
+          : await resolveLatestBatchId(db);
+      }
       if (!batchId) return res.json({ groups: [] });
 
-      const dayFilter = req.query.day ? String(req.query.day).trim() : null;
       const payload = await buildDeliveriesGroupsForBatch(db, batchId, dayFilter, sup.supervisor_id);
       res.json(payload);
     } catch (error) {

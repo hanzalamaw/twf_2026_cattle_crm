@@ -53,6 +53,16 @@ export const OPERATION_MODULES = [
     soft: '#FFE6DE',
   },
   {
+    id: 'special-request',
+    name: 'Special Request',
+    desc: 'Special-request delivery groups',
+    path: '/operations/special-request',
+    permission: 'operation_special_request_management',
+    emoji: '⭐',
+    accent: '#F9A825',
+    soft: '#FFF8E1',
+  },
+  {
     id: 'challan',
     name: 'Challan Management',
     desc: 'Challan PDFs & batch data',

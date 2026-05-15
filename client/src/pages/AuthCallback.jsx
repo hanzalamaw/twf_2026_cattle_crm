@@ -46,6 +46,7 @@ const AuthCallback = () => {
               operation_deliveries_management: false,
               operation_challan_management: false,
               operation_affluent_management: false,
+              operation_special_request_management: false,
               farm_management: true,
               procurement_management: true,
               accounting_and_finance: true,

@@ -28,6 +28,14 @@ function AffluentPatch() {
   );
 }
 
+function SpecialRequestPatch() {
+  return (
+    <span style={{ display:'inline-flex', alignItems:'center', padding:'5px 12px', borderRadius:'999px', background:'#FFF8E1', color:'#F57F17', border:'1px solid #FFE082', fontSize:'10px', fontWeight:'700', whiteSpace:'nowrap', textTransform:'uppercase', letterSpacing:'0.2px' }}>
+      Special Request
+    </span>
+  );
+}
+
 function valueOrDash(value) {
   const str = String(value ?? '').trim();
   return str || '—';
@@ -39,6 +47,7 @@ export default function SharedChallanModal({
   statusBadge,
   description,
   affluent = false,
+  specialRequest = false,
   infoRows = [],
   orders = [],
   renderOrderStatus,
@@ -50,6 +59,7 @@ export default function SharedChallanModal({
   const normalizedDescription = String(description || '').replace(/\s*\|\s*/g, ' | ').replace(/[\r\n]+/g, ' | ').replace(/\s{2,}/g, ' ').trim();
   const hasDescription = Boolean(normalizedDescription);
   const isAffluent = Boolean(affluent);
+  const isSpecialRequest = Boolean(specialRequest) && !isAffluent;
 
   return (
     <div style={modalOverlayStyle} onClick={onClose} role="presentation">
@@ -64,6 +74,7 @@ export default function SharedChallanModal({
             <div style={{ display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap' }}>
               <h2 style={{ margin:0, fontSize:'18px', fontWeight:'700', color:'#222' }}>Challan {challanId || '—'}</h2>
               {isAffluent && <AffluentPatch />}
+              {isSpecialRequest && <SpecialRequestPatch />}
             </div>
             <div style={{ marginTop:'7px', fontSize:'12px', color:'#666', fontWeight:'500' }}>
               Customer ID: <span style={{ color:'#222', fontWeight:'700' }}>{customerId || '—'}</span>
@@ -77,7 +88,7 @@ export default function SharedChallanModal({
         <div style={{ marginBottom:'18px' }}>
           <div style={{ border:'1px solid #E4E4E4', borderRadius:'10px', overflow:'hidden', background:'#F5F5F5' }}>
             <div style={{ display:'grid', gridTemplateColumns:'130px 1fr', gap:'0', padding:'14px 16px', fontSize:'12px', lineHeight:1.5 }}>
-              <span style={{ fontWeight:'700', color:'#555' }}>Description:</span>
+              <span style={{ fontWeight:'700', color:'#555' }}>Order Type:</span>
               <span style={{ color: hasDescription ? '#222' : '#aaa', fontStyle: hasDescription ? 'normal' : 'italic', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere' }}>{hasDescription ? normalizedDescription : '—'}</span>
             </div>
           </div>

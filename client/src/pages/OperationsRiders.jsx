@@ -3,6 +3,7 @@ import { API_BASE } from '../config/api';
 import { getOperationsSocket } from '../utils/operationsSocket';
 import { useAuth } from '../context/AuthContext';
 import { Link, useLocation } from 'react-router-dom';
+import { getOrderTag, getChallanRowHighlight } from '../utils/orderTags';
 
 const RIDER_STATUSES = ['Available', 'On Delivery', 'Off Duty', 'Suspended'];
 
@@ -209,12 +210,6 @@ function getDescriptionText(source) {
 
 function hasDescription(source) {
   return getDescriptionText(source).length > 0;
-}
-
-function isAffluentOrder(source, totalField = 'hissa_count', waqfField = 'waqf_hissa_count') {
-  const totalHissa = Number(source?.[totalField] || 0);
-  const waqfHissa = Number(source?.[waqfField] || 0);
-  return hasDescription(source) || totalHissa - waqfHissa >= 3;
 }
 
 function deriveChallanStatusFromOrders(orders) {
@@ -2002,7 +1997,7 @@ export default function OperationsRiders() {
                   <tbody>
                     {assignedOrderGroups.map((g, idx) => {
                       const st = g.derived_status || 'Pending';
-                      const rowIsAffluent = isAffluentOrder(g);
+                      const rowHighlight = getChallanRowHighlight(getOrderTag(g, 'hissa_count', 'waqf_hissa_count'));
                       let rowSuperGoat = Number(g.super_goat_hissa_count ?? 0);
                       let rowPremiumGoat = Number(g.premium_goat_hissa_count ?? 0);
                       const rowLegacyGoat = Number(g.goat_hissa_count ?? 0);
@@ -2012,8 +2007,8 @@ export default function OperationsRiders() {
                           key={g.group_key || g.challan_id}
                           style={{
                             borderBottom: '1px solid #f3f3f3',
-                            background: rowIsAffluent ? '#FFF7F7' : idx % 2 === 0 ? '#fff' : '#FAFAFA',
-                            borderLeft: rowIsAffluent ? '3px solid #D32F2F' : '3px solid transparent',
+                            background: rowHighlight.background || (idx % 2 === 0 ? '#fff' : '#FAFAFA'),
+                            borderLeft: rowHighlight.borderLeft,
                           }}
                         >
                           <td style={{ padding: '9px 10px' }}>

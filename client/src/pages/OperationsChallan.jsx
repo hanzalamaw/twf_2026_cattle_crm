@@ -5,6 +5,17 @@ import SharedChallanModal from '../components/SharedChallanModal';
 import { API_BASE } from '../config/api';
 import { getOperationsSocket } from '../utils/operationsSocket';
 import QRCode from 'qrcode';
+import {
+  getDescriptionText,
+  getOrderTag,
+  getChallanRowHighlight,
+  isAffluentOrder,
+  isSpecialRequestOrder,
+  normalizeForCompare,
+  DAY_OPTIONS,
+} from '../utils/orderTags';
+import { useOperationsBatchDay } from '../utils/useOperationsBatchDay';
+import OrderDescriptionCell from '../components/OrderDescriptionCell';
 
 const REGENERATE_EMAIL = 'hanzalamawahab@gmail.com';
 
@@ -101,57 +112,6 @@ function getUniqueDescriptionValues(values) {
   return [...new Set((values || []).map((v) => String(v || '').trim()).filter(Boolean))];
 }
 
-function getDescriptionText(source) {
-  if (!source) return '';
-
-  const normalize = (v) =>
-    String(v || '')
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, ' ');
-
-  const originalMap = new Map();
-
-  const addValue = (val) => {
-    const norm = normalize(val);
-    if (!norm) return;
-    if (!originalMap.has(norm)) {
-      originalMap.set(norm, String(val).trim());
-    }
-  };
-
-  // from challan
-  [
-    source.description,
-    source.descriptions,
-    source.description_csv,
-    source.descriptions_csv,
-    source.special_request,
-    source.specialRequest,
-    source.request,
-    source.remarks,
-    source.notes,
-    source.note,
-  ].forEach(addValue);
-
-  // from orders
-  (source.orders || []).forEach((o) => {
-    addValue(o.description);
-  });
-
-  return Array.from(originalMap.values()).join(' | ');
-}
-
-function hasDescription(source) {
-  return getDescriptionText(source).length > 0;
-}
-
-function isAffluentOrder(source, totalField = 'total_hissa', waqfField = 'total_waqf_hissa') {
-  const totalHissa = Number(source?.[totalField] || 0);
-  const waqfHissa = Number(source?.[waqfField] || 0);
-  return hasDescription(source) || (totalHissa - waqfHissa >= 3);
-}
-
 function NoBadge({ number }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: '700', background: '#F5F5F5', color: '#666', whiteSpace: 'nowrap' }}>
@@ -159,19 +119,6 @@ function NoBadge({ number }) {
     </span>
   );
 }
-
-function RedDot() {
-  return <span title="Special request" style={{ display:'inline-block', width:'8px', height:'8px', borderRadius:'999px', background:'#D32F2F', flexShrink:0 }} />;
-}
-
-function SpecialRequestPatch() {
-  return (
-    <span style={{ display:'inline-flex', alignItems:'center', gap:'6px', padding:'4px 9px', borderRadius:'999px', background:'#FFEBEE', color:'#C62828', border:'1px solid #FFCDD2', fontSize:'10px', fontWeight:'700', whiteSpace:'nowrap', textTransform:'uppercase', letterSpacing:'0.2px' }}>
-      <RedDot /> Special Request
-    </span>
-  );
-}
-
 
 const PAGE_SIZE = 50;
 
@@ -182,6 +129,29 @@ function formatAddress(value) {
 function short(v, n = 64) {
   const s = String(v ?? '');
   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+}
+
+function isGoatHissaOrderType(value) {
+  const t = normalizeOrderType(value);
+  return t === GOAT_HISSA_SUPER || t === GOAT_HISSA_PREMIUM;
+}
+
+/** Header badge — solid black pill, white text (B&W print; same for Affluent & Special Request). */
+function drawPdfHeaderBadge(doc, label, x, baselineY, variant) {
+  const paddingX = 9;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(variant === 'special_request' ? 8 : 9);
+  const textW = doc.getTextWidth(label);
+  const badgeW = textW + paddingX * 2;
+  const badgeH = 16;
+  const badgeY = baselineY - 13;
+
+  doc.setFillColor(0, 0, 0);
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(1);
+  doc.roundedRect(x, badgeY, badgeW, badgeH, 3, 3, 'FD');
+  doc.setTextColor(255, 255, 255);
+  doc.text(label, x + paddingX, baselineY - 1);
 }
 
 /* ─────────────────────────────────────────────
@@ -256,6 +226,8 @@ function short(v, n = 64) {
       if (superGoat === 0 && premiumGoat === 0 && legacyGoat > 0) superGoat = legacyGoat;
       const totalHissa = Number(c.total_hissa || c.order_count || premium + standard + waqf + superGoat + premiumGoat || 0);
       const totalHissaText = formatTotalHissa(totalHissa, { premium, standard, waqf, superGoat, premiumGoat });
+      const tagSource = { ...c, orders, description: getDescriptionText({ ...c, orders }) };
+      const challanTag = getOrderTag(tagSource, 'total_hissa', 'total_waqf_hissa');
   
       const uniqueJoin = (arr) =>
         [...new Set(arr.map((v) => String(v || '').trim()).filter(Boolean))].join(', ');
@@ -271,13 +243,22 @@ function short(v, n = 64) {
         uniqueJoin(orders.map((o) => o.booking_name)) ||
         '—';
       
-      const contact =
-        [c.contacts_csv, c.alt_contacts_csv].filter(Boolean).join(' & ') ||
-        uniqueJoin([
-          ...orders.map((o) => o.contact),
-          ...orders.map((o) => o.alt_contact),
-        ]) ||
-        '—';
+      const primaryContact =
+        c.contacts_csv ||
+        uniqueJoin(orders.map((o) => o.contact)) ||
+        '';
+      const altContact =
+        c.alt_contacts_csv ||
+        uniqueJoin(orders.map((o) => o.alt_contact)) ||
+        '';
+      const contact = (() => {
+        const p = safe(primaryContact, '');
+        const a = safe(altContact, '');
+        if (p && a) return `${p}  |  Alt: ${a}`;
+        if (p) return p;
+        if (a) return `Alt: ${a}`;
+        return '—';
+      })();
   
       let pageNo = 0;
       let orderIndex = 0;
@@ -286,114 +267,118 @@ function short(v, n = 64) {
         if (itemIndex > 0 || pageNo > 0) doc.addPage();
         pageNo++;
   
-        // Header
+        // Header — tag badge to the right of title (B&W: solid black pill for both tags)
+        const titleText = `CHALLAN # ${safe(c.challan_id, '')}`;
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(19);
-        doc.setTextColor(20, 20, 20);
-        doc.text(`CHALLAN # ${safe(c.challan_id, '')}`, ML, 42);
-  
+        doc.setTextColor(0, 0, 0);
+        doc.text(titleText, ML, 42);
+        const titleW = doc.getTextWidth(titleText);
+        if (challanTag === 'affluent') {
+          drawPdfHeaderBadge(doc, 'AFFLUENT', ML + titleW + 12, 42, 'affluent');
+        } else if (challanTag === 'special_request') {
+          drawPdfHeaderBadge(doc, 'SPECIAL REQUEST', ML + titleW + 12, 42, 'special_request');
+        }
+
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
+        doc.setTextColor(0, 0, 0);
         doc.text('THE WARSI FARM', ML, 58);
-  
+
         // QR
+        const qrSize = 76;
+        const qrX = MR - qrSize - 8;
+        const qrY = 18;
+        const qrBottomY = qrY + qrSize;
         const qrToken = c.qr_token || c.challan_token || '';
         const qrText = qrToken
           ? `${window.location.origin}/operations/deliveries?challan=${encodeURIComponent(qrToken)}`
           : `CHALLAN-${safe(c.challan_id, '')}`;
-  
+
         try {
           const qrDataUrl = await QRCode.toDataURL(qrText, {
             margin: 0,
-            width: 90,
+            width: 160,
             errorCorrectionLevel: 'M',
           });
-          doc.addImage(qrDataUrl, 'PNG', MR - 70, 24, 58, 58);
+          doc.addImage(qrDataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
         } catch {
-          doc.rect(MR - 70, 24, 58, 58);
+          doc.rect(qrX, qrY, qrSize, qrSize);
           doc.setFontSize(7);
-          doc.text('QR', MR - 41, 55, { align: 'center' });
+          doc.text('QR', qrX + qrSize / 2, qrY + qrSize / 2 + 2, { align: 'center' });
         }
-  
-        let y = 112;
+
+        const continuationGapBelowQr = 44;
+        let y = pageNo === 1 ? Math.max(112, qrBottomY + 18) : qrBottomY + continuationGapBelowQr;
   
         // Print customer/rider info ONLY ON FIRST PAGE
         if (pageNo === 1) {
           const boxX = ML;
-const boxY = y;
-const boxH = 118;
-const midX = ML + CONTENT_W / 2;
+          const boxY = y;
+          const midX = ML + CONTENT_W / 2;
+          const leftX = boxX + 28;
+          const rightX = midX + 28;
+          const colMaxW = CONTENT_W / 2 - 52;
+          const infoLineH = 12;
+          const infoRowGap = 10;
+          const wrapExtraGap = 8;
 
-doc.setFillColor(252, 252, 252);
-doc.setDrawColor(215, 215, 215);
-doc.setLineWidth(0.8);
-doc.roundedRect(boxX, boxY, CONTENT_W, boxH, 6, 6, 'FD');
+          const measureInfoCell = (label, value) => {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9.5);
+            const labelW = doc.getTextWidth(`${label}: `);
+            doc.setFont('helvetica', 'normal');
+            const lines = doc.splitTextToSize(safe(value), colMaxW - labelW - 6).slice(0, 2);
+            const wrapExtra = lines.length > 1 ? wrapExtraGap : 0;
+            return infoLineH * lines.length + wrapExtra;
+          };
 
-// subtle middle separator
-doc.setDrawColor(235, 235, 235);
-doc.line(midX, boxY + 14, midX, boxY + boxH - 14);
+          const drawInfoCell = (label, value, x, yPos) => {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9.5);
+            doc.setTextColor(25, 25, 25);
+            doc.text(`${label}:`, x, yPos);
 
-const leftX = boxX + 28;
-const rightX = midX + 28;
-const rowGap = 28;
+            const labelW = doc.getTextWidth(`${label}: `);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9.5);
+            doc.setTextColor(45, 45, 45);
 
-const drawInfoRow = (label, value, x, yPos, maxWidth) => {
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.setTextColor(25, 25, 25);
-  doc.text(`${label}:`, x, yPos);
+            const lines = doc.splitTextToSize(safe(value), colMaxW - labelW - 6).slice(0, 2);
+            doc.text(lines, x + labelW + 4, yPos);
+          };
 
-  const labelW = doc.getTextWidth(`${label}: `);
+          const pairedRowHeight = (leftLabel, leftValue, rightLabel, rightValue) =>
+            Math.max(
+              measureInfoCell(leftLabel, leftValue),
+              measureInfoCell(rightLabel, rightValue)
+            ) + infoRowGap;
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
-  doc.setTextColor(45, 45, 45);
+          const infoRows = [
+            ['Customer ID', customerId, 'Address', c.address || '—'],
+            ['Customer Name', customerName, 'Area', c.area || '—'],
+            ['Contact', contact, 'Total Hissa', totalHissaText],
+          ];
+          const boxH = infoRows.reduce(
+            (sum, [ll, lv, rl, rv]) => sum + pairedRowHeight(ll, lv, rl, rv),
+            32
+          );
 
-  const lines = doc.splitTextToSize(
-    safe(value),
-    maxWidth - labelW - 6
-  ).slice(0, 2);
+          doc.setFillColor(252, 252, 252);
+          doc.setDrawColor(215, 215, 215);
+          doc.setLineWidth(0.8);
+          doc.roundedRect(boxX, boxY, CONTENT_W, boxH, 6, 6, 'FD');
 
-  doc.text(lines, x + labelW + 4, yPos);
-};
+          doc.setDrawColor(235, 235, 235);
+          doc.line(midX, boxY + 14, midX, boxY + boxH - 14);
 
-drawInfoRow('Customer ID', customerId, leftX, boxY + 30, CONTENT_W / 2 - 52);
-drawInfoRow('Customer Name', customerName, leftX, boxY + 58, CONTENT_W / 2 - 52);
-drawInfoRow('Contact', contact, leftX, boxY + 86, CONTENT_W / 2 - 52);
+          let rowY = boxY + 24;
+          infoRows.forEach(([leftLabel, leftValue, rightLabel, rightValue]) => {
+            drawInfoCell(leftLabel, leftValue, leftX, rowY);
+            drawInfoCell(rightLabel, rightValue, rightX, rowY);
+            rowY += pairedRowHeight(leftLabel, leftValue, rightLabel, rightValue);
+          });
 
-drawInfoRow('Address', c.address || '—', rightX, boxY + 30, CONTENT_W / 2 - 52);
-drawInfoRow('Area', c.area || '—', rightX, boxY + 58, CONTENT_W / 2 - 52);
-
-// Total hissa better layout
-doc.setFont('helvetica', 'bold');
-doc.setFontSize(9.5);
-doc.setTextColor(25, 25, 25);
-doc.text('Total Hissa:', rightX, boxY + 86);
-
-doc.setFont('helvetica', 'bold');
-doc.setFontSize(10);
-doc.setFont('helvetica', 'bold');
-doc.setFontSize(9.5);
-doc.setTextColor(25, 25, 25);
-
-const label = 'Total Hissa:';
-doc.text(label, rightX, boxY + 86);
-
-const labelW = doc.getTextWidth(label + ' ');
-
-// SINGLE clean line — no color, no weird spacing
-doc.setFont('helvetica', 'normal');
-doc.setFontSize(9.5);
-doc.setTextColor(35, 35, 35);
-
-doc.text(
-  totalHissaText,
-  rightX + labelW + 4,
-  boxY + 86
-);
-
-y = boxY + boxH + 32;
-  
           y = boxY + boxH + 32;
   
           drawLineValue('Rider Name', '', ML + 4, y, ML + 250);
@@ -401,13 +386,12 @@ y = boxY + boxH + 32;
   
           y += 28;
         } else {
-          // continuation pages start higher, no repeated info block
-          y = 96;
-  
+          // continuation pages: extra space below QR so table does not crowd the code
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(9);
           doc.setTextColor(90, 90, 90);
-          doc.text(`Continuation of Challan # ${safe(c.challan_id, '')}`, ML, y - 18);
+          doc.text(`Continuation of Challan # ${safe(c.challan_id, '')}`, ML, qrBottomY + 18);
+          y = qrBottomY + continuationGapBelowQr;
         }
   
         // Table header
@@ -428,60 +412,98 @@ y = boxY + boxH + 32;
         const col3X = MR - 44;
   
         doc.text('SHAREHOLDER NAME', col1X, tableY + 18);
-        doc.text('DESCRIPTION', col2X, tableY + 18);
+        doc.text('ORDER TYPE', col2X, tableY + 18);
         doc.text('QUANTITY', col3X, tableY + 18, { align: 'center' });
   
         y = tableY + headerH + 14;
   
         const footerSpace = 88;
         const maxY = PH - footerSpace;
-        const rowH = 48;
+        const minRowH = 48;
+        const col1MaxW = 180;
+        const col2MaxW = 250;
+  
+        const measureOrderRow = (o) => {
+          const nameLines = split(o.shareholder_name || o.booking_name || '—', col1MaxW).slice(0, 2);
+          const shareDesc = safe(o.description);
+          const shareDescLines = shareDesc ? split(shareDesc, col1MaxW).slice(0, 4) : [];
+          const orderType = safe(o.order_type, 'Hissa');
+          const day = o.day ? ` (${o.day})` : '';
+          const mainDesc = `${orderType}${day}`;
+          const mainLines = split(mainDesc, col2MaxW).slice(0, 2);
+          const isGoat = isGoatHissaOrderType(o.order_type);
+          const subDesc = [
+            o.cow_number ? `${isGoat ? 'Goat' : 'Cow'}: ${o.cow_number}` : null,
+            !isGoat && o.hissa_number ? `Hissa: ${o.hissa_number}` : null,
+          ].filter(Boolean).join('  |  ');
+          const subLines = split(subDesc || '—', col2MaxW).slice(0, 2);
+          const leftH = 14 + nameLines.length * 12 + (shareDescLines.length ? 4 + shareDescLines.length * 11 : 0);
+          const rightH = 14 + mainLines.length * 12 + (subLines.length ? 4 + subLines.length * 11 : 0);
+          return Math.max(minRowH, leftH + 10, rightH + 10);
+        };
   
         if (!orders.length) {
           doc.setFillColor(247, 248, 250);
-          doc.roundedRect(ML, y, CONTENT_W, rowH, 4, 4, 'F');
+          doc.roundedRect(ML, y, CONTENT_W, minRowH, 4, 4, 'F');
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(10);
           doc.setTextColor(120, 120, 120);
           doc.text('No orders linked to this challan.', ML + CONTENT_W / 2, y + 28, { align: 'center' });
           orderIndex = 1;
         } else {
-          while (orderIndex < orders.length && y + rowH <= maxY) {
+          while (orderIndex < orders.length) {
             const o = orders[orderIndex];
+            const rowH = measureOrderRow(o);
+            if (y + rowH > maxY) break;
   
             doc.setFillColor(247, 248, 250);
             doc.roundedRect(ML, y, CONTENT_W, rowH, 4, 4, 'F');
   
+            const nameLines = split(o.shareholder_name || o.booking_name || '—', col1MaxW).slice(0, 2);
+            const shareDesc = safe(o.description);
+            const shareDescLines = shareDesc ? split(shareDesc, col1MaxW).slice(0, 4) : [];
+  
+            let col1Y = y + 16;
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(9.5);
             doc.setTextColor(25, 25, 25);
+            doc.text(nameLines, col1X, col1Y);
+            col1Y += nameLines.length * 12;
   
-            const nameLines = split(o.shareholder_name || o.booking_name || '—', 180).slice(0, 2);
-            doc.text(nameLines, col1X, y + 20);
+            if (shareDescLines.length) {
+              doc.setFont('helvetica', 'normal');
+              doc.setFontSize(8.5);
+              doc.setTextColor(95, 95, 95);
+              doc.text(shareDescLines, col1X, col1Y + 3);
+            }
   
             const orderType = safe(o.order_type, 'Hissa');
             const day = o.day ? ` (${o.day})` : '';
             const mainDesc = `${orderType}${day}`;
+            const mainLines = split(mainDesc, col2MaxW).slice(0, 2);
+            const isGoat = isGoatHissaOrderType(o.order_type);
+            const subDesc = [
+              o.cow_number ? `${isGoat ? 'Goat' : 'Cow'}: ${o.cow_number}` : null,
+              !isGoat && o.hissa_number ? `Hissa: ${o.hissa_number}` : null,
+            ].filter(Boolean).join('  |  ');
+            const subLines = split(subDesc || '—', col2MaxW).slice(0, 2);
   
+            let col2Y = y + 16;
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(9.5);
             doc.setTextColor(25, 25, 25);
-            doc.text(split(mainDesc, 250).slice(0, 1), col2X, y + 17);
-  
-            const subDesc = [
-              o.cow_number ? `Cow: ${o.cow_number}` : null,
-              o.hissa_number ? `Hissa: ${o.hissa_number}` : null,
-            ].filter(Boolean).join('  |  ');
+            doc.text(mainLines, col2X, col2Y);
+            col2Y += mainLines.length * 12 + 2;
   
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(9);
             doc.setTextColor(95, 95, 95);
-            doc.text(split(subDesc || '—', 250).slice(0, 1), col2X, y + 32);
+            doc.text(subLines, col2X, col2Y);
   
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(10);
             doc.setTextColor(25, 25, 25);
-            doc.text('1', col3X, y + 24, { align: 'center' });
+            doc.text('1', col3X, y + rowH / 2 + 2, { align: 'center' });
   
             y += rowH + 10;
             orderIndex++;
@@ -572,10 +594,6 @@ function MultiSelectDropdown({ label, options = [], values = [], onChange, place
   );
 }
 
-function normalizeForCompare(value) {
-  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
 function splitUniqueCsvValues(values) {
   return [...new Set((Array.isArray(values) ? values : [values])
     .flatMap((v) => Array.isArray(v) ? v : String(v || '').split(','))
@@ -598,9 +616,16 @@ export default function OperationsChallan() {
   const { user, authFetch } = useAuth();
   const emailOk = (user?.email || '').trim().toLowerCase() === REGENERATE_EMAIL;
 
+  const {
+    dayBatches,
+    selectedDay,
+    setSelectedDay,
+    selectedBatch,
+    setSelectedBatch,
+    loadBatches,
+  } = useOperationsBatchDay(authFetch);
+
   const [challans,      setChallans]      = useState([]);
-  const [batches,       setBatches]       = useState([]);
-  const [selectedBatch, setSelectedBatch] = useState(null);
   const [riders,        setRiders]        = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [msg,           setMsg]           = useState('');
@@ -610,7 +635,8 @@ export default function OperationsChallan() {
 
   const [search,      setSearch]      = useState('');
   const [challanSearch, setChallanSearch] = useState('');
-  const [filterDay,   setFilterDay]   = useState('');
+  const [filterDay,   setFilterDay]   = useState('Day 1');
+  const [generateDay, setGenerateDay] = useState('Day 1');
   const [filterSlot,  setFilterSlot]  = useState([]);
   const [filterStatus, setFilterStatus] = useState([]);
   const [filterOrderType, setFilterOrderType] = useState([]);
@@ -618,15 +644,12 @@ export default function OperationsChallan() {
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [modal,       setModal]       = useState(null);
 
-  const loadBatches = useCallback(async () => {
-    try {
-      const res = await authFetch(`${API_BASE}/operations/batches`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setBatches(data.batches || []);
-      if (data.batches?.length && selectedBatch === null) setSelectedBatch(data.batches[0].batch_id);
-    } catch { /* silent */ }
-  }, [authFetch, selectedBatch]);
+  useEffect(() => {
+    if (selectedDay) {
+      setFilterDay(selectedDay);
+      setGenerateDay(selectedDay);
+    }
+  }, [selectedDay]);
 
   const loadRiders = useCallback(async () => {
     try {
@@ -650,7 +673,7 @@ export default function OperationsChallan() {
     }
   }, [authFetch, selectedBatch]);
 
-  useEffect(() => { loadBatches(); loadRiders(); }, []);
+  useEffect(() => { loadRiders(); }, []);
   useEffect(() => { if (selectedBatch !== null) load(); }, [load, selectedBatch]);
 
   useEffect(() => {
@@ -752,17 +775,13 @@ export default function OperationsChallan() {
     setConfirmRegen(false); setBusy(true); setErr('');
     try {
       const res = await authFetch(`${API_BASE}/operations/challans/regenerate-from-orders`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ day: generateDay }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Regenerate failed');
-      setMsg(`Batch "${data.batch_label}" created — ${data.groups ?? 0} challan groups.`);
-      const bRes = await authFetch(`${API_BASE}/operations/batches`);
-      if (bRes.ok) {
-        const bData = await bRes.json();
-        setBatches(bData.batches || []);
-        if (bData.batches?.length) setSelectedBatch(bData.batches[0].batch_id);
-      }
+      setMsg(`Batch "${data.batch_label}" created — ${data.groups ?? 0} challan groups for ${generateDay}.`);
+      await loadBatches();
+      if (data.batch_id) setSelectedBatch(data.batch_id);
     } catch (e) { setErr(e.message || 'Regenerate failed'); }
     setBusy(false);
   };
@@ -813,7 +832,7 @@ export default function OperationsChallan() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             {busy && <span style={{ fontSize: '10px', color: '#999', fontWeight: '600' }}>Working…</span>}
-            {batches.length > 0 && (
+            {dayBatches.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <label style={{ fontSize: '11px', color: '#666', whiteSpace: 'nowrap' }}>Batch:</label>
                 <select
@@ -821,7 +840,7 @@ export default function OperationsChallan() {
                   onChange={(e) => setSelectedBatch(Number(e.target.value))}
                   style={{ padding: '6px 10px', borderRadius: '7px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '11px', fontWeight: '600', color: '#333', cursor: 'pointer' }}
                 >
-                  {batches.map((b) => (
+                  {dayBatches.map((b) => (
                     <option key={b.batch_id} value={b.batch_id}>{b.label}</option>
                   ))}
                 </select>
@@ -832,6 +851,24 @@ export default function OperationsChallan() {
 
         <div style={{ borderTop: '1px solid #e6e6e6', marginBottom: '12px' }} />
 
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', width: '100%', gap: '8px', marginBottom: '12px' }}>
+          {DAY_OPTIONS.map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => { setSelectedDay(d); setFilterDay(d); setGenerateDay(d); }}
+              style={{
+                width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e0e0e0',
+                background: normalizeForCompare(selectedDay) === normalizeForCompare(d) ? '#FF5722' : '#fff',
+                color: normalizeForCompare(selectedDay) === normalizeForCompare(d) ? '#fff' : '#333',
+                fontWeight: 600, cursor: 'pointer', fontSize: '13px',
+              }}
+            >
+              {d}
+            </button>
+          ))}
+        </div>
+
         {/* Filters */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '14px', alignItems: 'flex-end', flexShrink: 0 }}>
           <div style={{ flex: '1 1 200px', minWidth: 160 }}>
@@ -841,13 +878,6 @@ export default function OperationsChallan() {
           <div style={{ flex: '0 1 180px', minWidth: 150 }}>
             <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Challan No.</label>
             <input type="text" value={challanSearch} onChange={(e) => setChallanSearch(e.target.value)} style={inputStyle} placeholder="Search challan no…" />
-          </div>
-          <div style={{ width: 130 }}>
-            <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Day</label>
-            <select value={filterDay} onChange={(e) => setFilterDay(e.target.value)} style={inputStyle}>
-              <option value="">All</option>
-              {dayOptions.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
           </div>
           <MultiSelectDropdown label="Slots" options={slotFilterOptions} values={filterSlot} onChange={setFilterSlot} placeholder="All slots" width={150} />
           <MultiSelectDropdown label="Status" options={statusFilterOptions} values={filterStatus} onChange={setFilterStatus} placeholder="All status" width={150} />
@@ -904,9 +934,8 @@ export default function OperationsChallan() {
                   <tr><td colSpan={16} style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>No rows found.</td></tr>
                 ) : pagedRows.map((c, idx) => {
                   const st          = challanDerivedStatus(c);
-                  const descriptionText = getDescriptionText(c);
-                  const rowHasDescription = Boolean(descriptionText);
-                  const rowIsAffluent = isAffluentOrder(c);
+                  const rowTag = getOrderTag(c);
+                  const rowHighlight = getChallanRowHighlight(rowTag);
                   const names       = c.shareholders_csv  || '—';
                   const contacts    = c.contacts_csv      || '—';
                   const altContacts = c.alt_contacts_csv  || '';
@@ -917,10 +946,15 @@ export default function OperationsChallan() {
                   if (rowSuperGoat === 0 && rowPremiumGoat === 0 && rowLegacyGoat > 0) rowSuperGoat = rowLegacyGoat;
                   return (
                     <tr key={c.challan_id}
-                      style={{ borderBottom: '1px solid #f3f3f3', background: rowIsAffluent ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'), borderLeft: rowIsAffluent ? '3px solid #D32F2F' : '3px solid transparent', cursor: c.qr_token ? 'pointer' : 'default' }}
+                      style={{
+                        borderBottom: '1px solid #f3f3f3',
+                        background: rowHighlight.background || (idx % 2 === 0 ? '#fff' : '#FAFAFA'),
+                        borderLeft: rowHighlight.borderLeft,
+                        cursor: c.qr_token ? 'pointer' : 'default',
+                      }}
                       onClick={() => c.qr_token && openChallanModal(c.qr_token)}
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#f5f9ff'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = rowIsAffluent ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'); }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = rowHighlight.background || (idx % 2 === 0 ? '#fff' : '#FAFAFA'); }}
                     >
                       <td style={{ padding: '9px 10px' }} onClick={(e) => e.stopPropagation()}>
                         <input type="checkbox" checked={selectedIds.has(c.challan_id)} onChange={() => toggleOne(c.challan_id)} />
@@ -929,9 +963,7 @@ export default function OperationsChallan() {
                         <NoBadge number={c.challan_id} />
                       </td>
                       <td style={{ padding: '9px 10px', color: '#555', verticalAlign:'top' }}>
-                        {rowHasDescription ? (
-                          <div style={{ whiteSpace:'pre-line', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45, color:'#333', fontWeight:500 }}>{descriptionText}</div>
-                        ) : <span style={{ color: '#ccc' }}>—</span>}
+                        <OrderDescriptionCell source={c} />
                       </td>
                       <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{c.booking_name || '—'}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_standard_hissa || 0}</td>
@@ -1063,7 +1095,7 @@ export default function OperationsChallan() {
             onClick={(e) => e.stopPropagation()}>
             <h2 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: '600', color: '#333' }}>Generate new batch of challans?</h2>
             <p style={{ margin: '0 0 18px', fontSize: '12px', color: '#666' }}>
-              This creates a <strong>new batch</strong> from current 2026 orders. Existing batches and their challans are preserved.
+              This creates a <strong>new batch</strong> for <strong>{generateDay}</strong> only from 2026 orders on that day. Existing batches are preserved.
             </p>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setConfirmRegen(false)}
@@ -1082,6 +1114,7 @@ export default function OperationsChallan() {
           customerId={modalCustomerIds.length ? modalCustomerIds.join(', ') : '—'}
           description={modalDescription}
           affluent={isAffluentOrder({ ...(modal?.challan || {}), orders: modal?.orders || [] })}
+          specialRequest={isSpecialRequestOrder({ ...(modal?.challan || {}), orders: modal?.orders || [] })}
           statusBadge={<StatusBadge status={modal.challan?.derived_status} />}
           onClose={() => setModal(null)}
           maxWidth="1240px"

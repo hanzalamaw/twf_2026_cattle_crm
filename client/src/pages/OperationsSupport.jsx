@@ -4,6 +4,15 @@ import { getOperationsSocket } from '../utils/operationsSocket';
 import { useAuth } from '../context/AuthContext';
 import SharedChallanModal from '../components/SharedChallanModal';
 import SearchableRiderFilter from '../components/SearchableRiderFilter';
+import {
+  getDescriptionText,
+  getOrderTag,
+  getChallanRowHighlight,
+  isAffluentOrder,
+  isSpecialRequestOrder,
+} from '../utils/orderTags';
+import { useOperationsBatchDay } from '../utils/useOperationsBatchDay';
+import OrderDescriptionCell from '../components/OrderDescriptionCell';
 
 const ALL_STATUSES = ['Pending', 'Rider Assigned', 'Dispatched', 'Delivered', 'Returned to Farm'];
 const GOAT_HISSA_SUPER = 'Super Goat(Hissa)';
@@ -84,57 +93,6 @@ function getUniqueDescriptionValues(values) {
   return [...new Set((values || []).map((v) => String(v || '').trim()).filter(Boolean))];
 }
 
-function getDescriptionText(source) {
-  if (!source) return '';
-
-  const normalize = (v) =>
-    String(v || '')
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, ' ');
-
-  const originalMap = new Map();
-
-  const addValue = (val) => {
-    const norm = normalize(val);
-    if (!norm) return;
-    if (!originalMap.has(norm)) {
-      originalMap.set(norm, String(val).trim());
-    }
-  };
-
-  // from challan
-  [
-    source.description,
-    source.descriptions,
-    source.description_csv,
-    source.descriptions_csv,
-    source.special_request,
-    source.specialRequest,
-    source.request,
-    source.remarks,
-    source.notes,
-    source.note,
-  ].forEach(addValue);
-
-  // from orders
-  (source.orders || []).forEach((o) => {
-    addValue(o.description);
-  });
-
-  return Array.from(originalMap.values()).join(' | ');
-}
-
-function hasDescription(source) {
-  return getDescriptionText(source).length > 0;
-}
-
-function isAffluentOrder(source, totalField = 'hissa_count', waqfField = 'waqf_hissa_count') {
-  const totalHissa = Number(source?.[totalField] || 0);
-  const waqfHissa = Number(source?.[waqfField] || 0);
-  return hasDescription(source) || (totalHissa - waqfHissa >= 3);
-}
-
 function NoBadge({ number }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: '700', background: '#F5F5F5', color: '#666', whiteSpace: 'nowrap' }}>
@@ -142,19 +100,6 @@ function NoBadge({ number }) {
     </span>
   );
 }
-
-function RedDot() {
-  return <span title="Special request" style={{ display:'inline-block', width:'8px', height:'8px', borderRadius:'999px', background:'#D32F2F', flexShrink:0 }} />;
-}
-
-function SpecialRequestPatch() {
-  return (
-    <span style={{ display:'inline-flex', alignItems:'center', gap:'6px', padding:'4px 9px', borderRadius:'999px', background:'#FFEBEE', color:'#C62828', border:'1px solid #FFCDD2', fontSize:'10px', fontWeight:'700', whiteSpace:'nowrap', textTransform:'uppercase', letterSpacing:'0.2px' }}>
-      <RedDot /> Special Request
-    </span>
-  );
-}
-
 
 const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px', background: '#fff' };
 
@@ -199,22 +144,29 @@ function getGroupOrderTypes(g) {
   return inferred;
 }
 
-const DAY_OPTIONS = ['Day 1', 'Day 2', 'Day 3'];
 const PAGE_SIZE = 50;
 
 export default function OperationsCustomerSupport() {
   const { authFetch } = useAuth();
 
+  const {
+    dayBatches,
+    selectedDay,
+    setSelectedDay,
+    selectedBatch,
+    setSelectedBatch,
+    loadBatches,
+    ready,
+    DAY_OPTIONS,
+  } = useOperationsBatchDay(authFetch);
+
   const [groups,        setGroups]        = useState([]);
   const [riders,        setRiders]        = useState([]);
-  const [batches,       setBatches]       = useState([]);
-  const [selectedBatch, setSelectedBatch] = useState(null);
   const [loading,       setLoading]       = useState(true);
   const [err,           setErr]           = useState('');
 
   const [search,       setSearch]       = useState('');
   const [challanSearch, setChallanSearch] = useState('');
-  const [dayFilter,    setDayFilter]    = useState('Day 1');
   const [statusFilter, setStatusFilter] = useState([]);
   const [riderFilter,  setRiderFilter]  = useState('');
   const [slotFilter,   setSlotFilter]   = useState([]);
@@ -226,18 +178,8 @@ export default function OperationsCustomerSupport() {
   const [modalData,    setModalData]    = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
 
-  const loadBatches = useCallback(async () => {
-    try {
-      const res = await authFetch(`${API_BASE}/operations/batches`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setBatches(data.batches || []);
-      if (data.batches?.length && selectedBatch === null) setSelectedBatch(data.batches[0].batch_id);
-    } catch { /* silent */ }
-  }, [authFetch, selectedBatch]);
-
   const load = useCallback(async () => {
-    if (selectedBatch === null) return;
+    if (!ready || selectedBatch === null) return;
     setErr(''); setLoading(true);
     try {
       const qs = new URLSearchParams();
@@ -261,10 +203,9 @@ export default function OperationsCustomerSupport() {
     } finally {
       setLoading(false);
     }
-  }, [authFetch, selectedBatch]);
+  }, [authFetch, ready, selectedBatch]);
 
-  useEffect(() => { loadBatches(); }, []);
-  useEffect(() => { if (selectedBatch !== null) load(); }, [load, selectedBatch]);
+  useEffect(() => { if (ready && selectedBatch !== null) load(); }, [load, ready, selectedBatch]);
 
   useEffect(() => {
     const socket = getOperationsSocket();
@@ -320,7 +261,7 @@ export default function OperationsCustomerSupport() {
 
   const filteredGroups = useMemo(() => {
     let list = groups;
-    if (dayFilter) list = list.filter((g) => normalizeForCompare(g.day) === normalizeForCompare(dayFilter));
+    if (selectedDay) list = list.filter((g) => normalizeForCompare(g.day) === normalizeForCompare(selectedDay));
     if (slotFilter.length) {
       list = list.filter((g) => {
         const slots = getGroupSlots(g);
@@ -349,14 +290,22 @@ export default function OperationsCustomerSupport() {
       list = list.filter((g) => String(g.challan_id || '').toLowerCase().includes(challanQ));
     }
     return list;
-  }, [groups, search, challanSearch, dayFilter, slotFilter, statusFilter, riderFilter, orderTypeFilter]);
+  }, [groups, search, challanSearch, selectedDay, slotFilter, statusFilter, riderFilter, orderTypeFilter]);
 
   const totalPages  = Math.max(1, Math.ceil(filteredGroups.length / PAGE_SIZE));
   const pagedGroups = useMemo(() => filteredGroups.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filteredGroups, page]);
-  useEffect(() => { setPage(1); }, [search, challanSearch, dayFilter, slotFilter, orderTypeFilter, statusFilter, riderFilter, selectedBatch]);
+  useEffect(() => { setPage(1); }, [search, challanSearch, selectedDay, slotFilter, orderTypeFilter, statusFilter, riderFilter, selectedBatch]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
-  const resetFilters = () => { setSearch(''); setChallanSearch(''); setDayFilter('Day 1'); setSlotFilter([]); setOrderTypeFilter([]); setStatusFilter([]); setRiderFilter(''); };
+  const resetFilters = () => {
+    setSearch('');
+    setChallanSearch('');
+    setSelectedDay('Day 1');
+    setSlotFilter([]);
+    setOrderTypeFilter([]);
+    setStatusFilter([]);
+    setRiderFilter('');
+  };
 
   const openModal = async (g) => {
     if (!g.qr_token) { setModal(g); setModalData(null); return; }
@@ -411,7 +360,7 @@ export default function OperationsCustomerSupport() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <button type="button" onClick={load} style={{ padding: '7px 13px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Refresh</button>
-            {batches.length > 0 && (
+            {dayBatches.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <label style={{ fontSize: '11px', color: '#666', whiteSpace: 'nowrap' }}>Batch:</label>
                 <select
@@ -419,7 +368,7 @@ export default function OperationsCustomerSupport() {
                   onChange={(e) => setSelectedBatch(Number(e.target.value))}
                   style={{ padding: '6px 10px', borderRadius: '7px', border: '1px solid #e0e0e0', background: '#fff', fontSize: '11px', fontWeight: '600', color: '#333', cursor: 'pointer' }}
                 >
-                  {batches.map((b) => (
+                  {dayBatches.map((b) => (
                     <option key={b.batch_id} value={b.batch_id}>{b.label}</option>
                   ))}
                 </select>
@@ -432,8 +381,8 @@ export default function OperationsCustomerSupport() {
         <div style={{ borderTop: '1px solid #e6e6e6', marginBottom: '12px' }} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', width: '100%', gap: '8px', marginBottom: '12px' }}>
           {DAY_OPTIONS.map((d) => (
-            <button key={d} type="button" onClick={() => setDayFilter((prev) => normalizeForCompare(prev) === normalizeForCompare(d) ? '' : d)}
-              style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', background: normalizeForCompare(dayFilter) === normalizeForCompare(d) ? '#FF5722' : '#fff', color: normalizeForCompare(dayFilter) === normalizeForCompare(d) ? '#fff' : '#333', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}>
+            <button key={d} type="button" onClick={() => setSelectedDay(d)}
+              style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', background: normalizeForCompare(selectedDay) === normalizeForCompare(d) ? '#FF5722' : '#fff', color: normalizeForCompare(selectedDay) === normalizeForCompare(d) ? '#fff' : '#333', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}>
               {d}
             </button>
           ))}
@@ -509,19 +458,19 @@ export default function OperationsCustomerSupport() {
               <tbody>
                 {pagedGroups.map((g, idx) => {
                   const st = g.derived_status || 'Pending';
-                  const descriptionText = getDescriptionText(g);
-                  const rowHasDescription = Boolean(descriptionText);
-                  const rowIsAffluent = isAffluentOrder(g);
+                  const rowTag = getOrderTag(g, 'hissa_count', 'waqf_hissa_count');
+                  const rowHighlight = getChallanRowHighlight(rowTag);
                   let rowSuperGoat = Number(g.super_goat_hissa_count ?? 0);
                   let rowPremiumGoat = Number(g.premium_goat_hissa_count ?? 0);
                   const rowLegacyGoat = Number(g.goat_hissa_count ?? 0);
                   if (rowSuperGoat === 0 && rowPremiumGoat === 0 && rowLegacyGoat > 0) rowSuperGoat = rowLegacyGoat;
+                  const baseBg = rowHighlight.background || (idx % 2 === 0 ? '#fff' : '#FAFAFA');
                   return (
                     <tr key={g.group_key || g.challan_id}
-                      style={{ borderBottom: '1px solid #f3f3f3', background: rowIsAffluent ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'), borderLeft: rowIsAffluent ? '3px solid #D32F2F' : '3px solid transparent', cursor: 'pointer' }}
+                      style={{ borderBottom: '1px solid #f3f3f3', background: baseBg, borderLeft: rowHighlight.borderLeft, cursor: 'pointer' }}
                       onClick={() => openModal(g)}
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#f5f9ff'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = rowIsAffluent ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'); }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = baseBg; }}
                     >
                       <td style={{ padding: '9px 10px' }}><NoBadge number={g.challan_id} /></td>
                       <td style={{ padding: '9px 10px' }}><StatusBadge status={st} /></td>
@@ -533,9 +482,7 @@ export default function OperationsCustomerSupport() {
                             : <span style={{ color: '#bbb', fontStyle: 'italic' }}>Unassigned</span>)}
                       </td>
                       <td style={{ padding: '9px 10px', color: '#555', verticalAlign:'top' }}>
-                        {rowHasDescription ? (
-                          <div style={{ whiteSpace:'pre-line', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45, color:'#333', fontWeight:500 }}>{descriptionText}</div>
-                        ) : <span style={{ color: '#ccc' }}>—</span>}
+                        <OrderDescriptionCell source={g} totalField="hissa_count" waqfField="waqf_hissa_count" />
                       </td>
                       <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{(g.booking_names || []).join(', ') || '—'}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{g.standard_hissa_count || 0}</td>
@@ -662,7 +609,8 @@ export default function OperationsCustomerSupport() {
           challanId={modalData?.challan?.challan_id || modal.challan_id}
           customerId={(modal.customer_ids || []).join(', ') || modalData?.challan?.customer_ids_csv || '—'}
           description={modalDescription}
-          affluent={isAffluentOrder({ ...(modalData?.challan || modal || {}), orders: modalData?.orders || [] }, 'total_hissa', 'total_waqf_hissa')}
+          affluent={isAffluentOrder({ ...(modalData?.challan || modal || {}), orders: modalData?.orders || [] }, 'hissa_count', 'waqf_hissa_count')}
+          specialRequest={isSpecialRequestOrder({ ...(modalData?.challan || modal || {}), orders: modalData?.orders || [] }, 'hissa_count', 'waqf_hissa_count')}
           statusBadge={<StatusBadge status={modalData?.challan?.derived_status || modal.derived_status} />}
           onClose={() => { setModal(null); setModalData(null); }}
           maxWidth="1240px"

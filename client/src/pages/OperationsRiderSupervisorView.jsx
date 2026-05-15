@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE } from '../config/api';
+import {
+  getOrderTag,
+  getChallanRowHighlight,
+  normalizeDayLabel,
+} from '../utils/orderTags';
 import { getOperationsSocket } from '../utils/operationsSocket';
 import { useAuth } from '../context/AuthContext';
+import { useOperationsBatchDay } from '../utils/useOperationsBatchDay';
+import OrderDescriptionCell from '../components/OrderDescriptionCell';
 import SharedChallanModal from '../components/SharedChallanModal';
 import SearchableRiderFilter from '../components/SearchableRiderFilter';
 
@@ -128,12 +135,6 @@ function hasDescription(source) {
   return getDescriptionText(source).length > 0;
 }
 
-function isAffluentOrder(source, totalField = 'hissa_count', waqfField = 'waqf_hissa_count') {
-  const totalHissa = Number(source?.[totalField] || 0);
-  const waqfHissa = Number(source?.[waqfField] || 0);
-  return hasDescription(source) || (totalHissa - waqfHissa >= 3);
-}
-
 function NoBadge({ number }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: '700', background: '#F5F5F5', color: '#666', whiteSpace: 'nowrap' }}>
@@ -141,19 +142,6 @@ function NoBadge({ number }) {
     </span>
   );
 }
-
-function RedDot() {
-  return <span title="Special request" style={{ display:'inline-block', width:'8px', height:'8px', borderRadius:'999px', background:'#D32F2F', flexShrink:0 }} />;
-}
-
-function SpecialRequestPatch() {
-  return (
-    <span style={{ display:'inline-flex', alignItems:'center', gap:'6px', padding:'4px 9px', borderRadius:'999px', background:'#FFEBEE', color:'#C62828', border:'1px solid #FFCDD2', fontSize:'10px', fontWeight:'700', whiteSpace:'nowrap', textTransform:'uppercase', letterSpacing:'0.2px' }}>
-      <RedDot /> Special Request
-    </span>
-  );
-}
-
 
 const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e0e0e0', fontSize: '11px', background: '#fff' };
 
@@ -198,11 +186,19 @@ function getGroupOrderTypes(g) {
   return inferred;
 }
 
-const SUPERVISOR_VISIBLE_STATUSES = ['Rider Assigned', 'Dispatched'];
 const PAGE_SIZE = 50;
 
 export default function OperationsRiderSupervisorView() {
   const { authFetch } = useAuth();
+
+  const {
+    selectedDay,
+    setSelectedDay,
+    selectedBatch,
+    loadBatches,
+    ready,
+    DAY_OPTIONS,
+  } = useOperationsBatchDay(authFetch);
 
   const [groups,        setGroups]        = useState([]);
   const [riders,        setRiders]        = useState([]);
@@ -222,10 +218,14 @@ export default function OperationsRiderSupervisorView() {
   const [modalLoading, setModalLoading] = useState(false);
 
   const load = useCallback(async () => {
+    if (!ready || selectedBatch === null) return;
     setErr(''); setLoading(true);
     try {
+      const qs = new URLSearchParams();
+      qs.set('batch_id', String(selectedBatch));
+      if (selectedDay) qs.set('day', selectedDay);
       const [gRes, ridRes] = await Promise.all([
-        authFetch(`${API_BASE}/operations/supervisor/deliveries/groups`),
+        authFetch(`${API_BASE}/operations/supervisor/deliveries/groups?${qs}`),
         authFetch(`${API_BASE}/operations/supervisor/riders`),
       ]);
 
@@ -241,13 +241,13 @@ export default function OperationsRiderSupervisorView() {
     } finally {
       setLoading(false);
     }
-  }, [authFetch]);
+  }, [authFetch, ready, selectedBatch, selectedDay]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (ready && selectedBatch !== null) load(); }, [load, ready, selectedBatch, selectedDay]);
 
   useEffect(() => {
     const socket = getOperationsSocket();
-    const refresh = () => { load(); };
+    const refresh = () => { loadBatches(); if (selectedBatch !== null) load(); };
     socket.on('operations:changed', refresh);
     socket.on('challans:changed', refresh);
     socket.on('riders:changed', refresh);
@@ -256,7 +256,7 @@ export default function OperationsRiderSupervisorView() {
       socket.off('challans:changed', refresh);
       socket.off('riders:changed', refresh);
     };
-  }, [load]);
+  }, [load, loadBatches, selectedBatch]);
 
   const riderMap = useMemo(() => {
     const m = {};
@@ -296,7 +296,14 @@ export default function OperationsRiderSupervisorView() {
     return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map((slot) => ({ value: slot, label: slot }));
   }, [groups]);
   const filteredGroups = useMemo(() => {
-    let list = groups.filter((g) => SUPERVISOR_VISIBLE_STATUSES.includes(g.derived_status || 'Pending'));
+    let list = groups;
+    if (selectedDay) {
+      const wantDay = normalizeDayLabel(selectedDay);
+      list = list.filter((g) => {
+        const gDay = normalizeDayLabel(g.day);
+        return !gDay || gDay === wantDay;
+      });
+    }
     if (slotFilter.length) {
       list = list.filter((g) => {
         const slots = getGroupSlots(g);
@@ -324,11 +331,11 @@ export default function OperationsRiderSupervisorView() {
       list = list.filter((g) => String(g.challan_id || '').toLowerCase().includes(challanQ));
     }
     return list;
-  }, [groups, search, challanSearch, slotFilter, riderFilter, orderTypeFilter]);
+  }, [groups, search, challanSearch, slotFilter, riderFilter, orderTypeFilter, selectedDay]);
 
   const totalPages  = Math.max(1, Math.ceil(filteredGroups.length / PAGE_SIZE));
   const pagedGroups = useMemo(() => filteredGroups.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filteredGroups, page]);
-  useEffect(() => { setPage(1); }, [search, challanSearch, slotFilter, orderTypeFilter, riderFilter]);
+  useEffect(() => { setPage(1); }, [search, challanSearch, slotFilter, orderTypeFilter, riderFilter, selectedDay, selectedBatch]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
   const resetFilters = () => { setSearch(''); setChallanSearch(''); setSlotFilter([]); setOrderTypeFilter([]); setRiderFilter(''); };
@@ -381,12 +388,22 @@ export default function OperationsRiderSupervisorView() {
           <div>
             <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>Rider Supervisor</h2>
             <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#888', fontWeight: '500', lineHeight: 1.45, maxWidth: '760px' }}>
-              Latest batch only. Shows groups with status Rider Assigned or Dispatched where at least one assigned rider is on your team. Click a row for challan details.
+              Uses the latest challan batch for the selected day. Shows delivery groups where at least one assigned rider is on your team. Click a row for challan details.
             </p>
           </div>
+          <button type="button" onClick={load} style={{ padding: '7px 13px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Refresh</button>
         </div>
 
         <div style={{ borderTop: '1px solid #e6e6e6', marginBottom: '12px' }} />
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', width: '100%', gap: '8px', marginBottom: '12px' }}>
+          {DAY_OPTIONS.map((d) => (
+            <button key={d} type="button" onClick={() => setSelectedDay(d)}
+              style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #e0e0e0', background: normalizeForCompare(selectedDay) === normalizeForCompare(d) ? '#FF5722' : '#fff', color: normalizeForCompare(selectedDay) === normalizeForCompare(d) ? '#fff' : '#333', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}>
+              {d}
+            </button>
+          ))}
+        </div>
 
         {/* Desktop filters */}
         <div className="cs-filter-desktop" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', alignItems: 'flex-end', minWidth: 0, flexShrink: 0 }}>
@@ -457,19 +474,19 @@ export default function OperationsRiderSupervisorView() {
               <tbody>
                 {pagedGroups.map((g, idx) => {
                   const st = g.derived_status || 'Pending';
-                  const descriptionText = getDescriptionText(g);
-                  const rowHasDescription = Boolean(descriptionText);
-                  const rowIsAffluent = isAffluentOrder(g);
+                  const rowTag = getOrderTag(g, 'hissa_count', 'waqf_hissa_count');
+                  const rowHighlight = getChallanRowHighlight(rowTag);
+                  const baseBg = rowHighlight.background || (idx % 2 === 0 ? '#fff' : '#FAFAFA');
                   let rowSuperGoat = Number(g.super_goat_hissa_count ?? 0);
                   let rowPremiumGoat = Number(g.premium_goat_hissa_count ?? 0);
                   const rowLegacyGoat = Number(g.goat_hissa_count ?? 0);
                   if (rowSuperGoat === 0 && rowPremiumGoat === 0 && rowLegacyGoat > 0) rowSuperGoat = rowLegacyGoat;
                   return (
                     <tr key={g.group_key || g.challan_id}
-                      style={{ borderBottom: '1px solid #f3f3f3', background: rowIsAffluent ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'), borderLeft: rowIsAffluent ? '3px solid #D32F2F' : '3px solid transparent', cursor: 'pointer' }}
+                      style={{ borderBottom: '1px solid #f3f3f3', background: baseBg, borderLeft: rowHighlight.borderLeft, cursor: 'pointer' }}
                       onClick={() => openModal(g)}
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#f5f9ff'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = rowIsAffluent ? '#FFF7F7' : (idx % 2 === 0 ? '#fff' : '#FAFAFA'); }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = baseBg; }}
                     >
                       <td style={{ padding: '9px 10px' }}><NoBadge number={g.challan_id} /></td>
                       <td style={{ padding: '9px 10px' }}><StatusBadge status={st} /></td>
@@ -481,9 +498,7 @@ export default function OperationsRiderSupervisorView() {
                             : <span style={{ color: '#bbb', fontStyle: 'italic' }}>Unassigned</span>)}
                       </td>
                       <td style={{ padding: '9px 10px', color: '#555', verticalAlign:'top' }}>
-                        {rowHasDescription ? (
-                          <div style={{ whiteSpace:'pre-line', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45, color:'#333', fontWeight:500 }}>{descriptionText}</div>
-                        ) : <span style={{ color: '#ccc' }}>—</span>}
+                        <OrderDescriptionCell source={g} totalField="hissa_count" waqfField="waqf_hissa_count" />
                       </td>
                       <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{(g.booking_names || []).join(', ') || '—'}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{g.standard_hissa_count || 0}</td>
@@ -610,7 +625,8 @@ export default function OperationsRiderSupervisorView() {
           challanId={modalData?.challan?.challan_id || modal.challan_id}
           customerId={(modal.customer_ids || []).join(', ') || modalData?.challan?.customer_ids_csv || '—'}
           description={modalDescription}
-          affluent={isAffluentOrder({ ...(modalData?.challan || modal || {}), orders: modalData?.orders || [] }, 'total_hissa', 'total_waqf_hissa')}
+          affluent={isAffluentOrder({ ...(modalData?.challan || modal || {}), orders: modalData?.orders || [] }, 'hissa_count', 'waqf_hissa_count')}
+          specialRequest={isSpecialRequestOrder({ ...(modalData?.challan || modal || {}), orders: modalData?.orders || [] }, 'hissa_count', 'waqf_hissa_count')}
           statusBadge={<StatusBadge status={modalData?.challan?.derived_status || modal.derived_status} />}
           onClose={() => { setModal(null); setModalData(null); }}
           maxWidth="1240px"
