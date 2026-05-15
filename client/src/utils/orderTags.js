@@ -24,6 +24,43 @@ export function normalizeDayLabel(value) {
   return String(value || '').trim() || '';
 }
 
+const PLACEHOLDER_DESCRIPTIONS = new Set(['-', '—', '–', '--', '---', 'none', 'n/a', 'na', 'nil', 'null']);
+
+/** Treat "-", em dash, n/a, etc. as empty description. */
+export function isPlaceholderDescriptionValue(value) {
+  const norm = normalizeForCompare(value);
+  return !norm || PLACEHOLDER_DESCRIPTIONS.has(norm);
+}
+
+function collectRawDescriptionValues(source) {
+  if (!source) return [];
+  const values = [];
+  const push = (val) => {
+    const trimmed = String(val ?? '').trim();
+    if (trimmed) values.push(trimmed);
+  };
+  [
+    source.description,
+    source.descriptions,
+    source.description_csv,
+    source.descriptions_csv,
+    source.special_request,
+    source.specialRequest,
+    source.request,
+    source.remarks,
+    source.notes,
+    source.note,
+  ].forEach(push);
+  (source.orders || []).forEach((o) => push(o.description));
+  return values;
+}
+
+/** Description is exactly "PRIORITY" (case-sensitive) with no other meaningful text. */
+export function hasPriorityOnlyDescription(source) {
+  const meaningful = collectRawDescriptionValues(source).filter((v) => !isPlaceholderDescriptionValue(v));
+  return meaningful.length > 0 && meaningful.every((v) => v === 'PRIORITY');
+}
+
 export function getDescriptionText(source) {
   if (!source) return '';
 
@@ -36,6 +73,7 @@ export function getDescriptionText(source) {
   const originalMap = new Map();
 
   const addValue = (val) => {
+    if (isPlaceholderDescriptionValue(val)) return;
     const norm = normalize(val);
     if (!norm) return;
     if (!originalMap.has(norm)) {
@@ -73,8 +111,9 @@ export function nonWaqfHissaCount(source, totalField = 'total_hissa', waqfField 
   return totalHissa - waqfHissa;
 }
 
-/** Affluent: has description and total hissa minus waqf is 3 or more. */
+/** Affluent: PRIORITY-only description, or meaningful description with 3+ non-waqf hissa. */
 export function isAffluentOrder(source, totalField = 'total_hissa', waqfField = 'total_waqf_hissa') {
+  if (hasPriorityOnlyDescription(source)) return true;
   return hasDescription(source) && nonWaqfHissaCount(source, totalField, waqfField) >= 3;
 }
 

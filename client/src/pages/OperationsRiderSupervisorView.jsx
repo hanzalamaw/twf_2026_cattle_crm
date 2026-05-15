@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE } from '../config/api';
 import {
+  getDescriptionText,
   getOrderTag,
   getChallanRowHighlight,
+  isAffluentOrder,
+  isSpecialRequestOrder,
   normalizeDayLabel,
 } from '../utils/orderTags';
 import { getOperationsSocket } from '../utils/operationsSocket';
@@ -88,51 +91,6 @@ function getUniqueValues(values) {
 
 function getUniqueDescriptionValues(values) {
   return [...new Set((values || []).map((v) => String(v || '').trim()).filter(Boolean))];
-}
-
-function getDescriptionText(source) {
-  if (!source) return '';
-
-  const normalize = (v) =>
-    String(v || '')
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, ' ');
-
-  const originalMap = new Map();
-
-  const addValue = (val) => {
-    const norm = normalize(val);
-    if (!norm) return;
-    if (!originalMap.has(norm)) {
-      originalMap.set(norm, String(val).trim());
-    }
-  };
-
-  // from challan
-  [
-    source.description,
-    source.descriptions,
-    source.description_csv,
-    source.descriptions_csv,
-    source.special_request,
-    source.specialRequest,
-    source.request,
-    source.remarks,
-    source.notes,
-    source.note,
-  ].forEach(addValue);
-
-  // from orders
-  (source.orders || []).forEach((o) => {
-    addValue(o.description);
-  });
-
-  return Array.from(originalMap.values()).join(' | ');
-}
-
-function hasDescription(source) {
-  return getDescriptionText(source).length > 0;
 }
 
 function NoBadge({ number }) {
