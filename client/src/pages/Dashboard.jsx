@@ -14,6 +14,7 @@ const FIXED_TYPES_BOOKING = [
   { key: "premium",  label: "Hissa - Premium"  },
   { key: "standard", label: "Hissa - Standard" },
   { key: "waqf",     label: "Hissa - Waqf"     },
+  { key: "exclusive", label: "Hissa - Exclusive" },
   { key: "goat",     label: "Goat (Hissa)"     },
 ];
 
@@ -110,7 +111,8 @@ const KPIBox = ({ title, value, icon, bubble, isMoney, isPercent, reveal = true,
 /* ── Segment colours ── */
 const SEGMENT_COLORS = {
   premium:  { fill: "#FF5722" }, standard: { fill: "#2196F3" },
-  waqf:     { fill: "#4CAF50" }, goat:     { fill: "#FF9800" },
+  waqf:     { fill: "#4CAF50" }, exclusive: { fill: "#9333EA" },
+  goat:     { fill: "#FF9800" },
   super_goat: { fill: "#f59e0b" }, premium_goat: { fill: "#d97706" },
   cow:      { fill: "#3B82F6" },
   farm_goat:{ fill: "#10B981" },
@@ -321,21 +323,26 @@ const TargetAchievement = ({ achieved, target, breakdown, goatChildren = [] }) =
 
 /* ── Day Wise ── */
 /*
-  Column order: Standard | Premium | Waqf | Total (std+prem+waqf) | Super Goat | Premium Goat | Goat Total
-  Total = Standard + Premium + Waqf only (goat categories are NOT included)
+  Column order: Standard | Premium | Waqf | Exclusive | Total | Super Goat | Premium Goat | Goat Total
+  Total = Standard + Premium + Waqf + Exclusive (goat categories are NOT included)
   The toggle has NO effect here.
 */
-const DayWiseSummary = ({ days }) => {
+const DAY_WISE_GOAT_HEADERS = ["Super Goat", "Premium Goat", "Goat Total"];
+const DayWiseSummary = ({ days, includeExclusiveDayColumn = false }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [highlightRow, setHighlightRow] = useState(null);
   const dayList = days || [];
 
-  // We always render: standard, premium, waqf, total, super goat, premium goat, goat total
-  const hissaKeys = ["standard", "premium", "waqf"];
-  const hissaLabels = ["Standard", "Premium", "Waqf"];
+  const hissaKeys = includeExclusiveDayColumn
+    ? ["standard", "premium", "waqf", "exclusive"]
+    : ["standard", "premium", "waqf"];
+  const hissaLabels = includeExclusiveDayColumn
+    ? ["Standard", "Premium", "Waqf", "Exclusive"]
+    : ["Standard", "Premium", "Waqf"];
   const goatKeys = ["super_goat", "premium_goat"];
-  const colLabels = [...hissaLabels, "Total", "Super Goat", "Premium Goat", "Goat Total"];
+  const colLabels = [...hissaLabels, "Total", ...DAY_WISE_GOAT_HEADERS];
 
+  const isGoatCol = (col) => DAY_WISE_GOAT_HEADERS.includes(col);
   const rowLabels = ["Total Orders", "Payment Cleared", "Pending (Completely)", "Pending (Partially)"];
   const renderCell = (val) => {
     const num = Number(val);
@@ -360,7 +367,7 @@ const DayWiseSummary = ({ days }) => {
               <tr>
                 {dayList.map((d, di) =>
                   colLabels.map((col, ci) => (
-                    <th key={`${d.key}-${col}-${ci}`} className={`dayWiseColHeader${di > 0 && ci === 0 ? " dayWiseColGroupStart" : ""}${col === "Total" ? " dayWiseTotalCol" : ""}${col === "Super Goat" || col === "Premium Goat" || col === "Goat Total" ? " dayWiseGoatCol" : ""}`}>{col}</th>
+                    <th key={`${d.key}-${col}-${ci}`} className={`dayWiseColHeader${di > 0 && ci === 0 ? " dayWiseColGroupStart" : ""}${col === "Total" ? " dayWiseTotalCol" : ""}${isGoatCol(col) ? " dayWiseGoatCol" : ""}`}>{col}</th>
                   ))
                 )}
               </tr>
@@ -373,10 +380,9 @@ const DayWiseSummary = ({ days }) => {
                   {dayList.map((d, di) => {
                     const row = (d.data || []).find((r) => r.label === label);
                     if (!row) return colLabels.map((col, ci) => (
-                      <td key={`${d.key}-${label}-${col}-${ci}`} className={`dayWiseCell${di > 0 && ci === 0 ? " dayWiseCellGroupStart" : ""}${col === "Total" ? " dayWiseCellTotal dayWiseTotalCol" : ""}${col === "Super Goat" || col === "Premium Goat" || col === "Goat Total" ? " dayWiseGoatCol" : ""}`}>—</td>
+                      <td key={`${d.key}-${label}-${col}-${ci}`} className={`dayWiseCell${di > 0 && ci === 0 ? " dayWiseCellGroupStart" : ""}${col === "Total" ? " dayWiseCellTotal dayWiseTotalCol" : ""}${isGoatCol(col) ? " dayWiseGoatCol" : ""}`}>—</td>
                     ));
 
-                    // Compute hissa total (std+prem+waqf only)
                     const hissaTotal = hissaKeys.reduce((sum, k) => sum + (Number(row[k]) || 0), 0);
 
                     return (
@@ -386,7 +392,7 @@ const DayWiseSummary = ({ days }) => {
                             {renderCell(row[tk])}
                           </td>
                         ))}
-                        {/* Total column = std+prem+waqf */}
+                        {/* Total column = all hissa columns incl. Exclusive */}
                         <td className="dayWiseCell dayWiseCellTotal dayWiseTotalCol">
                           {renderCell(hissaTotal)}
                         </td>
@@ -517,6 +523,7 @@ const slotCountForDayFilter = (area, dayFilter, slotN) => {
 const AREA_TYPE_SUFFIXES = [
   { suf: "std", label: "Hissa - Standard", sumKey: "sum_std" },
   { suf: "prm", label: "Hissa - Premium", sumKey: "sum_prm" },
+  { suf: "exc", label: "Hissa - Exclusive", sumKey: "sum_exc" },
   { suf: "sg", label: "Super Goat (Hissa)", sumKey: "sum_sg" },
   { suf: "pg", label: "Premium Goat (Hissa)", sumKey: "sum_pg" },
 ];
@@ -636,6 +643,7 @@ const AreaWiseChart = ({ areas }) => {
         slot3: Number(a.slot3 || 0),
         sum_std: Number(a.sum_std ?? 0),
         sum_prm: Number(a.sum_prm ?? 0),
+        sum_exc: Number(a.sum_exc ?? 0),
         sum_sg: Number(a.sum_sg ?? 0),
         sum_pg: Number(a.sum_pg ?? 0),
         slotsByDay: a.slotsByDay || defaultSlotsByDay(),
@@ -933,7 +941,7 @@ const Dashboard = () => {
 
         const [k, t, d, src, r, sales, a] = await Promise.all([
           fetch(`${base}/kpis?year=${y}${otParam}`, { headers }),
-          fetch(`${base}/target-achievement?year=${y}`, { headers }),
+          fetch(`${base}/target-achievement?year=${y}${otParam}`, { headers }),
           dayPromise,
           fetch(`${base}/source-wise?year=${y}${otParam}`, { headers }),
           fetch(`${base}/reference-wise?year=${y}${otParam}`, { headers }),
@@ -1294,7 +1302,7 @@ const Dashboard = () => {
           .mDayRow { background:#fff; border-radius:8px; border:1px solid #f0f0f0; padding:8px 10px; margin-bottom:6px; }
           .mDayRow:last-child { margin-bottom:0; }
           .mDayRowLabel { font-size:11px; font-weight:600; color:#374151; border-left:3px solid #FF5722; padding-left:8px; margin-bottom:8px; line-height:1.3; }
-          .mDayRowGrid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+          .mDayRowGrid { display:grid; grid-template-columns:repeat(8,1fr); gap:4px; }
           .mDayCell { text-align:center; }
           .mDayCellKey { font-size:9px; font-weight:500; color:#9ca3af; text-transform:uppercase; letter-spacing:.3px; margin-bottom:2px; }
           .mDayCellVal { font-size:12px; font-weight:600; color:#111827; }
@@ -1379,7 +1387,7 @@ const Dashboard = () => {
           breakdown={[...fixedBreakdown, ...bookingGoatChildren]}
           goatChildren={isBooking ? BOOKING_GOAT_CHILDREN : []}
         />
-        {(isAccounting || !isFarm) && <DayWiseSummary days={days} />}
+        {(isAccounting || !isFarm) && <DayWiseSummary days={days} includeExclusiveDayColumn={isBooking} />}
         <SourceWiseSummary sources={sources} />
         <ReferenceWiseSummary references={references} />
         {!isFarm && !isAccounting && <AreaWiseChart areas={areas} />}

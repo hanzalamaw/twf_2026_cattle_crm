@@ -255,6 +255,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
         "Hissa - Standard": "S",
         "Hissa - Premium": "P",
         "Hissa - Waqf": "W",
+        "Hissa - Exclusive": "E",
         "Goat": "G",
       };
 
@@ -306,7 +307,7 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       const year = booking_date ? (new Date(booking_date).getFullYear() || 2026) : 2026;
 
       // Only for Hissa types
-      const hissaTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf", ...GOAT_HISSA_TYPES];
+      const hissaTypes = ["Hissa - Standard", "Hissa - Premium", "Hissa - Waqf", "Hissa - Exclusive", ...GOAT_HISSA_TYPES];
       if (!hissaTypes.includes(orderType)) {
         return res.json({ cow_number: "", hissa_number: "" });
       }
@@ -339,11 +340,13 @@ export const registerBookingRoutes = (app, db, verifyToken) => {
       // Cows: S1, S2, S3, ... (Standard)
       // Premium: P1, P2, P3, ... (Premium)
       // Waqf: W1, W2, W3, ... (Waqf)
+      // Exclusive: E1, E2, E3, ... (Hissa - Exclusive)
       // Hissas: 1-7 per cow
       const prefixMap = {
         "Hissa - Premium": "P",
         "Hissa - Standard": "S",
         "Hissa - Waqf": "W",
+        "Hissa - Exclusive": "E",
       };
       
       const cowPrefix = prefixMap[orderType] || "";
@@ -681,6 +684,13 @@ app.get("/api/booking/hissa-sheet", verifyToken, async (req, res) => {
         finalHissaNumber = "0";
         if (!isValidGoatNumber(finalCowNumber)) {
           return res.status(400).json({ message: "Goat number must be in G1, G2 format" });
+        }
+      }
+
+      if (normalizedOrderType === "Hissa - Exclusive") {
+        finalCowNumber = String(finalCowNumber || "").trim().toUpperCase();
+        if (!/^E[1-9]\d*$/.test(finalCowNumber || "")) {
+          return res.status(400).json({ message: "Cow number must be E1, E2, … format for Hissa - Exclusive" });
         }
       }
 

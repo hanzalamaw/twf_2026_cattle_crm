@@ -6,6 +6,7 @@ const ORDER_TYPES = [
   'Hissa - Standard',
   'Hissa - Premium',
   'Hissa - Waqf',
+  'Hissa - Exclusive',
   'Super Goat (Hissa)',
   'Premium Goat (Hissa)',
 ];
@@ -23,6 +24,7 @@ const EMPTY_FORM = {
   order_source: '', reference: '', closed_by: '', description: '', slot: '',
 };
 const GOAT_NUMBER_PATTERN = /^G[1-9]\d*$/;
+const EXCLUSIVE_COW_PATTERN = /^E[1-9]\d*$/;
 const BOOKING_GOAT_TYPES = ['Goat (Hissa)', 'Super Goat (Hissa)', 'Premium Goat (Hissa)'];
 
 const NewOrder = () => {
@@ -115,6 +117,8 @@ const NewOrder = () => {
 
   const isGoatOrderType = (orderType) => BOOKING_GOAT_TYPES.includes(String(orderType || '').trim());
 
+  const isExclusiveOrderType = (orderType) => String(orderType || '').trim() === 'Hissa - Exclusive';
+
   const shouldSkipCowHissaDuplicate = (orderType, cow, hissa) => {
     if (!isGoatOrderType(orderType)) return false;
     const c = String(cow ?? '').trim();
@@ -147,6 +151,7 @@ const NewOrder = () => {
     'Hissa - Standard': '25000',
     'Hissa - Premium': '30000',
     'Hissa - Waqf': '21000',
+    'Hissa - Exclusive': '49000',
     'Super Goat (Hissa)': '51000',
     'Premium Goat (Hissa)': '59000',
   })[t] || '';
@@ -174,6 +179,13 @@ const NewOrder = () => {
       const clean = raw.toUpperCase().replace(/[^G0-9]/g, '');
       const normalized = clean.startsWith('G') ? `G${clean.slice(1).replace(/G/g, '')}` : clean.replace(/G/g, '');
       setFormData((p) => ({ ...p, cow_number: normalized, hissa_number: '0' }));
+      setDuplicateError(null);
+      return;
+    }
+    if (isExclusiveOrderType(formData.order_type)) {
+      const clean = raw.toUpperCase().replace(/[^E0-9]/g, '');
+      const normalized = clean.startsWith('E') ? `E${clean.slice(1).replace(/E/g, '')}` : clean.replace(/E/g, '');
+      setFormData((p) => ({ ...p, cow_number: normalized }));
       setDuplicateError(null);
       return;
     }
@@ -210,6 +222,11 @@ const NewOrder = () => {
       setLoading(false);
       return;
     }
+    if (!isFarm && isExclusiveOrderType(order_type) && !EXCLUSIVE_COW_PATTERN.test(String(cow_number || '').trim().toUpperCase())) {
+      setError('Cow number must follow E1, E2 format for Hissa - Exclusive.');
+      setLoading(false);
+      return;
+    }
     const token = localStorage.getItem('token');
     if (!token) { setError('You must be logged in to create an order'); setLoading(false); return; }
     const payload = isFarm
@@ -223,7 +240,10 @@ const NewOrder = () => {
         }
       : {
           ...formData,
-          cow_number: isGoatOrderType(order_type) ? String(cow_number || '').trim().toUpperCase() : formData.cow_number,
+          cow_number:
+            isGoatOrderType(order_type) || isExclusiveOrderType(order_type)
+              ? String(cow_number || '').trim().toUpperCase()
+              : formData.cow_number,
           hissa_number: isGoatOrderType(order_type) ? '0' : formData.hissa_number,
         };
     try {
@@ -261,6 +281,11 @@ const NewOrder = () => {
   const sectionTitleStyle = { fontSize: '11px', fontWeight: '600', color: '#FF5722', marginBottom: '13px', paddingBottom: '8px', borderBottom: '1px solid #e0e0e0' };
 
   const isGoat = !isFarm && isGoatOrderType(formData.order_type);
+  const cowNumberPlaceholder = isGoat
+    ? 'Auto/Manual: G1, G2...'
+    : isExclusiveOrderType(formData.order_type)
+      ? 'Auto/Manual: E1, E2...'
+      : 'Enter cow number';
 
   return (
     <>
@@ -530,7 +555,7 @@ const NewOrder = () => {
               <div className="no-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '13px' }}>
                 <div>
                   <label className="no-label" style={labelStyle}>{isGoat ? 'Goat Number' : 'Cow Number'}</label>
-                  <input className="no-input" type="text" value={formData.cow_number} onChange={handleCowNumberChange} placeholder={isGoat ? 'Auto/Manual: G1, G2...' : 'Enter cow number'} style={inputStyle}
+                  <input className="no-input" type="text" value={formData.cow_number} onChange={handleCowNumberChange} placeholder={cowNumberPlaceholder} style={inputStyle}
                     onFocus={(e) => (e.target.style.borderColor = '#FF5722')} onBlur={(e) => { e.target.style.borderColor = '#e0e0e0'; handleCowNumberBlur(); }} />
                 </div>
                 <div>

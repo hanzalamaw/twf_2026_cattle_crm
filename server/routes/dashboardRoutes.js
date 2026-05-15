@@ -5,6 +5,7 @@ const TYPES = {
   premium: "Hissa - Premium",
   standard: "Hissa - Standard",
   waqf: "Hissa - Waqf",
+  exclusive: "Hissa - Exclusive",
   goat: "Goat (Hissa)",
   super_goat: "Super Goat (Hissa)",
   premium_goat: "Premium Goat (Hissa)",
@@ -38,6 +39,7 @@ const TYPE_KEY_SQL = `
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissapremium') THEN 'premium'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissastandard') THEN 'standard'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissawaqf') THEN 'waqf'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('hissaexclusive') THEN 'exclusive'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('supergoathissa') THEN 'super_goat'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('premiumgoathissa') THEN 'premium_goat'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(o.order_type),' ',''),'-',''),'(',''),')','') IN ('goathissa') THEN 'goat'
@@ -67,13 +69,14 @@ const SLOT_KEY_SQL = `
   END
 `;
 
-/** 3×3×4 grid: column aliases d1s1_std … d3s3_pg for area-wise tooltip (order type only). */
+/** 3×3×5 grid: column aliases d1s1_std … d3s3_pg for area-wise tooltip (order type only). */
 const AREA_TYPE_GRID_META = (() => {
   const dayKeys = ["day1", "day2", "day3"];
   const slotKeys = ["slot1", "slot2", "slot3"];
   const typeKeys = [
     { key: "standard", as: "std" },
     { key: "premium", as: "prm" },
+    { key: "exclusive", as: "exc" },
     { key: "super_goat", as: "sg" },
     { key: "premium_goat", as: "pg" },
   ];
@@ -100,6 +103,7 @@ const LEAD_TYPE_KEY_SQL = `
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('hissapremium') THEN 'premium'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('hissastandard') THEN 'standard'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('hissawaqf') THEN 'waqf'
+    WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('hissaexclusive') THEN 'exclusive'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('supergoathissa') THEN 'super_goat'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('premiumgoathissa') THEN 'premium_goat'
     WHEN REPLACE(REPLACE(REPLACE(REPLACE(LOWER(l.order_type),' ',''),'-',''),'(',''),')','') IN ('goathissa') THEN 'goat'
@@ -121,38 +125,44 @@ function applyDashboardOrderTypeFilter(orderType, conditions) {
   const list = getOrderTypeFilterList(orderType);
   const allowed = [];
 
-  if (list.includes("hissa")) allowed.push("'standard'", "'premium'", "'waqf'");
+  if (list.includes("hissa")) allowed.push("'standard'", "'premium'", "'waqf'", "'exclusive'");
   if (list.includes("goat")) allowed.push("'goat'", "'super_goat'", "'premium_goat'");
 
-  conditions.push(`${TYPE_KEY_SQL} IN (${allowed.length ? allowed.join(",") : "'standard','premium','waqf'"})`);
+  conditions.push(`${TYPE_KEY_SQL} IN (${allowed.length ? allowed.join(",") : "'standard','premium','waqf','exclusive'"})`);
 }
 
 function applyAreaOrderTypeFilter(orderType, conditions) {
   const list = getOrderTypeFilterList(orderType);
   const allowed = [];
 
-  // Area-wise: Hissa = Standard + Premium only (no Waqf). Goat = Super + Premium goat only (not generic Goat (Hissa)).
-  if (list.includes("hissa")) allowed.push("'standard'", "'premium'");
+  // Area-wise: Hissa = Standard + Premium + Exclusive only (no Waqf). Goat = Super + Premium goat only (not generic Goat (Hissa)).
+  if (list.includes("hissa")) allowed.push("'standard'", "'premium'", "'exclusive'");
   if (list.includes("goat")) allowed.push("'super_goat'", "'premium_goat'");
 
-  conditions.push(`${TYPE_KEY_SQL} IN (${allowed.length ? allowed.join(",") : "'standard','premium'"})`);
+  conditions.push(`${TYPE_KEY_SQL} IN (${allowed.length ? allowed.join(",") : "'standard','premium','exclusive'"})`);
 }
 
 function applyLeadOrderTypeFilter(orderType, conditions) {
   const list = getOrderTypeFilterList(orderType);
   const allowed = [];
 
-  if (list.includes("hissa")) allowed.push("'standard'", "'premium'", "'waqf'");
+  if (list.includes("hissa")) allowed.push("'standard'", "'premium'", "'waqf'", "'exclusive'");
   if (list.includes("goat")) allowed.push("'goat'", "'super_goat'", "'premium_goat'");
 
-  conditions.push(`${LEAD_TYPE_KEY_SQL} IN (${allowed.length ? allowed.join(",") : "'standard','premium','waqf'"})`);
+  conditions.push(`${LEAD_TYPE_KEY_SQL} IN (${allowed.length ? allowed.join(",") : "'standard','premium','waqf','exclusive'"})`);
+}
+
+function hasOrderTypeQueryParam(orderType) {
+  if (orderType === undefined || orderType === null) return false;
+  if (Array.isArray(orderType)) return orderType.some((x) => String(x ?? "").trim() !== "");
+  return String(orderType).trim() !== "";
 }
 
 export const registerDashboardRoutes = (app, db, verifyToken) => {
   // -----------------------
   // GET: /api/dashboard/kpis?year=2026|2025|2024|all
   //
-  // ✅ KPIs from 4 order types only: Hissa Premium, Standard, Waqf, Goat (Hissa)
+  // ✅ KPIs for booking order types (incl. Hissa - Exclusive) plus goat sub-types when Goat filter is on
   // ✅ Received Payments = SUM(orders.received_amount)
   // ✅ Cleared Orders = COUNT where pending_amount <= 0
   // ✅ Clearance Rate = clearedOrders / totalOrders * 100
@@ -206,21 +216,76 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
   });
 
   // -----------------------
-  // GET: /api/dashboard/target-achievement?year=...
-  // Donut + Progress bars (hissa + goat with sub-types)
+  // GET: /api/dashboard/target-achievement?year=...&orderType=hissa&orderType=goat
+  // Donut + Progress bars (hissa + goat with sub-types). Optional orderType matches booking dashboard toggles.
+  // Super Goat + Premium Goat (and generic Goat) counts always use full year totals; hissa rows respect orderType.
   // -----------------------
   app.get("/api/dashboard/target-achievement", verifyToken, async (req, res) => {
     try {
-      const { year = "all" } = req.query;
+      const { year = "all", orderType } = req.query;
 
-      const params = [];
-      const conditions = buildYearWhere(year, params);
-      conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
+      const map = { premium: 0, standard: 0, waqf: 0, exclusive: 0, goat: 0, super_goat: 0, premium_goat: 0 };
 
-      const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+      if (hasOrderTypeQueryParam(orderType)) {
+        const paramsFiltered = [];
+        const conditionsFiltered = buildYearWhere(year, paramsFiltered);
+        applyDashboardOrderTypeFilter(orderType, conditionsFiltered);
+        conditionsFiltered.push(`${TYPE_KEY_SQL} IS NOT NULL`);
+        const whereFiltered = conditionsFiltered.length ? `WHERE ${conditionsFiltered.join(" AND ")}` : "";
 
-      const [rows] = await db.execute(
-        `
+        const [rowsFiltered] = await db.execute(
+          `
+        SELECT
+          ${TYPE_KEY_SQL} AS typeKey,
+          COUNT(*) AS cnt
+        FROM orders o
+        ${whereFiltered}
+        GROUP BY typeKey
+        `,
+          paramsFiltered
+        );
+
+        const hissaKeys = ["premium", "standard", "waqf", "exclusive"];
+        for (const row of rowsFiltered || []) {
+          const k = row.typeKey;
+          if (k && hissaKeys.includes(k)) {
+            map[k] = Number(row.cnt || 0);
+          }
+        }
+
+        const paramsGoat = [];
+        const conditionsGoat = buildYearWhere(year, paramsGoat);
+        conditionsGoat.push(`${TYPE_KEY_SQL} IN ('goat','super_goat','premium_goat')`);
+        const whereGoat = conditionsGoat.length ? `WHERE ${conditionsGoat.join(" AND ")}` : "";
+
+        const [rowsGoat] = await db.execute(
+          `
+        SELECT
+          ${TYPE_KEY_SQL} AS typeKey,
+          COUNT(*) AS cnt
+        FROM orders o
+        ${whereGoat}
+        GROUP BY typeKey
+        `,
+          paramsGoat
+        );
+
+        const goatKeys = ["goat", "super_goat", "premium_goat"];
+        for (const row of rowsGoat || []) {
+          const k = row.typeKey;
+          if (k && goatKeys.includes(k)) {
+            map[k] = Number(row.cnt || 0);
+          }
+        }
+      } else {
+        const params = [];
+        const conditions = buildYearWhere(year, params);
+        conditions.push(`${TYPE_KEY_SQL} IS NOT NULL`);
+
+        const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+        const [rows] = await db.execute(
+          `
         SELECT
           ${TYPE_KEY_SQL} AS typeKey,
           COUNT(*) AS cnt
@@ -228,25 +293,26 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
         ${where}
         GROUP BY typeKey
         `,
-        params
-      );
+          params
+        );
 
-      const map = { premium: 0, standard: 0, waqf: 0, goat: 0, super_goat: 0, premium_goat: 0 };
-      for (const row of rows) {
-        if (row.typeKey && map[row.typeKey] !== undefined) {
-          map[row.typeKey] = Number(row.cnt || 0);
+        for (const row of rows || []) {
+          if (row.typeKey && map[row.typeKey] !== undefined) {
+            map[row.typeKey] = Number(row.cnt || 0);
+          }
         }
       }
 
       const goatTotal = map.goat + map.super_goat + map.premium_goat;
-      const achievedTotal = map.premium + map.standard + map.waqf + goatTotal;
-      const achievedForTarget = map.premium + map.standard + map.waqf;
+      const achievedTotal = map.premium + map.standard + map.waqf + map.exclusive + goatTotal;
+      const achievedForTarget = map.premium + map.standard + map.waqf + map.exclusive;
       const targetTotal = year === "2024" ? 500 : year === "2025" ? 1000 : 2000;
 
       const breakdown = [
         { key: "premium", label: TYPES.premium, value: map.premium },
         { key: "standard", label: TYPES.standard, value: map.standard },
         { key: "waqf", label: TYPES.waqf, value: map.waqf },
+        { key: "exclusive", label: TYPES.exclusive, value: map.exclusive },
         { key: "goat", label: TYPES.goat, value: goatTotal },
         { key: "super_goat", label: TYPES.super_goat, value: map.super_goat },
         { key: "premium_goat", label: TYPES.premium_goat, value: map.premium_goat },
@@ -272,7 +338,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
 
   // -----------------------
   // GET: /api/dashboard/day-wise?year=...
-  // Day 1/2/3 cards, columns: Premium Standard Waqf Total Super Goat Premium Goat
+  // Day 1/2/3 cards, columns include Hissa - Exclusive between Waqf and Total
   // rows: Total Orders, Payment Cleared, Pending (Completely), Pending (Partially)
   // (goat split by order_type sub-category)
   // -----------------------
@@ -313,6 +379,7 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
         premium: 0,
         standard: 0,
         waqf: 0,
+        exclusive: 0,
         goat: 0,
         super_goat: 0,
         premium_goat: 0,
@@ -370,43 +437,47 @@ export const registerDashboardRoutes = (app, db, verifyToken) => {
         return {
           key: dkey,
           title: d.title,
-          columns: ["Premium", "Standard", "Waqf", "Total", "Super Goat", "Premium Goat"],
+          columns: ["Premium", "Standard", "Waqf", "Exclusive", "Total", "Super Goat", "Premium Goat"],
           data: [
             {
               label: "Total Orders",
               premium: d.rows.totalOrders.premium,
               standard: d.rows.totalOrders.standard,
               waqf: d.rows.totalOrders.waqf,
+              exclusive: d.rows.totalOrders.exclusive,
               super_goat: d.rows.totalOrders.super_goat + d.rows.totalOrders.goat,
               premium_goat: d.rows.totalOrders.premium_goat,
-              total: d.rows.totalOrders.premium + d.rows.totalOrders.standard + d.rows.totalOrders.waqf,
+              total: d.rows.totalOrders.premium + d.rows.totalOrders.standard + d.rows.totalOrders.waqf + d.rows.totalOrders.exclusive,
             },
             {
               label: "Payment Cleared",
               premium: d.rows.paymentCleared.premium,
               standard: d.rows.paymentCleared.standard,
               waqf: d.rows.paymentCleared.waqf,
+              exclusive: d.rows.paymentCleared.exclusive,
               super_goat: d.rows.paymentCleared.super_goat + d.rows.paymentCleared.goat,
               premium_goat: d.rows.paymentCleared.premium_goat,
-              total: d.rows.paymentCleared.premium + d.rows.paymentCleared.standard + d.rows.paymentCleared.waqf,
+              total: d.rows.paymentCleared.premium + d.rows.paymentCleared.standard + d.rows.paymentCleared.waqf + d.rows.paymentCleared.exclusive,
             },
             {
               label: "Pending (Completely)",
               premium: d.rows.pendingCompletely.premium,
               standard: d.rows.pendingCompletely.standard,
               waqf: d.rows.pendingCompletely.waqf,
+              exclusive: d.rows.pendingCompletely.exclusive,
               super_goat: d.rows.pendingCompletely.super_goat + d.rows.pendingCompletely.goat,
               premium_goat: d.rows.pendingCompletely.premium_goat,
-              total: d.rows.pendingCompletely.premium + d.rows.pendingCompletely.standard + d.rows.pendingCompletely.waqf,
+              total: d.rows.pendingCompletely.premium + d.rows.pendingCompletely.standard + d.rows.pendingCompletely.waqf + d.rows.pendingCompletely.exclusive,
             },
             {
               label: "Pending (Partially)",
               premium: d.rows.pendingPartially.premium,
               standard: d.rows.pendingPartially.standard,
               waqf: d.rows.pendingPartially.waqf,
+              exclusive: d.rows.pendingPartially.exclusive,
               super_goat: d.rows.pendingPartially.super_goat + d.rows.pendingPartially.goat,
               premium_goat: d.rows.pendingPartially.premium_goat,
-              total: d.rows.pendingPartially.premium + d.rows.pendingPartially.standard + d.rows.pendingPartially.waqf,
+              total: d.rows.pendingPartially.premium + d.rows.pendingPartially.standard + d.rows.pendingPartially.waqf + d.rows.pendingPartially.exclusive,
             },
           ],
         };
@@ -608,7 +679,7 @@ conditionsL.push("l.reference IS NOT NULL AND l.reference != ''");
 // -----------------------
 // GET: /api/dashboard/area-wise?year=...
 // Bar chart: order count per area, with day and SLOT 1/2/3 breakdown.
-// Types: Hissa → Standard+Premium only; Goat → Super Goat + Premium Goat only; both → all four. Waqf excluded.
+// Types: Hissa → Standard+Premium+Exclusive only; Goat → Super Goat + Premium Goat only; both → combined. Waqf excluded from area-wise hissa slice.
 // -----------------------
 app.get("/api/dashboard/area-wise", verifyToken, async (req, res) => {
   try {
@@ -643,6 +714,7 @@ app.get("/api/dashboard/area-wise", verifyToken, async (req, res) => {
         SUM(CASE WHEN ${DAY_KEY_SQL} = 'day3' AND ${SLOT_KEY_SQL} = 'slot3' THEN 1 ELSE 0 END) AS d3s3,
         SUM(CASE WHEN ${TYPE_KEY_SQL} = 'standard' THEN 1 ELSE 0 END) AS sum_std,
         SUM(CASE WHEN ${TYPE_KEY_SQL} = 'premium' THEN 1 ELSE 0 END) AS sum_prm,
+        SUM(CASE WHEN ${TYPE_KEY_SQL} = 'exclusive' THEN 1 ELSE 0 END) AS sum_exc,
         SUM(CASE WHEN ${TYPE_KEY_SQL} = 'super_goat' THEN 1 ELSE 0 END) AS sum_sg,
         SUM(CASE WHEN ${TYPE_KEY_SQL} = 'premium_goat' THEN 1 ELSE 0 END) AS sum_pg,
         ${AREA_TYPE_GRID_META.sqlFragment}
@@ -666,6 +738,7 @@ app.get("/api/dashboard/area-wise", verifyToken, async (req, res) => {
         slot3: Number(r.slot3 || 0),
         sum_std: Number(r.sum_std ?? r.SUM_STD ?? 0),
         sum_prm: Number(r.sum_prm ?? r.SUM_PRM ?? 0),
+        sum_exc: Number(r.sum_exc ?? r.SUM_EXC ?? 0),
         sum_sg: Number(r.sum_sg ?? r.SUM_SG ?? 0),
         sum_pg: Number(r.sum_pg ?? r.SUM_PG ?? 0),
         slotsByDay: {
