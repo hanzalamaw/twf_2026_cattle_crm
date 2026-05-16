@@ -22,9 +22,10 @@ export default function OperationsLayout() {
   const isOverview = location.pathname === '/operations' || location.pathname === '/operations/';
   const isRidersSubtree = location.pathname.startsWith('/operations/riders');
   const isSlaughterSubtree = location.pathname.startsWith('/operations/slaughter');
-  /** Rider admin / slaughter use sidebar; supervisor-only keeps this top bar. */
+  const isLineSubtree = location.pathname.startsWith('/operations/line');
+  /** Rider admin / slaughter / line use sidebar; supervisor-only keeps this top bar. */
   const hideOpsSubTopbar =
-    (isRidersSubtree && !!p.operation_rider_management) || isSlaughterSubtree;
+    (isRidersSubtree && !!p.operation_rider_management) || isSlaughterSubtree || isLineSubtree;
 
   return (
     <>

@@ -62,9 +62,10 @@ export default function SharedChallanModal({
   const isSpecialRequest = Boolean(specialRequest) && !isAffluent;
 
   return (
-    <div style={modalOverlayStyle} onClick={onClose} role="presentation">
+    <div className="ops-sheet-overlay" style={modalOverlayStyle} onClick={onClose} role="presentation">
       <div
-        style={{ background:'#FFFFFF', borderRadius:'18px', border:'1.5px solid #F0F0F0', padding:'clamp(14px, 2vw, 24px)', maxWidth, width:'100%', maxHeight:'78dvh', overflowY:'auto', overflowX:'hidden', boxShadow:'0 10px 40px rgba(0,0,0,0.12)' }}
+        className="ops-sheet-panel"
+        style={{ background:'#FFFFFF', borderRadius:'18px', border:'1.5px solid #F0F0F0', padding:'clamp(14px, 2vw, 24px)', maxWidth, width:'100%', maxHeight:'78dvh', overflowY:'auto', overflowX:'visible', boxShadow:'0 10px 40px rgba(0,0,0,0.12)' }}
         onClick={(e)=>e.stopPropagation()}
         role="dialog"
         aria-label={`Challan ${challanId || '—'}`}
@@ -119,6 +120,18 @@ export default function SharedChallanModal({
 
 
         <style>{`
+          .modal-table-scroll {
+            width: 100%;
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: visible;
+            -webkit-overflow-scrolling: touch;
+          }
+          .modal-orders-table {
+            width: max-content !important;
+            min-width: 100% !important;
+            table-layout: auto !important;
+          }
           .modal-orders-table th,
           .modal-orders-table td {
             max-width: 220px;
@@ -136,8 +149,8 @@ export default function SharedChallanModal({
         `}</style>
         <div style={{ borderTop:'1px solid #f0f0f0', margin:'18px 0 12px' }} />
         <p style={{ margin:'0 0 10px', fontSize:'12px', fontWeight:'700', color:'#333' }}>{title}</p>
-        <div style={{ width:'100%', overflowX:'hidden', overflowY:'visible', border:'1px solid #F0F0F0', borderRadius:'10px' }}>
-          <table className="modal-orders-table" style={{ width:'100%', fontSize:'12px', borderCollapse:'collapse', tableLayout:'auto' }}>
+        <div className="modal-table-scroll ops-modal-table-wrap" style={{ border:'1px solid #F0F0F0', borderRadius:'10px' }}>
+          <table className="modal-orders-table" style={{ fontSize:'12px', borderCollapse:'collapse' }}>
             
             <thead style={{ position:'sticky', top:0, zIndex:1 }}>
               <tr style={{ background:'#FAFAFA' }}>

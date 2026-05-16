@@ -4,6 +4,13 @@ import { getOperationsSocket } from '../utils/operationsSocket';
 import { useAuth } from '../context/AuthContext';
 import { Link, useLocation } from 'react-router-dom';
 import { getOrderTag, getChallanRowHighlight } from '../utils/orderTags';
+import {
+  OpsFilterSearch,
+  OpsFilterSelect,
+  OpsFilterToggleRow,
+  OpsFilterToggleBtn,
+  OpsFilterMobile,
+} from '../components/OpsFilters';
 
 const RIDER_STATUSES = ['Available', 'On Delivery', 'Off Duty', 'Suspended'];
 
@@ -768,9 +775,14 @@ export default function OperationsRiders() {
         .or-back-to-ops:visited {
           color: #000;
         }
+        @keyframes orModalSheetInUp {
+          from { opacity: 0; transform: translate3d(0, 100%, 0); }
+          to   { opacity: 1; transform: translate3d(0, 0, 0); }
+        }
+
         @media (max-width: 767px) {
           .or-root { padding: 16px 12px 24px !important; overflow: auto !important; }
-          .or-header { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; margin-bottom: 12px !important; }
+          .or-header { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; margin-bottom: 12px !important; padding-right: 58px !important; box-sizing: border-box !important; }
           .or-header h2 {
             min-height: 55px !important;
             display: flex !important;
@@ -787,6 +799,32 @@ export default function OperationsRiders() {
           .or-grid {
             grid-template-columns: 1fr !important;
           }
+
+          /* Rider modals — slide up from bottom (booking management style) */
+          .ops-sheet-overlay.or-rider-modal-overlay {
+            align-items: flex-end !important;
+            justify-content: center !important;
+            padding: 0 !important;
+          }
+          .ops-sheet-panel.or-rider-modal-panel {
+            border-radius: 20px 20px 0 0 !important;
+            width: 100vw !important;
+            max-width: 100vw !important;
+            max-height: 92dvh !important;
+            margin: 0 !important;
+            padding: 20px 16px 32px !important;
+            overflow-y: auto !important;
+            overflow-x: visible !important;
+            animation: orModalSheetInUp 0.38s cubic-bezier(0.25, 0.8, 0.25, 1) both !important;
+          }
+          .or-modal-subtitle { display: none !important; }
+          .or-modal-form-grid { grid-template-columns: 1fr !important; }
+          .or-modal-actions-row {
+            flex-direction: column !important;
+            align-items: stretch !important;
+          }
+          .or-modal-actions-row > div { width: 100% !important; display: flex !important; flex-direction: column !important; gap: 8px !important; }
+          .or-modal-actions-row button { width: 100% !important; }
         }
       `}</style>
 
@@ -1015,80 +1053,37 @@ export default function OperationsRiders() {
           </div>
         </div>
 
-        <div className="or-filter-toggle" style={{ display: 'none', gap: '8px', marginBottom: '8px', flexShrink: 0, alignItems: 'center' }}>
-          <input
-            type="text"
-            placeholder="Search rider…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ flex: 1, padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }}
-          />
-          <button
-            type="button"
-            onClick={() => setMobileFiltersOpen((v) => !v)}
-            style={{
-              padding: '9px 12px',
-              borderRadius: '8px',
-              border: `1px solid ${mobileFiltersOpen ? '#FF5722' : '#e0e0e0'}`,
-              background: mobileFiltersOpen ? '#fff4f0' : '#fff',
-              color: mobileFiltersOpen ? '#FF5722' : '#555',
-              fontSize: '13px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            ⚙ Filters
-          </button>
-        </div>
+        <OpsFilterToggleRow className="or-filter-toggle">
+          <OpsFilterSearch value={search} onChange={setSearch} placeholder="Search rider…" />
+          <OpsFilterToggleBtn open={mobileFiltersOpen} onClick={() => setMobileFiltersOpen((v) => !v)} />
+        </OpsFilterToggleRow>
 
-        <div className="or-filter-mobile" style={{ display: 'none' }}>
-          {mobileFiltersOpen && (
-            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Rider status</label>
-                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }}>
-                  <option value="">All</option>
-                  {RIDER_STATUSES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Day</label>
-                <select value={dayFilter} onChange={(e) => setDayFilter(e.target.value)} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }}>
-                  <option value="">All</option>
-                  <option value="Day 1">Day 1</option>
-                  <option value="Day 2">Day 2</option>
-                  <option value="Day 3">Day 3</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Supervisor</label>
-                <select value={supervisorFilter} onChange={(e) => setSupervisorFilter(e.target.value)} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }}>
-                  <option value="">All supervisors</option>
-                  <option value="__unassigned__">Unassigned</option>
-                  {supervisorOptions.map((s) => (
-                    <option key={s.supervisor_id} value={String(s.supervisor_id)}>
-                      {s.supervisor_name || '—'}
-                      {s.supervisor_code ? ` (${s.supervisor_code})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button type="button" onClick={() => setMobileFiltersOpen(false)} style={{ flex: 1, padding: '10px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
-                  Done
-                </button>
-                <button type="button" onClick={() => { resetFilters(); setMobileFiltersOpen(false); }} style={{ flex: 1, padding: '10px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '8px', fontSize: '13px', cursor: 'pointer' }}>
-                  Reset
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <OpsFilterMobile
+          className="or-filter-mobile"
+          open={mobileFiltersOpen}
+          onDone={() => setMobileFiltersOpen(false)}
+          onReset={() => { resetFilters(); setMobileFiltersOpen(false); }}
+        >
+          <OpsFilterSelect value={statusFilter} onChange={setStatusFilter} ariaLabel="Rider status">
+            <option value="">All statuses</option>
+            {RIDER_STATUSES.map((s) => (<option key={s} value={s}>{s}</option>))}
+          </OpsFilterSelect>
+          <OpsFilterSelect value={dayFilter} onChange={setDayFilter} ariaLabel="Day">
+            <option value="">All days</option>
+            <option value="Day 1">Day 1</option>
+            <option value="Day 2">Day 2</option>
+            <option value="Day 3">Day 3</option>
+          </OpsFilterSelect>
+          <OpsFilterSelect value={supervisorFilter} onChange={setSupervisorFilter} ariaLabel="Supervisor">
+            <option value="">All supervisors</option>
+            <option value="__unassigned__">Unassigned</option>
+            {supervisorOptions.map((s) => (
+              <option key={s.supervisor_id} value={String(s.supervisor_id)}>
+                {s.supervisor_name || '—'}{s.supervisor_code ? ` (${s.supervisor_code})` : ''}
+              </option>
+            ))}
+          </OpsFilterSelect>
+        </OpsFilterMobile>
 
         {err && (
           <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', flexShrink: 0, fontSize: '10px', fontWeight: '600' }}>
@@ -1283,8 +1278,8 @@ export default function OperationsRiders() {
             {supLoading ? (
               <div style={{ padding: '32px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading…</div>
             ) : (
-              <div style={{ border: '1px solid #e8e8e8', borderRadius: '12px', overflow: 'hidden', background: '#fff' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+              <div className="ops-table-scroll" style={{ border: '1px solid #e8e8e8', borderRadius: '12px', overflow: 'auto', background: '#fff' }}>
+                <table className="ops-data-table" style={{ borderCollapse: 'collapse', fontSize: '11px' }}>
                   <thead>
                     <tr style={{ background: '#FAFAFA' }}>
                       {['Code', 'Name', 'Phone', 'User', 'Riders', 'Actions'].map((h) => (
@@ -1382,6 +1377,7 @@ export default function OperationsRiders() {
 
       {editSupOpen && (
         <div
+          className="ops-sheet-overlay or-rider-modal-overlay"
           style={{
             position: 'fixed',
             inset: 0,
@@ -1396,6 +1392,7 @@ export default function OperationsRiders() {
           role="presentation"
         >
           <div
+            className="ops-sheet-panel or-rider-modal-panel"
             style={{
               background: '#fff',
               borderRadius: '16px',
@@ -1483,6 +1480,7 @@ export default function OperationsRiders() {
 
       {addSupOpen && (
         <div
+          className="ops-sheet-overlay or-rider-modal-overlay"
           style={{
             position: 'fixed',
             inset: 0,
@@ -1497,6 +1495,7 @@ export default function OperationsRiders() {
           role="presentation"
         >
           <div
+            className="ops-sheet-panel or-rider-modal-panel"
             style={{
               background: '#fff',
               borderRadius: '16px',
@@ -1562,6 +1561,7 @@ export default function OperationsRiders() {
 
       {supDetailOpen && (
         <div
+          className="ops-sheet-overlay or-rider-modal-overlay"
           style={{
             position: 'fixed',
             inset: 0,
@@ -1576,6 +1576,7 @@ export default function OperationsRiders() {
           role="presentation"
         >
           <div
+            className="ops-sheet-panel or-rider-modal-panel"
             style={{
               background: '#fff',
               borderRadius: '16px',
@@ -1622,6 +1623,7 @@ export default function OperationsRiders() {
 
       {addOpen && (
         <div
+          className="ops-sheet-overlay or-rider-modal-overlay"
           style={{
             position: 'fixed',
             inset: 0,
@@ -1636,6 +1638,7 @@ export default function OperationsRiders() {
           role="presentation"
         >
           <div
+            className="ops-sheet-panel or-rider-modal-panel"
             style={{
               background: '#fff',
               borderRadius: '16px',
@@ -1661,7 +1664,7 @@ export default function OperationsRiders() {
             </div>
 
             <form onSubmit={submitAddRider}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div className="or-modal-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Rider name</label>
                   <input
@@ -1765,6 +1768,7 @@ export default function OperationsRiders() {
 
       {editOpen && editRider && (
         <div
+          className="ops-sheet-overlay or-rider-modal-overlay"
           style={{
             position: 'fixed',
             inset: 0,
@@ -1779,6 +1783,7 @@ export default function OperationsRiders() {
           role="presentation"
         >
           <div
+            className="ops-sheet-panel or-rider-modal-panel"
             style={{
               background: '#fff',
               borderRadius: '16px',
@@ -1797,7 +1802,7 @@ export default function OperationsRiders() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', gap: '10px' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#333' }}>Edit rider</h3>
-                <p style={{ margin: '5px 0 0', fontSize: '11px', color: '#777' }}>Update rider profile, status, payment rate, or delete rider.</p>
+                <p className="or-modal-subtitle" style={{ margin: '5px 0 0', fontSize: '11px', color: '#777' }}>Update rider profile, status, payment rate, or delete rider.</p>
               </div>
               <button
                 type="button"
@@ -1809,7 +1814,7 @@ export default function OperationsRiders() {
             </div>
 
             <form onSubmit={submitEditRider}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div className="or-modal-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Rider name</label>
                   <input type="text" required value={editForm.rider_name} onChange={(e) => setEditForm((p) => ({ ...p, rider_name: e.target.value }))} style={inputStyle} />
@@ -1869,7 +1874,7 @@ export default function OperationsRiders() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
+              <div className="or-modal-actions-row" style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   onClick={deleteRider}
@@ -1929,6 +1934,7 @@ export default function OperationsRiders() {
 
       {ordersModal && (
         <div
+          className="ops-sheet-overlay or-rider-modal-overlay"
           style={{
             position: 'fixed',
             inset: 0,
@@ -1943,6 +1949,7 @@ export default function OperationsRiders() {
           role="presentation"
         >
           <div
+            className="ops-sheet-panel or-rider-modal-panel"
             style={{
               background: '#fff',
               borderRadius: '16px',
@@ -1951,7 +1958,8 @@ export default function OperationsRiders() {
               width: '100%',
               maxWidth: '1200px',
               maxHeight: '88vh',
-              overflow: 'auto',
+              overflowY: 'auto',
+              overflowX: 'visible',
               boxShadow: '0 12px 40px rgba(0,0,0,0.15)',
             }}
             onClick={(e) => e.stopPropagation()}
@@ -1963,7 +1971,7 @@ export default function OperationsRiders() {
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#333' }}>
                   {ordersModal.rider?.rider_name} — Assigned orders
                 </h3>
-                <p style={{ margin: '5px 0 0', fontSize: '11px', color: '#777' }}>
+                <p className="or-modal-subtitle" style={{ margin: '5px 0 0', fontSize: '11px', color: '#777' }}>
                   {ordersModal.rider?.contact || 'No phone'} {ordersModal.rider?.vehicle ? `• ${ordersModal.rider.vehicle}` : ''}
                 </p>
               </div>
@@ -1983,8 +1991,8 @@ export default function OperationsRiders() {
                 {ordersModal.loadError}
               </div>
             ) : assignedOrderGroups.length ? (
-              <div style={{ border: '1px solid #ececec', borderRadius: '10px', overflow: 'auto' }}>
-                <table className="ops-data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', tableLayout: 'auto' }}>
+              <div className="ops-modal-table-wrap modal-table-scroll" style={{ border: '1px solid #ececec', borderRadius: '10px' }}>
+                <table className="ops-data-table" style={{ borderCollapse: 'collapse', fontSize: '11px' }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                     <tr style={{ background: '#fafafa' }}>
                       {['No.', 'Status', 'Booking Name', 'Standard', 'Premium', 'Waqf', 'Super Goat', 'Premium Goat', 'Total Hissa', 'Day / Slot', 'Area', 'Contact', 'Address', 'Customer ID'].map((h) => (

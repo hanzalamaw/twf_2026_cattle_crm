@@ -115,6 +115,11 @@ const SLAUGHTER_MENU_ITEMS = [
   { id: 'sl-management', label: 'Management', iconDefault: '/icons/order_management_default.png', iconActive: '/icons/order_management_active.png', path: '/operations/slaughter/management', permission: 'operation_slaughter_management' },
 ];
 
+const LINE_MENU_ITEMS = [
+  { id: 'ln-dashboard', label: 'Dashboard', iconDefault: '/icons/dashboard_default.png', iconActive: '/icons/dashboard_active.png', path: '/operations/line/dashboard', permission: 'operation_line_management' },
+  { id: 'ln-management', label: 'Management', iconDefault: '/icons/order_management_default.png', iconActive: '/icons/order_management_active.png', path: '/operations/line/management', permission: 'operation_line_management' },
+];
+
 const STAFF_BOOKINGS_ROLE = 'Staff - Bookings';
 const CO_MANAGER_BOOKINGS_ROLE = 'Co-Manager - Bookings';
 
@@ -171,9 +176,10 @@ function Sidebar() {
   const isManager = [3, 5, 7].includes(roleId);
   const isBookingContext = location.pathname.startsWith('/bookings');
   const isSlaughterContext = location.pathname.startsWith('/operations/slaughter');
-  const isOperationsContext = location.pathname.startsWith('/operations') && !isSlaughterContext;
+  const isLineContext = location.pathname.startsWith('/operations/line');
+  const isOperationsContext = location.pathname.startsWith('/operations') && !isSlaughterContext && !isLineContext;
   const isOperationsRidersContext = location.pathname.startsWith('/operations/riders');
-  const isOperationsSubmoduleBack = isOperationsRidersContext || isSlaughterContext;
+  const isOperationsSubmoduleBack = isOperationsRidersContext || isSlaughterContext || isLineContext;
   /** Supervisor-only rider screen keeps compact header; rider admin / manager gets avatar + logout. */
   const minimalRiderSidebarChrome =
     isOperationsRidersContext && !permissions.operation_rider_management;
@@ -192,6 +198,8 @@ function Sidebar() {
     ? BOOKING_MENU_ITEMS
     : isSlaughterContext
     ? SLAUGHTER_MENU_ITEMS
+    : isLineContext
+    ? LINE_MENU_ITEMS
     : isOperationsContext
     ? OPERATIONS_MENU_ITEMS
     : isPerformanceContext
@@ -292,6 +300,8 @@ function Sidebar() {
     ? 'BOOKING MANAGEMENT'
     : isSlaughterContext
     ? 'SLAUGHTER MANAGEMENT'
+    : isLineContext
+    ? 'LINE MANAGEMENT'
     : isOperationsContext
     ? 'OPERATIONS MANAGEMENT'
     : isPerformanceContext

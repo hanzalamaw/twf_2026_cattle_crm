@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { OpsSearchIcon } from '../components/OpsFilters';
 import { useSearchParams } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useAuth } from '../context/AuthContext';
@@ -565,6 +566,7 @@ export default function OperationsDeliveries() {
 
   const orderTypeOptions = ORDER_TYPE_FILTERS;
   const statusOptions = useMemo(() => STATUSES.map((s) => ({ value: s, label: s })), []);
+  const slotFilterOptions = useMemo(() => slotOptions.map((s) => ({ value: s, label: s })), [slotOptions]);
 
   // ── filter + sort ────────────────────────────────────────────
   // All string comparisons go through normalizeForCompare so that
@@ -821,26 +823,8 @@ export default function OperationsDeliveries() {
   return (
     <>
       <style>{`
-
-          .ops-data-table { width: max-content !important; min-width: 100% !important; table-layout: auto !important; }
-          .ops-data-table th,
-          .ops-data-table td {
-            max-width: 240px;
-            white-space: normal !important;
-            word-break: break-word;
-            overflow-wrap: anywhere;
-            vertical-align: top;
-          }
-          .ops-data-table th { white-space: nowrap !important; }
-          @media (max-width: 767px) {
-            .ops-data-table th,
-            .ops-data-table td { max-width: 180px; }
-          }
         @media (max-width: 767px) {
           .om-root { padding: 16px 12px 24px !important; overflow: auto !important; }
-          .om-filter-desktop { display: none !important; }
-          .om-filter-toggle  { display: flex !important; }
-          .om-filter-mobile  { display: block !important; }
           .om-table-wrap     { display: block !important; }
         }
       `}</style>
@@ -958,7 +942,7 @@ export default function OperationsDeliveries() {
           <MultiSelectDropdown label="Status" options={statusOptions} values={filterStatus} onChange={setFilterStatus} placeholder="All status" width={150} />
           <MultiSelectDropdown label="Order Type" options={orderTypeOptions} values={filterOrderType} onChange={setFilterOrderType} placeholder="All types" width={160} />
           <SearchableRiderFilter value={filterRider} onChange={setFilterRider} riders={riders} inputStyle={inputStyle} width={230} />
-          <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button type="button" onClick={() => setScanOpen(true)} style={{ padding: '6px 13px', height: '29px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Scan QR</button>
             <button type="button" onClick={load} style={{ padding: '6px 13px', height: '29px', background: '#fff', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>Refresh</button>
             <button type="button" onClick={resetFilters} style={{ padding: '6px 13px', height: '29px', background: '#fff', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>Reset</button>
@@ -967,21 +951,27 @@ export default function OperationsDeliveries() {
 
         {/* Mobile filter toggle */}
         <div className="om-filter-toggle" style={{ display: 'none', gap: '8px', marginBottom: '8px', flexShrink: 0, alignItems: 'center' }}>
-          <input type="text" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: 1, padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
-          <button type="button" onClick={() => setMobileFiltersOpen((v) => !v)} style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${mobileFiltersOpen ? '#FF5722' : '#e0e0e0'}`, background: mobileFiltersOpen ? '#fff4f0' : '#fff', color: mobileFiltersOpen ? '#FF5722' : '#555', fontSize: '13px', cursor: 'pointer' }}>⚙ Filters</button>
+          <div className="ops-filter-search-wrap" style={{ flex: 1, minWidth: 0, maxWidth: 'none' }}>
+            <OpsSearchIcon />
+            <input type="search" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <button type="button" className={`ops-filter-toggle-btn${mobileFiltersOpen ? ' is-open' : ''}`} onClick={() => setMobileFiltersOpen((v) => !v)}>⚙ Filters</button>
           <button type="button" onClick={() => setScanOpen(true)} style={{ padding: '9px 12px', borderRadius: '8px', background: '#FF5722', color: '#fff', border: 'none', fontSize: '13px', cursor: 'pointer' }}>Scan</button>
         </div>
         <div className="om-filter-mobile" style={{ display: 'none' }}>
           {mobileFiltersOpen && (
-            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div className="ops-filter-mobile-panel">
               <div>
                 <label style={{ display:'block', fontSize:'11px', color:'#666', marginBottom:'4px' }}>Challan No.</label>
                 <input type="text" value={challanSearch} onChange={(e)=>setChallanSearch(e.target.value)} placeholder="Search challan no…" style={{ width:'100%', padding:'9px 12px', borderRadius:'8px', border:'1px solid #e0e0e0', fontSize:'13px' }} />
               </div>
+              <MultiSelectDropdown label="Slots" options={slotFilterOptions} values={filterSlots} onChange={setFilterSlots} placeholder="All slots" width={280} />
+              <MultiSelectDropdown label="Status" options={statusOptions} values={filterStatus} onChange={setFilterStatus} placeholder="All status" width={280} />
+              <MultiSelectDropdown label="Order Type" options={orderTypeOptions} values={filterOrderType} onChange={setFilterOrderType} placeholder="All types" width={280} />
               <SearchableRiderFilter value={filterRider} onChange={setFilterRider} riders={riders} width={280} inputStyle={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px', background: '#fff' }} />
-              <div style={{ display:'flex', gap:'8px' }}>
-                <button type="button" onClick={()=>setMobileFiltersOpen(false)} style={{ flex:1, padding:'10px', background:'#FF5722', color:'#fff', border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:'600', cursor:'pointer' }}>Done</button>
-                <button type="button" onClick={()=>{ resetFilters(); setMobileFiltersOpen(false); }} style={{ flex:1, padding:'10px', background:'#fff', border:'1px solid #e0e0e0', borderRadius:'8px', fontSize:'13px', cursor:'pointer' }}>Reset</button>
+              <div className="ops-filter-mobile-actions">
+                <button type="button" className="ops-filter-mobile-done" onClick={()=>setMobileFiltersOpen(false)}>Done</button>
+                <button type="button" className="ops-filter-mobile-reset" onClick={()=>{ resetFilters(); setMobileFiltersOpen(false); }}>Reset</button>
               </div>
             </div>
           )}
@@ -1173,8 +1163,8 @@ export default function OperationsDeliveries() {
 
       {/* Scan QR modal */}
       {scanOpen && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1100, padding:'16px' }} onClick={()=>setScanOpen(false)} role="presentation">
-          <div style={{ background:'#fff', borderRadius:'14px', border:'1px solid #e0e0e0', padding:'18px', maxWidth:'400px', width:'100%', boxShadow:'0 10px 40px rgba(0,0,0,0.15)' }} onClick={(e)=>e.stopPropagation()} role="dialog">
+        <div className="ops-sheet-overlay" style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1100, padding:'16px' }} onClick={()=>setScanOpen(false)} role="presentation">
+          <div className="ops-sheet-panel" style={{ background:'#fff', borderRadius:'14px', border:'1px solid #e0e0e0', padding:'18px', maxWidth:'400px', width:'100%', boxShadow:'0 10px 40px rgba(0,0,0,0.15)' }} onClick={(e)=>e.stopPropagation()} role="dialog">
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' }}>
               <h3 style={{ margin:0, fontSize:'15px', fontWeight:'600', color:'#333' }}>Scan challan QR</h3>
               <button type="button" onClick={()=>setScanOpen(false)} style={{ border:'none', background:'none', fontSize:'22px', color:'#888', cursor:'pointer', lineHeight:1 }}>×</button>

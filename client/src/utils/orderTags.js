@@ -117,8 +117,9 @@ export function isAffluentOrder(source, totalField = 'total_hissa', waqfField = 
   return hasDescription(source) && nonWaqfHissaCount(source, totalField, waqfField) >= 3;
 }
 
-/** Special request: has description and total hissa minus waqf is 2 or less. */
+/** Special request: meaningful description, 2 or fewer non-waqf hissa, not affluent/PRIORITY-only. */
 export function isSpecialRequestOrder(source, totalField = 'total_hissa', waqfField = 'total_waqf_hissa') {
+  if (isAffluentOrder(source, totalField, waqfField)) return false;
   return hasDescription(source) && nonWaqfHissaCount(source, totalField, waqfField) <= 2;
 }
 
@@ -126,6 +127,19 @@ export function getOrderTag(source, totalField = 'total_hissa', waqfField = 'tot
   if (isAffluentOrder(source, totalField, waqfField)) return 'affluent';
   if (isSpecialRequestOrder(source, totalField, waqfField)) return 'special_request';
   return null;
+}
+
+/** Delivery/challan group rows from deliveries/groups API. */
+export function getDeliveryGroupTag(source) {
+  return getOrderTag(source, 'hissa_count', 'waqf_hissa_count');
+}
+
+export function isDeliverySpecialRequestGroup(source) {
+  return getDeliveryGroupTag(source) === 'special_request';
+}
+
+export function isDeliveryAffluentGroup(source) {
+  return getDeliveryGroupTag(source) === 'affluent';
 }
 
 export function getChallanRowHighlight(tag) {

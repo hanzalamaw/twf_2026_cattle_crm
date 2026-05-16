@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { OpsSearchIcon } from '../components/OpsFilters';
 import { jsPDF } from 'jspdf';
 import { useAuth } from '../context/AuthContext';
 import SharedChallanModal from '../components/SharedChallanModal';
@@ -643,6 +644,7 @@ export default function OperationsChallan() {
   const [page,        setPage]        = useState(1);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [modal,       setModal]       = useState(null);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   useEffect(() => {
     if (selectedDay) {
@@ -787,12 +789,14 @@ export default function OperationsChallan() {
   };
 
   const onPrintPdf = async () => {
-    const ids = selectedIds.size ? [...selectedIds] : displayRows.map((c) => c.challan_id);
+    const ids = displayRows.map((c) => c.challan_id);
     if (!ids.length) return alert('No challans to print.');
     setBusy(true); setErr('');
     try {
       const res = await authFetch(`${API_BASE}/operations/challans/bulk-detail`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challan_ids: ids }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batch_id: selectedBatch, challan_ids: ids }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Could not build PDF');
@@ -812,23 +816,31 @@ export default function OperationsChallan() {
     return 'Pending';
   }
 
+  const resetFilters = () => {
+    setSearch('');
+    setChallanSearch('');
+    setFilterSlot([]);
+    setFilterStatus([]);
+    setFilterOrderType([]);
+  };
+
   return (
     <>
       <style>{`
-        .ops-data-table { width: max-content !important; min-width: 100% !important; table-layout: auto !important; }
-        .ops-data-table th, .ops-data-table td { max-width: 240px; white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; vertical-align: top; }
-        .ops-data-table th { white-space: nowrap !important; }
-        @media (max-width: 767px) { .ops-data-table th, .ops-data-table td { max-width: 180px; } }
+        @media (max-width: 767px) {
+          .om-root { padding: 16px 12px 24px !important; overflow: auto !important; }
+          .om-table-wrap     { display: block !important; }
+          .om-pagination { flex-direction: column !important; align-items: stretch !important; }
+          .om-pagination > div { justify-content: center !important; }
+          .om-header h2 { min-height: 55px !important; display: flex !important; align-items: center !important; padding-right: 58px !important; box-sizing: border-box !important; }
+        }
       `}</style>
-      <div style={{ padding: '19px', fontFamily: "'Poppins','Inter',sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
+      <div className="om-root" style={{ padding: '19px', fontFamily: "'Poppins','Inter',sans-serif", display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
+        <div className="om-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '12px', flexShrink: 0 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>Challan Management</h2>
-            <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#888' }}>
-              Showing challans for the selected batch. Print PDF respects active filters; selected rows only if any are checked.
-            </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             {busy && <span style={{ fontSize: '10px', color: '#999', fontWeight: '600' }}>Working…</span>}
@@ -869,8 +881,8 @@ export default function OperationsChallan() {
           ))}
         </div>
 
-        {/* Filters */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '14px', alignItems: 'flex-end', flexShrink: 0 }}>
+        {/* Desktop filters */}
+        <div className="om-filter-desktop" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '14px', alignItems: 'flex-end', flexShrink: 0 }}>
           <div style={{ flex: '1 1 200px', minWidth: 160 }}>
             <label style={{ display: 'block', fontSize: '10px', color: '#666', marginBottom: '3px' }}>Search</label>
             <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} style={inputStyle} placeholder="Address, area, shareholders…" />
@@ -900,6 +912,36 @@ export default function OperationsChallan() {
           </div>
         </div>
 
+        {/* Mobile filter toggle */}
+        <div className="om-filter-toggle" style={{ display: 'none', gap: '8px', marginBottom: '8px', flexShrink: 0, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input type="text" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: '1 1 120px', minWidth: 0, padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
+          <button type="button" className={`ops-filter-toggle-btn${mobileFiltersOpen ? ' is-open' : ''}`} onClick={() => setMobileFiltersOpen((v) => !v)}>⚙ Filters</button>
+          <button type="button" disabled={busy} onClick={onPrintPdf} style={{ padding: '9px 12px', borderRadius: '8px', background: '#FF5722', color: '#fff', border: 'none', fontSize: '13px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>Print PDF</button>
+        </div>
+        <div className="om-challan-mobile-actions" style={{ display: 'none' }}>
+          <button type="button" onClick={load} style={{ background: '#fff', color: '#555', border: '1px solid #e0e0e0' }}>Refresh</button>
+          {emailOk && (
+            <button type="button" onClick={() => setConfirmRegen(true)} style={{ background: '#FFEBEE', color: '#C62828', border: '1px solid #FFCDD2' }}>New batch</button>
+          )}
+        </div>
+        <div className="om-filter-mobile" style={{ display: 'none' }}>
+          {mobileFiltersOpen && (
+            <div className="ops-filter-mobile-panel">
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Challan No.</label>
+                <input type="text" value={challanSearch} onChange={(e) => setChallanSearch(e.target.value)} placeholder="Search challan no…" style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px', boxSizing: 'border-box' }} />
+              </div>
+              <MultiSelectDropdown label="Slots" options={slotFilterOptions} values={filterSlot} onChange={setFilterSlot} placeholder="All slots" width={280} />
+              <MultiSelectDropdown label="Status" options={statusFilterOptions} values={filterStatus} onChange={setFilterStatus} placeholder="All status" width={280} />
+              <MultiSelectDropdown label="Order Type" options={ORDER_TYPE_FILTERS} values={filterOrderType} onChange={setFilterOrderType} placeholder="All types" width={280} />
+              <div className="ops-filter-mobile-actions">
+                <button type="button" className="ops-filter-mobile-done" onClick={() => setMobileFiltersOpen(false)}>Done</button>
+                <button type="button" onClick={() => { resetFilters(); setMobileFiltersOpen(false); }} style={{ flex: 1, padding: '10px', background: '#fff', border: '1px solid #e0e0e0', borderRadius: '8px', fontSize: '13px', cursor: 'pointer' }}>Reset</button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {msg && <div style={{ padding: '10px', background: '#E8F5E9', color: '#2E7D32', borderRadius: '6px', marginBottom: '12px', fontSize: '10px', fontWeight: '600' }}>{msg}</div>}
         {err && <div style={{ padding: '10px', background: '#FFF5F2', color: '#C62828', borderRadius: '6px', marginBottom: '13px', fontSize: '10px', fontWeight: '600' }}>{err}</div>}
 
@@ -910,7 +952,7 @@ export default function OperationsChallan() {
         )}
 
         {/* Table */}
-        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', borderRadius: '10px', border: '1px solid #ececec' }}>
+        <div className="om-table-wrap" style={{ flex: 1, minHeight: 0, overflow: 'auto', borderRadius: '10px', border: '1px solid #ececec' }}>
           {loading ? (
             <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading…</div>
           ) : (
@@ -1089,9 +1131,9 @@ export default function OperationsChallan() {
 
       {/* Confirm regenerate */}
       {confirmRegen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+        <div className="ops-sheet-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
           onClick={() => setConfirmRegen(false)}>
-          <div style={{ background: '#fff', borderRadius: '18px', border: '1.5px solid #F0F0F0', padding: '20px', maxWidth: '440px', width: '100%', boxShadow: '0 10px 40px rgba(0,0,0,0.12)' }}
+          <div className="ops-sheet-panel" style={{ background: '#fff', borderRadius: '18px', border: '1.5px solid #F0F0F0', padding: '20px', maxWidth: '440px', width: '100%', boxShadow: '0 10px 40px rgba(0,0,0,0.12)' }}
             onClick={(e) => e.stopPropagation()}>
             <h2 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: '600', color: '#333' }}>Generate new batch of challans?</h2>
             <p style={{ margin: '0 0 18px', fontSize: '12px', color: '#666' }}>

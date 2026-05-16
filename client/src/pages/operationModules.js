@@ -73,6 +73,16 @@ export const OPERATION_MODULES = [
     soft: '#FFEBEE',
   },
   {
+    id: 'line',
+    name: 'Line Management',
+    desc: 'Line groups, cow/goat counts & records',
+    path: '/operations/line/dashboard',
+    permission: 'operation_line_management',
+    emoji: '📋',
+    accent: '#C62828',
+    soft: '#FFEBEE',
+  },
+  {
     id: 'challan',
     name: 'Challan Management',
     desc: 'Challan PDFs & batch data',

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { OpsSearchIcon } from '../components/OpsFilters';
 import { API_BASE } from '../config/api';
 import {
   getDescriptionText,
@@ -145,6 +146,7 @@ function getGroupOrderTypes(g) {
 }
 
 const PAGE_SIZE = 50;
+const SUPERVISOR_VISIBLE_STATUSES = ['Rider Assigned', 'Dispatched'];
 
 export default function OperationsRiderSupervisorView() {
   const { authFetch } = useAuth();
@@ -245,16 +247,22 @@ export default function OperationsRiderSupervisorView() {
 
   const modalDescription = useMemo(() => getDescriptionText({ ...(modalData?.challan || {}), ...(modal || {}), orders: modalData?.orders || [] }), [modal, modalData]);
 
+  const statusEligibleGroups = useMemo(
+    () => groups.filter((g) => SUPERVISOR_VISIBLE_STATUSES.includes(g.derived_status || 'Pending')),
+    [groups]
+  );
+
   const slotOptions = useMemo(() => {
     const seen = new Map();
-    groups.forEach((g) => getGroupSlots(g).forEach((slot) => {
+    statusEligibleGroups.forEach((g) => getGroupSlots(g).forEach((slot) => {
       const key = normalizeForCompare(slot);
       if (key && !seen.has(key)) seen.set(key, slot);
     }));
     return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map((slot) => ({ value: slot, label: slot }));
-  }, [groups]);
+  }, [statusEligibleGroups]);
+
   const filteredGroups = useMemo(() => {
-    let list = groups;
+    let list = statusEligibleGroups;
     if (selectedDay) {
       const wantDay = normalizeDayLabel(selectedDay);
       list = list.filter((g) => {
@@ -289,7 +297,7 @@ export default function OperationsRiderSupervisorView() {
       list = list.filter((g) => String(g.challan_id || '').toLowerCase().includes(challanQ));
     }
     return list;
-  }, [groups, search, challanSearch, slotFilter, riderFilter, orderTypeFilter, selectedDay]);
+  }, [statusEligibleGroups, search, challanSearch, slotFilter, riderFilter, orderTypeFilter, selectedDay]);
 
   const totalPages  = Math.max(1, Math.ceil(filteredGroups.length / PAGE_SIZE));
   const pagedGroups = useMemo(() => filteredGroups.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filteredGroups, page]);
@@ -313,27 +321,9 @@ export default function OperationsRiderSupervisorView() {
   return (
     <>
       <style>{`
-
-          .ops-data-table { width: max-content !important; min-width: 100% !important; table-layout: auto !important; }
-          .ops-data-table th,
-          .ops-data-table td {
-            max-width: 240px;
-            white-space: normal !important;
-            word-break: break-word;
-            overflow-wrap: anywhere;
-            vertical-align: top;
-          }
-          .ops-data-table th { white-space: nowrap !important; }
-          @media (max-width: 767px) {
-            .ops-data-table th,
-            .ops-data-table td { max-width: 180px; }
-          }
         @media (max-width: 767px) {
           .cs-root { padding: 16px 12px 24px !important; overflow: auto !important; }
           .cs-header { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; margin-bottom: 12px !important; }
-          .cs-filter-desktop { display: none !important; }
-          .cs-filter-toggle { display: flex !important; }
-          .cs-filter-mobile { display: block !important; }
           .cs-table-wrap { display: block !important; }
           .modal-info-grid { grid-template-columns: 1fr !important; }
         }
@@ -346,7 +336,7 @@ export default function OperationsRiderSupervisorView() {
           <div>
             <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>Rider Supervisor</h2>
             <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#888', fontWeight: '500', lineHeight: 1.45, maxWidth: '760px' }}>
-              Uses the latest challan batch for the selected day. Shows delivery groups where at least one assigned rider is on your team. Click a row for challan details.
+              Uses the latest challan batch for the selected day. Shows only Rider Assigned or Dispatched groups for riders on your team. Click a row for challan details.
             </p>
           </div>
           <button type="button" onClick={load} style={{ padding: '7px 13px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Refresh</button>
@@ -389,15 +379,15 @@ export default function OperationsRiderSupervisorView() {
 
         <div className="cs-filter-mobile" style={{ display: 'none' }}>
           {mobileFiltersOpen && (
-            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div className="ops-filter-mobile-panel">
               <div>
                 <label style={{ display: 'block', fontSize: '11px', color: '#666', marginBottom: '4px' }}>Challan No.</label>
                 <input type="text" value={challanSearch} onChange={(e) => setChallanSearch(e.target.value)} placeholder="Search challan no…" style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px' }} />
               </div>
               <SearchableRiderFilter value={riderFilter} onChange={setRiderFilter} riders={riders} width={280} inputStyle={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '13px', background: '#fff' }} />
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button type="button" onClick={() => setMobileFiltersOpen(false)} style={{ flex: 1, padding: '10px', background: '#FF5722', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>Done</button>
-                <button type="button" onClick={() => { resetFilters(); setMobileFiltersOpen(false); }} style={{ flex: 1, padding: '10px', background: '#fff', color: '#555', border: '1px solid #e0e0e0', borderRadius: '8px', fontSize: '13px', cursor: 'pointer' }}>Reset</button>
+              <div className="ops-filter-mobile-actions">
+                <button type="button" className="ops-filter-mobile-done" onClick={() => setMobileFiltersOpen(false)}>Done</button>
+                <button type="button" onClick={() => { resetFilters(); setMobileFiltersOpen(false); }} className="ops-filter-mobile-reset">Reset</button>
               </div>
             </div>
           )}
@@ -407,7 +397,7 @@ export default function OperationsRiderSupervisorView() {
 
         {!loading && (
           <div style={{ fontSize: '10px', color: '#999', marginBottom: '8px', flexShrink: 0 }}>
-            Showing {filteredGroups.length} of {groups.length} group{groups.length !== 1 ? 's' : ''}
+            Showing {filteredGroups.length} of {statusEligibleGroups.length} group{statusEligibleGroups.length !== 1 ? 's' : ''} (Rider Assigned / Dispatched)
           </div>
         )}
 
@@ -417,7 +407,9 @@ export default function OperationsRiderSupervisorView() {
             <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>Loading…</div>
           ) : filteredGroups.length === 0 ? (
             <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: '11px' }}>
-              {groups.length === 0 ? 'No groups found.' : 'No groups match the current filters.'}
+              {statusEligibleGroups.length === 0
+                ? 'No Rider Assigned or Dispatched groups for your team on this day.'
+                : 'No groups match the current filters.'}
             </div>
           ) : (
             <table className="ops-data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', tableLayout: 'auto' }}>

@@ -722,10 +722,22 @@ export const registerOperationsRoutes = (app, db, verifyToken, io = null) => {
       const flags = await assertSub(req, res, (f) => f.operation_challan_management);
       if (!flags) return;
       const raw = req.body.challan_ids;
-      if (!Array.isArray(raw) || raw.length === 0) {
-        return res.status(400).json({ message: "challan_ids array required" });
+      let ids = [];
+      if (Array.isArray(raw) && raw.length > 0) {
+        ids = [...new Set(raw.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0))];
+      } else if (req.body.batch_id) {
+        const batchId = Number(req.body.batch_id);
+        if (!Number.isFinite(batchId) || batchId <= 0) {
+          return res.status(400).json({ message: "Invalid batch_id" });
+        }
+        const [batchRows] = await db.execute(
+          `SELECT challan_id FROM challan WHERE batch_id = ? AND COALESCE(total_hissa, 0) > 0 ORDER BY day, slot, challan_id`,
+          [batchId]
+        );
+        ids = batchRows.map((r) => r.challan_id);
+      } else {
+        return res.status(400).json({ message: "challan_ids array or batch_id required" });
       }
-      const ids = [...new Set(raw.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0))].slice(0, 100);
       if (ids.length === 0) return res.status(400).json({ message: "No valid challan ids" });
       const placeholders = ids.map(() => "?").join(",");
       const [challans] = await db.execute(

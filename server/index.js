@@ -21,6 +21,7 @@ import { registerProcurementRoutes } from "./routes/procurement.js";
 import { registerAccountingRoutes } from "./routes/accountingRoutes.js";
 import { registerOperationsRoutes } from "./routes/operationsRoutes.js";
 import { registerSlaughterRoutes } from "./routes/slaughterRoutes.js";
+import { registerLineRoutes } from "./routes/lineRoutes.js";
 import { buildPermissionsFromRoleRow } from "./utils/userPermissions.js";
 import { log, logError } from "./utils/logger.js";
 import { writeAuditLog } from "./utils/auditLog.js";
@@ -92,6 +93,7 @@ const startServer = async () => {
             r.operation_affluent_management,
             r.operation_special_request_management,
             r.operation_slaughter_management,
+            r.operation_line_management,
             r.farm_management, r.procurement_management, r.accounting_and_finance, r.performance_management
            FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.username = ?`,
           [username]
@@ -199,6 +201,7 @@ const startServer = async () => {
             r.operation_affluent_management,
             r.operation_special_request_management,
             r.operation_slaughter_management,
+            r.operation_line_management,
             r.farm_management, r.procurement_management, r.accounting_and_finance, r.performance_management
            FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.user_id = ?`,
           [req.userId]
@@ -257,6 +260,7 @@ const startServer = async () => {
             r.operation_affluent_management,
             r.operation_special_request_management,
             r.operation_slaughter_management,
+            r.operation_line_management,
             r.farm_management, r.procurement_management, r.accounting_and_finance, r.performance_management
            FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.user_id = ?`,
           [userId]
@@ -306,6 +310,7 @@ const startServer = async () => {
             r.operation_affluent_management,
             r.operation_special_request_management,
             r.operation_slaughter_management,
+            r.operation_line_management,
             r.farm_management, r.procurement_management, r.accounting_and_finance, r.performance_management
            FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.user_id = ?`,
           [session.user_id]
@@ -399,6 +404,7 @@ const startServer = async () => {
     registerAccountingRoutes(app, db, verifyToken);
     registerOperationsRoutes(app, db, verifyToken, io);
     registerSlaughterRoutes(app, db, verifyToken);
+    registerLineRoutes(app, db, verifyToken);
 
     // ---------- 404 ----------
     app.use((req, res) => {

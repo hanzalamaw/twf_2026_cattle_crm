@@ -183,6 +183,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
         operation_affluent_management,
         operation_special_request_management,
         operation_slaughter_management,
+        operation_line_management,
         farm_management,
         procurement_management,
         accounting_and_finance,
@@ -202,9 +203,10 @@ export const registerControlRoutes = (app, db, verifyToken) => {
                            operation_rider_management, operation_rider_management_supervisor,
                            operation_deliveries_management, operation_challan_management, operation_affluent_management,
                            operation_special_request_management, operation_slaughter_management,
+                           operation_line_management,
                            farm_management, procurement_management, 
                            accounting_and_finance, performance_management) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           role_name,
           control_management || false,
@@ -219,6 +221,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
           opOn && !!(operation_affluent_management || false),
           opOn && !!(operation_special_request_management || false),
           opOn && !!(operation_slaughter_management || false),
+          opOn && !!(operation_line_management || false),
           farm_management || false,
           procurement_management || false,
           accounting_and_finance || false,
@@ -252,6 +255,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
         operation_affluent_management,
         operation_special_request_management,
         operation_slaughter_management,
+        operation_line_management,
         farm_management,
         procurement_management,
         accounting_and_finance,
@@ -269,6 +273,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       const oldAff = !!oldRoles[0].operation_affluent_management;
       const oldSpecial = !!oldRoles[0].operation_special_request_management;
       const oldSlaughter = !!oldRoles[0].operation_slaughter_management;
+      const oldLine = !!oldRoles[0].operation_line_management;
       let nextRiderSup = !!sub(operation_rider_management_supervisor, oldSup);
       let nextRiderAdm = opOn ? !!sub(operation_rider_management, oldRoles[0].operation_rider_management) : 0;
       if (nextRiderSup) nextRiderAdm = 0;
@@ -276,6 +281,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
       const nextAffluent = opOn ? !!sub(operation_affluent_management, oldAff) : 0;
       const nextSpecial = opOn ? !!sub(operation_special_request_management, oldSpecial) : 0;
       const nextSlaughter = opOn ? !!sub(operation_slaughter_management, oldSlaughter) : 0;
+      const nextLine = opOn ? !!sub(operation_line_management, oldLine) : 0;
       await db.execute(
         `UPDATE roles SET 
          role_name = ?, control_management = ?, booking_management = ?,
@@ -283,6 +289,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
          operation_rider_management = ?, operation_rider_management_supervisor = ?,
          operation_deliveries_management = ?, operation_challan_management = ?, operation_affluent_management = ?,
          operation_special_request_management = ?, operation_slaughter_management = ?,
+         operation_line_management = ?,
          farm_management = ?, procurement_management = ?,
          accounting_and_finance = ?, performance_management = ?
          WHERE role_id = ?`,
@@ -300,6 +307,7 @@ export const registerControlRoutes = (app, db, verifyToken) => {
           nextAffluent,
           nextSpecial,
           nextSlaughter,
+          nextLine,
           farm_management !== undefined ? farm_management : oldRoles[0].farm_management,
           procurement_management !== undefined ? procurement_management : oldRoles[0].procurement_management,
           accounting_and_finance !== undefined ? accounting_and_finance : oldRoles[0].accounting_and_finance,

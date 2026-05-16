@@ -237,8 +237,7 @@ export default function SlaughterDashboard() {
         .sl-add-group:hover { background: #B71C1C; }
         .sl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
         .sl-card { background: #fff; border-radius: 12px; border: 1px solid #eee; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
-        .sl-card-title { font-size: 16px; font-weight: 700; color: #222; margin-bottom: 4px; }
-        .sl-card-id { font-size: 11px; color: #888; margin-bottom: 12px; }
+        .sl-card-title { font-size: 16px; font-weight: 700; color: #222; margin-bottom: 12px; }
         .sl-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-bottom: 14px; }
         .sl-stat { font-size: 12px; color: #555; display: flex; justify-content: space-between; }
         .sl-stat strong { color: #C62828; }
@@ -265,8 +264,12 @@ export default function SlaughterDashboard() {
         .sl-list-btns { display: flex; gap: 6px; }
         .sl-list-btns button { padding: 4px 10px; font-size: 11px; border-radius: 6px; border: 1px solid #ddd; background: #fff; cursor: pointer; }
         @media (max-width: 767px) {
+          .sl-root { padding: 16px 12px 24px; }
           .sl-toolbar { flex-direction: column; align-items: stretch; }
-          .sl-add-group { margin-left: 0; }
+          .sl-add-group { margin-left: 0; width: 100%; }
+          .sl-day-tabs { flex-wrap: wrap; }
+          .sl-day-btn { flex: 1; min-width: 0; text-align: center; }
+          .sl-grid { grid-template-columns: 1fr; }
         }
       `}</style>
 
@@ -299,7 +302,6 @@ export default function SlaughterDashboard() {
           {groups.map((g) => (
             <div key={g.group_id} className="sl-card">
               <div className="sl-card-title">{g.group_name}</div>
-              <div className="sl-card-id">Group #{g.group_id}</div>
               <div className="sl-stats">
                 {SLAUGHTER_ANIMAL_TYPES.map((t) => (
                   <div key={t.key} className="sl-stat">
@@ -322,8 +324,8 @@ export default function SlaughterDashboard() {
       )}
 
       {groupModal && (
-        <div className="sl-overlay" onClick={() => setGroupModal(false)} role="presentation">
-          <div className="sl-modal" onClick={(e) => e.stopPropagation()} role="dialog">
+        <div className="sl-overlay ops-sheet-overlay" onClick={() => setGroupModal(false)} role="presentation">
+          <div className="sl-modal ops-sheet-panel" onClick={(e) => e.stopPropagation()} role="dialog">
             <h3>Add Qassai Group</h3>
             <p style={{ fontSize: 12, color: '#888', margin: '0 0 12px' }}>
               Group ID is assigned automatically. Creating for {SLAUGHTER_DAYS.find((d) => d.value === day)?.label}.
@@ -343,8 +345,8 @@ export default function SlaughterDashboard() {
       )}
 
       {addModal && (
-        <div className="sl-overlay" onClick={() => setAddModal(null)} role="presentation">
-          <div className="sl-modal" onClick={(e) => e.stopPropagation()} role="dialog">
+        <div className="sl-overlay ops-sheet-overlay" onClick={() => setAddModal(null)} role="presentation">
+          <div className="sl-modal ops-sheet-panel" onClick={(e) => e.stopPropagation()} role="dialog">
             <h3>Add slaughter — {addModal.group_name}</h3>
             <div className="sl-field">
               <label>Type</label>
@@ -378,8 +380,8 @@ export default function SlaughterDashboard() {
       )}
 
       {listModal && (
-        <div className="sl-overlay" onClick={() => { setListModal(null); setEditRow(null); }} role="presentation">
-          <div className="sl-modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()} role="dialog">
+        <div className="sl-overlay ops-sheet-overlay" onClick={() => { setListModal(null); setEditRow(null); }} role="presentation">
+          <div className="sl-modal ops-sheet-panel" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()} role="dialog">
             <h3>Slaughters — {listModal.group_name}</h3>
             {editRow ? (
               <>
