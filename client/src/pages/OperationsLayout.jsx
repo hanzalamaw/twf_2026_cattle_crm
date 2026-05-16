@@ -21,8 +21,10 @@ export default function OperationsLayout() {
   const total = OPERATION_MODULES.length;
   const isOverview = location.pathname === '/operations' || location.pathname === '/operations/';
   const isRidersSubtree = location.pathname.startsWith('/operations/riders');
-  /** Rider admin uses sidebar for logout; supervisor-only keeps this top bar. */
-  const hideOpsSubTopbar = isRidersSubtree && !!p.operation_rider_management;
+  const isSlaughterSubtree = location.pathname.startsWith('/operations/slaughter');
+  /** Rider admin / slaughter use sidebar; supervisor-only keeps this top bar. */
+  const hideOpsSubTopbar =
+    (isRidersSubtree && !!p.operation_rider_management) || isSlaughterSubtree;
 
   return (
     <>

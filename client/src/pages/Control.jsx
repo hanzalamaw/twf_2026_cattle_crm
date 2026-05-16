@@ -131,6 +131,7 @@ const Control = () => {
     operation_challan_management: false,
     operation_affluent_management: false,
     operation_special_request_management: false,
+    operation_slaughter_management: false,
     farm_management: false,
     procurement_management: false,
     accounting_and_finance: false,
@@ -150,6 +151,7 @@ const Control = () => {
     operation_challan_management: false,
     operation_affluent_management: false,
     operation_special_request_management: false,
+    operation_slaughter_management: false,
     farm_management: false,
     procurement_management: false,
     accounting_and_finance: false,
@@ -362,6 +364,7 @@ const Control = () => {
         operation_challan_management: role.operation_challan_management || false,
         operation_affluent_management: role.operation_affluent_management || false,
         operation_special_request_management: role.operation_special_request_management || false,
+        operation_slaughter_management: role.operation_slaughter_management || false,
         farm_management: role.farm_management || false,
         procurement_management: role.procurement_management || false,
         accounting_and_finance: role.accounting_and_finance || false,
@@ -731,6 +734,7 @@ const Control = () => {
                       if (r.operation_deliveries_management) permissions.push('Op · Deliveries');
                       if (r.operation_affluent_management) permissions.push('Op · Affluent');
                       if (r.operation_special_request_management) permissions.push('Op · Special Request');
+                      if (r.operation_slaughter_management) permissions.push('Op · Slaughter');
                       if (r.operation_challan_management) permissions.push('Op · Challan');
                     }
                     if (r.farm_management) permissions.push('Farm');
@@ -1071,6 +1075,8 @@ const Control = () => {
                       operation_deliveries_management: false,
                       operation_challan_management: false,
                       operation_affluent_management: false,
+                      operation_special_request_management: false,
+                      operation_slaughter_management: false,
                     }),
                   });
                 }} style={{ marginRight: '10px', width: '18px', height: '18px', cursor: 'pointer' }} />
@@ -1086,6 +1092,7 @@ const Control = () => {
                     { key: 'operation_challan_management', label: 'Challan Management' },
                     { key: 'operation_affluent_management', label: 'Affluent Management' },
                     { key: 'operation_special_request_management', label: 'Special Request Management' },
+                    { key: 'operation_slaughter_management', label: 'Slaughter Management' },
                   ].map(perm => (
                     <div key={perm.key} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center' }}>
                       <input type="checkbox" id={perm.key} checked={roleFormData[perm.key]} onChange={(e) => setRoleFormData({ ...roleFormData, [perm.key]: e.target.checked })} style={{ marginRight: '10px', width: '16px', height: '16px', cursor: 'pointer' }} />

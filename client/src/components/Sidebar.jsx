@@ -110,6 +110,11 @@ const OPERATIONS_MENU_ITEMS = [
   { id: 'op-supervisors', label: 'Supervisor Management', iconDefault: '/icons/query_management_default.png', iconActive: '/icons/query_management_active.png', path: '/operations/riders/supervisors', permission: 'operation_rider_management' },
 ];
 
+const SLAUGHTER_MENU_ITEMS = [
+  { id: 'sl-dashboard', label: 'Dashboard', iconDefault: '/icons/dashboard_default.png', iconActive: '/icons/dashboard_active.png', path: '/operations/slaughter/dashboard', permission: 'operation_slaughter_management' },
+  { id: 'sl-management', label: 'Management', iconDefault: '/icons/order_management_default.png', iconActive: '/icons/order_management_active.png', path: '/operations/slaughter/management', permission: 'operation_slaughter_management' },
+];
+
 const STAFF_BOOKINGS_ROLE = 'Staff - Bookings';
 const CO_MANAGER_BOOKINGS_ROLE = 'Co-Manager - Bookings';
 
@@ -165,8 +170,10 @@ function Sidebar() {
   const roleId = user?.role_id;
   const isManager = [3, 5, 7].includes(roleId);
   const isBookingContext = location.pathname.startsWith('/bookings');
-  const isOperationsContext = location.pathname.startsWith('/operations');
+  const isSlaughterContext = location.pathname.startsWith('/operations/slaughter');
+  const isOperationsContext = location.pathname.startsWith('/operations') && !isSlaughterContext;
   const isOperationsRidersContext = location.pathname.startsWith('/operations/riders');
+  const isOperationsSubmoduleBack = isOperationsRidersContext || isSlaughterContext;
   /** Supervisor-only rider screen keeps compact header; rider admin / manager gets avatar + logout. */
   const minimalRiderSidebarChrome =
     isOperationsRidersContext && !permissions.operation_rider_management;
@@ -183,6 +190,8 @@ function Sidebar() {
 
   const items = isBookingContext
     ? BOOKING_MENU_ITEMS
+    : isSlaughterContext
+    ? SLAUGHTER_MENU_ITEMS
     : isOperationsContext
     ? OPERATIONS_MENU_ITEMS
     : isPerformanceContext
@@ -281,6 +290,8 @@ function Sidebar() {
 
   const sectionLabel = isBookingContext
     ? 'BOOKING MANAGEMENT'
+    : isSlaughterContext
+    ? 'SLAUGHTER MANAGEMENT'
     : isOperationsContext
     ? 'OPERATIONS MANAGEMENT'
     : isPerformanceContext
@@ -363,10 +374,10 @@ function Sidebar() {
             <button
               type="button"
               className="drawer-back-btn"
-              onClick={() => handleNavigate(isOperationsRidersContext ? '/operations' : '/')}
+              onClick={() => handleNavigate(isOperationsSubmoduleBack ? '/operations' : '/')}
             >
               <img src="/icons/select_system.png" alt="" style={{ width: '20px', height: '20px' }} />
-              <span>{isOperationsRidersContext ? 'Select Operation' : 'Select Management'}</span>
+              <span>{isOperationsSubmoduleBack ? 'Select Operation' : 'Select Management'}</span>
             </button>
             <button type="button" className="drawer-logout-btn" onClick={handleLogout}>
               <LogoutIcon />
@@ -439,13 +450,13 @@ function Sidebar() {
         <button
           type="button"
           className="nav-link sidebar-back-btn"
-          onClick={() => navigate(isOperationsRidersContext ? '/operations' : '/')}
-          title={isOperationsRidersContext ? 'Back to operation modules' : 'Back to Select Management'}
+          onClick={() => navigate(isOperationsSubmoduleBack ? '/operations' : '/')}
+          title={isOperationsSubmoduleBack ? 'Back to operation modules' : 'Back to Select Management'}
         >
           <span className="nav-icon nav-icon-main">
             <img src="/icons/select_system.png" alt="" style={{ width: '20px', height: '20px', display: 'block' }} />
           </span>
-          {isExpanded && <span className="nav-label">{isOperationsRidersContext ? 'Select Operation' : 'Select Management'}</span>}
+          {isExpanded && <span className="nav-label">{isOperationsSubmoduleBack ? 'Select Operation' : 'Select Management'}</span>}
         </button>
       </div>
     </aside>

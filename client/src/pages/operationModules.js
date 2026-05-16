@@ -63,6 +63,16 @@ export const OPERATION_MODULES = [
     soft: '#FFF8E1',
   },
   {
+    id: 'slaughter',
+    name: 'Slaughter Management',
+    desc: 'Qassai groups, slaughter counts & records',
+    path: '/operations/slaughter/dashboard',
+    permission: 'operation_slaughter_management',
+    emoji: '🥩',
+    accent: '#C62828',
+    soft: '#FFEBEE',
+  },
+  {
     id: 'challan',
     name: 'Challan Management',
     desc: 'Challan PDFs & batch data',

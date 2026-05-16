@@ -20,6 +20,8 @@ import OperationsRiders from './pages/OperationsRiders';
 import OperationsRiderSupervisorView from './pages/OperationsRiderSupervisorView';
 import OperationsAffluent from './pages/OperationsAffluent';
 import OperationsSpecialRequest from './pages/OperationsSpecialRequest';
+import SlaughterDashboard from './pages/SlaughterDashboard';
+import SlaughterManagement from './pages/SlaughterManagement';
 import OperationPlaceholder from './pages/OperationPlaceholder';
 import ProcurementDashboard from './pages/ProcurementDashboard';
 import NewProcurement from './pages/NewProcurement';
@@ -169,14 +171,23 @@ const RequireChallanOnly = ({ children }) => {
   return children;
 };
 
+const RequireSlaughterOnly = ({ children }) => {
+  const { user } = useAuth();
+  const p = user?.permissions || {};
+  if (!hasOperationsShellAccess(p)) return <Navigate to="/" replace />;
+  if (!p.operation_slaughter_management) return <Navigate to="/operations" replace />;
+  return children;
+};
+
 /** Show sidebar on rider routes for rider admins only; supervisor-only view is full-width (top bar in OperationsLayout). */
 const OperationsMainLayout = () => {
   const location = useLocation();
   const { user } = useAuth();
   const p = user?.permissions || {};
   const onRiders = location.pathname.startsWith('/operations/riders');
+  const onSlaughter = location.pathname.startsWith('/operations/slaughter');
   const supervisorOnly = !!p.operation_rider_management_supervisor && !p.operation_rider_management;
-  const showSidebar = onRiders && !supervisorOnly;
+  const showSidebar = (onRiders && !supervisorOnly) || onSlaughter;
   return <MainLayout showSidebar={showSidebar} systemName="Operations Management" />;
 };
 
@@ -215,6 +226,8 @@ const ROUTE_TITLES = {
   '/operations/affluent': 'Affluent Management',
   '/operations/special-request': 'Special Request',
   '/operations/challan': 'Challan Management',
+  '/operations/slaughter/dashboard': 'Slaughter — Dashboard',
+  '/operations/slaughter/management': 'Slaughter — Management',
   '/farm': 'Farm Management',
   '/farm/dashboard': 'Farm Dashboard',
   '/farm/new-query': 'New Query',
@@ -357,6 +370,9 @@ function App() {
               <Route path="affluent" element={<RequireAffluentOnly><OperationsAffluent /></RequireAffluentOnly>} />
               <Route path="special-request" element={<RequireSpecialRequestOnly><OperationsSpecialRequest /></RequireSpecialRequestOnly>} />
               <Route path="challan" element={<RequireChallanOnly><OperationsChallan /></RequireChallanOnly>} />
+              <Route path="slaughter" element={<Navigate to="/operations/slaughter/dashboard" replace />} />
+              <Route path="slaughter/dashboard" element={<RequireSlaughterOnly><SlaughterDashboard /></RequireSlaughterOnly>} />
+              <Route path="slaughter/management" element={<RequireSlaughterOnly><SlaughterManagement /></RequireSlaughterOnly>} />
             </Route>
           </Route>
 
