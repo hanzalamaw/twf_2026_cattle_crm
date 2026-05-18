@@ -2025,7 +2025,7 @@ export default function OperationsRiders() {
                           <td style={{ padding: '9px 10px' }}>
                             <ChallanDeliveryStatusBadge status={st} />
                           </td>
-                          <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top' }}>
+                          <td className="ops-cell-wrap" style={{ padding: '9px 10px', fontWeight: '500', color: '#333', verticalAlign: 'top' }}>
                             {(g.booking_names || []).filter(Boolean).map(String).join(', ') || '—'}
                           </td>
                           <td style={{ padding: '9px 10px', color: '#555' }}>{g.standard_hissa_count || 0}</td>
@@ -2040,13 +2040,13 @@ export default function OperationsRiders() {
                               <div style={{ fontSize: '9px', color: '#aaa' }}>{g.slots.map(String).join(', ')}</div>
                             )}
                           </td>
-                          <td style={{ padding: '9px 10px', color: '#555', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top' }}>
+                          <td className="ops-cell-wrap" style={{ padding: '9px 10px', color: '#555', verticalAlign: 'top' }}>
                             {g.area != null && g.area !== '' ? String(g.area) : '—'}
                           </td>
-                          <td style={{ padding: '9px 10px', color: '#555' }}>
+                          <td className="ops-cell-wrap" style={{ padding: '9px 10px', color: '#555' }}>
                             <MultiLineCell values={[g.contacts || [], g.alt_contacts || []]} />
                           </td>
-                          <td style={{ padding: '9px 10px', color: '#555', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top' }}>
+                          <td className="ops-cell-wrap" style={{ padding: '9px 10px', color: '#555', verticalAlign: 'top' }}>
                             <div>{g.address != null && g.address !== '' ? String(g.address) : '—'}</div>
                           </td>
                           <td style={{ padding: '9px 10px', color: '#777', fontWeight: '500' }}>

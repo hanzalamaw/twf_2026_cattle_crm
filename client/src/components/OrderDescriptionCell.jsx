@@ -5,6 +5,7 @@ const textStyle = {
   wordBreak: 'break-word',
   overflowWrap: 'anywhere',
   lineHeight: 1.45,
+  maxWidth: '220px',
   color: '#333',
   fontWeight: 500,
 };

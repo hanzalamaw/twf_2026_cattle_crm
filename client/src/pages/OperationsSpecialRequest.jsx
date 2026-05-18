@@ -1036,10 +1036,10 @@ export default function OperationsSpecialRequest() {
                       <td style={{ padding:'9px 10px' }} onClick={(e)=>e.stopPropagation()}>
                         <SearchableRiderSelect value={g.rider_id??''} riders={riders} fallbackLabel={g.rider_count > 1 ? 'Multiple Riders' : undefined} onChange={(rid)=>patchGroupRider(g.challan_id, rid)} />
                       </td>
-                      <td style={{ padding:'9px 10px', color:'#555', verticalAlign:'top' }}>
+                      <td className="ops-cell-wrap" style={{ padding:'9px 10px', color:'#555', verticalAlign:'top' }}>
                         <OrderDescriptionCell source={g} totalField="hissa_count" waqfField="waqf_hissa_count" />
                       </td>
-                      <td style={{ padding:'9px 10px', fontWeight:'500', color:'#333', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{(g.booking_names||[]).join(', ')||'—'}</td>
+                      <td className="ops-cell-wrap" style={{ padding:'9px 10px', fontWeight:'500', color:'#333', verticalAlign:'top' }}>{(g.booking_names||[]).join(', ')||'—'}</td>
                       <td style={{ padding:'9px 10px', color:'#555' }}>{g.standard_hissa_count||0}</td>
                       <td style={{ padding:'9px 10px', color:'#555' }}>{g.premium_hissa_count||0}</td>
                       <td style={{ padding:'9px 10px', color:'#555' }}>{g.waqf_hissa_count||0}</td>
@@ -1050,9 +1050,9 @@ export default function OperationsSpecialRequest() {
                         <div>{g.day||'—'}</div>
                         {getGroupSlots(g).length > 0 && <div style={{ fontSize:'9px', color:'#aaa' }}>{getGroupSlots(g).join(', ')}</div>}
                       </td>
-                      <td style={{ padding:'9px 10px', color:'#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{g.area||'—'}</td>
-                      <td style={{ padding:'9px 10px', color:'#555' }}><MultiLineCell values={[g.contacts || [], g.alt_contacts || []]} /></td>
-                      <td style={{ padding:'9px 10px', color:'#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>
+                      <td className="ops-cell-wrap" style={{ padding:'9px 10px', color:'#555', verticalAlign:'top' }}>{g.area||'—'}</td>
+                      <td className="ops-cell-wrap" style={{ padding:'9px 10px', color:'#555' }}><MultiLineCell values={[g.contacts || [], g.alt_contacts || []]} /></td>
+                      <td className="ops-cell-wrap" style={{ padding:'9px 10px', color:'#555', verticalAlign:'top' }}>
                         <div>{g.address||'—'}</div>
                       </td>
                       <td style={{ padding:'9px 10px', color:'#777', fontWeight:'500' }}><MultiLineCell values={g.customer_ids || []} /></td>

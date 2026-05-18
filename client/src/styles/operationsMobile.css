@@ -31,6 +31,20 @@
   vertical-align: middle !important;
 }
 
+/* Description, address, area, booking — wrap instead of stretching the row */
+.ops-data-table td.ops-cell-wrap,
+.ops-data-table th.ops-cell-wrap,
+.lnm-table td.ops-cell-wrap,
+.lnm-table th.ops-cell-wrap,
+.slm-table td.ops-cell-wrap,
+.slm-table th.ops-cell-wrap {
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  max-width: 220px !important;
+  vertical-align: top !important;
+}
+
 /* ── Filters: desktop uses each page's original layout; mobile-only UI below ── */
 .ops-filter-toggle,
 .om-filter-toggle,
@@ -325,6 +339,15 @@
   max-width: none !important;
   word-break: normal !important;
   overflow-wrap: normal !important;
+}
+
+.ops-sheet-panel .ops-data-table td.ops-cell-wrap,
+.ops-sheet-panel .ops-data-table th.ops-cell-wrap {
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  max-width: 220px !important;
+  vertical-align: top !important;
 }
 
 @keyframes opsModalSheetInUp {

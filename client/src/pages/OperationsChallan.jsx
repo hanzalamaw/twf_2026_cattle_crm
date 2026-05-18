@@ -1004,10 +1004,10 @@ export default function OperationsChallan() {
                       <td style={{ padding: '9px 10px' }}>
                         <NoBadge number={c.challan_id} />
                       </td>
-                      <td style={{ padding: '9px 10px', color: '#555', verticalAlign:'top' }}>
+                      <td className="ops-cell-wrap" style={{ padding: '9px 10px', color: '#555', verticalAlign:'top' }}>
                         <OrderDescriptionCell source={c} />
                       </td>
-                      <td style={{ padding: '9px 10px', fontWeight: '500', color: '#333', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{c.booking_name || '—'}</td>
+                      <td className="ops-cell-wrap" style={{ padding: '9px 10px', fontWeight: '500', color: '#333', verticalAlign:'top' }}>{c.booking_name || '—'}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_standard_hissa || 0}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_premium_hissa || 0}</td>
                       <td style={{ padding: '9px 10px', color: '#555' }}>{c.total_waqf_hissa || 0}</td>
@@ -1018,13 +1018,13 @@ export default function OperationsChallan() {
                         <div>{c.day || '—'}</div>
                         {c.slot && <div style={{ fontSize: '9px', color: '#aaa' }}>{c.slot}</div>}
                       </td>
-                      <td style={{ padding: '9px 10px', color: '#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>{c.area || '—'}</td>
-                      <td style={{ padding: '9px 10px', color: '#555' }}><MultiLineCell values={[contacts, altContacts]} /></td>
-                      <td style={{ padding: '9px 10px', color: '#555', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }}>
+                      <td className="ops-cell-wrap" style={{ padding: '9px 10px', color: '#555', verticalAlign:'top' }}>{c.area || '—'}</td>
+                      <td className="ops-cell-wrap" style={{ padding: '9px 10px', color: '#555' }}><MultiLineCell values={[contacts, altContacts]} /></td>
+                      <td className="ops-cell-wrap" style={{ padding: '9px 10px', color: '#555', verticalAlign:'top' }}>
                         <div>{formatAddress(c.address) || '—'}</div>
                       </td>
                       <td style={{ padding: '9px 10px', color: '#777', fontWeight: '500' }}><MultiLineCell values={customerIds} /></td>
-                      <td style={{ padding: '9px 10px', color: '#666', whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', verticalAlign:'top' }} title={names}>
+                      <td className="ops-cell-wrap" style={{ padding: '9px 10px', color: '#666', verticalAlign:'top' }} title={names}>
                         {names}
                       </td>
                     </tr>
